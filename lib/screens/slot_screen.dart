@@ -52,15 +52,22 @@ class _SlotScreenState extends State<SlotScreen> {
       var has = false;
       if (currentApp?.slot == n) {
         has = currentApp!.teams.isNotEmpty;
-      } else {
-        final db = AppDatabase.forSlot(n);
-        try {
-          has = await db.hasData();
-        } catch (_) {}
-        await db.close();
+      } else if (sum != null) {
+        has = true;
+      } else if (n == 1) {
+        // プレイデータ1のみ、要約キャッシュが無い古い形式や初期データの存在をDBで確認する
+        if (prefs.getString('teamsData') != null) {
+          has = true;
+        } else {
+          final db = AppDatabase.forSlot(n);
+          try {
+            has = await db.hasData().timeout(const Duration(seconds: 5), onTimeout: () => false);
+          } catch (_) {}
+          try {
+            await db.close().timeout(const Duration(seconds: 2));
+          } catch (_) {}
+        }
       }
-      // プレイデータ1は以前の保存（端末の設定に残っている古い形式）も保存ありとみなす
-      if (!has && n == 1 && prefs.getString('teamsData') != null) has = true;
       // 開いただけで始めていない枠は空き扱い（要約は球団を決めて始めると書かれる）。プレイデータ1の以前の保存は除く
       if (has && sum == null && n != 1) has = false;
       _info[n] = _Slot(has, has ? sum : null);
