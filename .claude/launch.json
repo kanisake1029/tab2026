@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "flutter-web",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": [
+        "run",
+        "-d",
+        "web-server",
+        "--web-port",
+        "8790",
+        "--release"
+      ],
+      "port": 8790
+    },
+    {
+      "name": "mmorpg-web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/kazum/.gemini/antigravity/scratch/mmorpg_app/tool/serve_web.js",
+        "8791"
+      ],
+      "port": 8791
+    }
+  ]
+}

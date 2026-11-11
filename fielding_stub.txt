@@ -1,0 +1,24 @@
+﻿  // fielding_engine.dartに追加するメソッド群のプロトタイプ
+  /// 状況に応じた守備判断（ゲッツー、中継プレー、ランダウン）
+  void evaluateTeamPlay(Fielder fielder, int runnerState, double ballDistance) {
+    // 守備適性（IQ）による判断の正確さ
+    double decisionIQ = fielder.fielding / 100.0;
+    
+    // 1塁ランナーがいる場合のゲッツー（Double Play）判断
+    if (runnerState == 1 /* 1塁 */) {
+      if (Random().nextDouble() < decisionIQ) {
+        // 的確に2塁へ送球しゲッツーを狙う
+      } else {
+        // 判断が遅れ、確実な1塁アウトのみを狙う
+      }
+    }
+    
+    // 外野の深い当たりの中継プレー（Relay）
+    if (ballDistance > 70) {
+      if (Random().nextDouble() < decisionIQ) {
+        // 内野手（カットマン）へ的確に中継し、無駄のない送球
+      } else {
+        // 無理にダイレクトでホームを狙って暴投になるか、進塁を許す
+      }
+    }
+  }
