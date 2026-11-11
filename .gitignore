@@ -43,6 +43,7 @@ app.*.map.json
 backup/
 *.sqlite
 *.db
+*.apk
 
 # Android Studio will place build artifacts here
 /android/app/debug
