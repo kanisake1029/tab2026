@@ -75,17 +75,19 @@ class _SlotScreenState extends State<SlotScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<AppState> _load(int n) async {
+  Future<AppState> _load(int n, {bool deferWorldGen = false}) async {
     final cur = currentApp;
     if (cur != null && cur.slot == n) return cur;
     if (cur != null) {
-      await cur.saveData();
+      if (!(cur.deferWorldGen && cur.isFresh && cur.myTeamId.isEmpty)) {
+        await cur.saveData();
+      }
       await cur.db.close();
       currentApp = null;
     }
-    final a = AppState(AppDatabase.forSlot(n), n);
+    final a = AppState(AppDatabase.forSlot(n), n, deferWorldGen);
     while (!a.loaded) {
-      await Future.delayed(const Duration(milliseconds: 30));
+      await Future.delayed(const Duration(milliseconds: 20));
     }
     currentApp = a;
     return a;
@@ -95,7 +97,7 @@ class _SlotScreenState extends State<SlotScreen> {
     if (_busy) return;
     setState(() => _busy = true);
     final has = _info[n]?.has ?? false;
-    final a = await _load(n);
+    final a = await _load(n, deferWorldGen: !has);
     final cont = has && a.teams.any((t) => t.id == a.myTeamId);
     if (!cont) await a.addStoredTeams(); // 新しく始める：新規作成チーム（ほかのプレイデータの球団も）を選べるように
     if (!mounted) return;

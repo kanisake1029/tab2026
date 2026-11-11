@@ -762,17 +762,21 @@ class AppState extends ChangeNotifier {
   bool loaded = false;
   /// プレイデータの枠（1〜3）
   final int slot;
+  /// 空の枠（「新しく始める」画面用）のときは、重い他リーグ・アマチュア生成とDB保存を「開始する」まで先送りする
+  final bool deferWorldGen;
 
-  AppState([AppDatabase? database, this.slot = 1]) : db = database ?? AppDatabase() {
+  AppState([AppDatabase? database, this.slot = 1, this.deferWorldGen = false]) : db = database ?? AppDatabase() {
     currentDate = DateTime(startYear - 1, 10, 31); // 監督就任は、1年目のドラフト会議（前年10月31日）から
     loadData();
   }
 
-  // 初期データに末尾カンマ（不正なJSON）が含まれているため、読み込み前に取り除く
+  // 初期データに末尾カンマ（不正なJSON）が含まれているため、読み込み前に取り除く（1回だけ処理してキャッシュ）
+  static String? _cleanedInitialCache;
   static String _cleanJson(String s) => s.replaceAllMapped(RegExp(r',(\s*[\]}])'), (m) => m[1]!);
 
   List<Team> _initialTeams() {
-    final ts = (jsonDecode(_cleanJson(InitialTeamsData.jsonString)) as List).map<Team>((t) => Team.fromJson(t, Player.fromJson)).toList();
+    _cleanedInitialCache ??= _cleanJson(InitialTeamsData.jsonString);
+    final ts = (jsonDecode(_cleanedInitialCache!) as List).map<Team>((t) => Team.fromJson(t, Player.fromJson)).toList();
     _raiseBody(ts);
     _slowVelocity(ts);
     _regenPitches(ts);
@@ -1070,8 +1074,9 @@ class AppState extends ChangeNotifier {
   final Set<int> _savedFarmPlayed = {}; // 結果を保存済みの2軍の試合の番号
 
   Future<void> loadData() async {
+    Map<String, String> kv = const {};
     try {
-      final kv = await db.allKv();
+      kv = await db.allKv();
       final teamJsons = await db.loadTeamJsons();
       if (teamJsons.isNotEmpty) {
         teams = teamJsons.map((s) => Team.fromJson(jsonDecode(s) as Map<String, dynamic>, Player.fromJson)).toList();
@@ -1108,14 +1113,16 @@ class AppState extends ChangeNotifier {
         teams = _initialTeams();
         _freshInitial = true;
         weatherSeed = Random().nextInt(1 << 30);
-        _applySeasonGames();
-        _generateSchedule(keepDate: true);
+        if (!deferWorldGen) {
+          _applySeasonGames();
+          _generateSchedule(keepDate: true);
+        }
       }
     } catch (e, st) {
       debugPrint('LOAD ERROR: $e\n$st');
       teams = _initialTeams();
       _freshInitial = true;
-      _generateSchedule(keepDate: true);
+      if (!deferWorldGen) _generateSchedule(keepDate: true);
     }
     _migratePitchers();
     _migrateForeign();
@@ -1151,7 +1158,9 @@ class AppState extends ChangeNotifier {
     // 入団時（固有12はゲーム開始時）の能力が無い選手：固有12は初期データ（ゲーム開始時と同じ処理をしたもの）から、
     // それ以外は今年の初めの能力で代わりにする
     if (teams.any((t) => t.players.any((p) => p.baseline.isEmpty))) {
-      final init = {for (final t in _initialTeams()) for (final p in t.players) p.id: p};
+      final init = _freshInitial
+          ? {for (final t in teams) for (final p in t.players) p.id: p}
+          : {for (final t in _initialTeams()) for (final p in t.players) p.id: p};
       for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
         if (p.baseline.isNotEmpty) continue;
         final i = init[p.id];
@@ -1208,12 +1217,9 @@ class AppState extends ChangeNotifier {
     _ensureFinance();
     _syncFacilities();
     FarmEngine.devBonus = _farmDevBonus; // 2軍の自動スタメンに、2軍監督の育成眼で「育てる価値」を足す
-    // 以前のセーブの記録の修復（今季の成績がまだ選手に残っている間に）→ 以前の方式（1月1日に年度更新）のオフなら、ここで年度を切り替える
-    await _repairLostSeasonRecords();
-    await _fixInGameCareers();
-    await _fixInitialProYears();
-    // 出身：日本人には都道府県、外国人は8か国（ベネズエラ・プエルトリコ → ドミニカ、カナダ → アメリカ）
-    if (await db.getKv('originV2') != '1') {
+
+    if (deferWorldGen && _freshInitial) {
+      // 空のスロット（「新しく始める」画面用）：「開始する」を押すまでDB書き込み・他リーグ・アマチュア生成は行わない
       for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player), ...foreignPool, ...prospects.map((x) => x.player)]) {
         if (p.nationality == '海外') {
           p.origin = switch (p.origin) { 'ベネズエラ' || 'プエルトリコ' => 'ドミニカ', 'カナダ' => 'アメリカ', _ => p.origin };
@@ -1221,11 +1227,36 @@ class AppState extends ChangeNotifier {
           p.birthplace = NamePool.prefecture(Random(p.id.hashCode));
         }
       }
-      await saveData();
-      await db.setKv('originV2', '1');
+      _ensureScoutNet();
+      _snapRosters();
+      loaded = true;
+      notifyListeners();
+      return;
+    }
+
+    // 以前のセーブの記録の修復（今季の成績がまだ選手に残っている間に）→ 以前の方式（1月1日に年度更新）のオフなら、ここで年度を切り替える
+    await _repairLostSeasonRecords();
+    await _fixInGameCareers();
+    await _fixInitialProYears();
+
+    var needSave = false;
+    var needSaveWorld = false;
+    final dirtyKv = <String, String>{};
+
+    // 出身：日本人には都道府県、外国人は8か国（ベネズエラ・プエルトリコ → ドミニカ、カナダ → アメリカ）
+    if (kv['originV2'] != '1') {
+      for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player), ...foreignPool, ...prospects.map((x) => x.player)]) {
+        if (p.nationality == '海外') {
+          p.origin = switch (p.origin) { 'ベネズエラ' || 'プエルトリコ' => 'ドミニカ', 'カナダ' => 'アメリカ', _ => p.origin };
+        } else if (p.birthplace.isEmpty) {
+          p.birthplace = NamePool.prefecture(Random(p.id.hashCode));
+        }
+      }
+      needSave = true;
+      dirtyKv['originV2'] = '1';
     }
     // 国内FA を8年に（以前は6年）：すでに日本人選手の扱いになった外国人選手は、そのままにする
-    if (await db.getKv('fa8V1') != '1') {
+    if (kv['fa8V1'] != '1') {
       var lost = 0;
       for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
         if (p.faService >= 6 && p.faService < Player.faYears) {
@@ -1237,13 +1268,13 @@ class AppState extends ChangeNotifier {
         }
       }
       if (lost > 0) _addNews(['制度の変更：国内FA 権の取得は8年になりました（以前は6年）。6〜7年の選手$lost人は、8年になるまで FA 宣言できません']);
-      await saveData();
-      await db.setKv('fa8V1', '1');
+      needSave = true;
+      dirtyKv['fa8V1'] = '1';
     }
-    if (await db.getKv('sacRecountV2') != '1') {
+    if (kv['sacRecountV2'] != '1') {
       recountSacAndGidp();
-      await saveData(); // 数え直した成績をすぐ保存する
-      await db.setKv('sacRecountV2', '1');
+      needSave = true; // 数え直した成績をすぐ保存する
+      dirtyKv['sacRecountV2'] = '1';
     }
     await _repairRenamedRecords();
     await _loadOther(); // 他リーグ（なければ作る）
@@ -1251,16 +1282,16 @@ class AppState extends ChangeNotifier {
       FieldingGen.fixMainPos(p); // 以前に作った他リーグの選手：メインポジションが G1 なら得意な位置に
     }
     await _loadAmateur(); // アマチュア球界（なければ作る）
-    if (await db.getKv('fieldGenV1') != '1') {
+    if (kv['fieldGenV1'] != '1') {
       var n = 0;
       for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
         if (_fieldingIfDefault(p)) n++;
       }
       debugPrint('FIELDING REGEN: $n');
-      await db.setKv('fieldGenV1', '1');
-      if (n > 0) await saveData();
+      dirtyKv['fieldGenV1'] = '1';
+      if (n > 0) needSave = true;
     }
-    if (await db.getKv('fieldGenV2') != '1') {
+    if (kv['fieldGenV2'] != '1') {
       // 守備の基準を変えた：本職の底上げ（最低E45・多くはD〜B）と、守れる位置を増やす
       final r = Random(startYear * 7 + 3);
       var n = 0;
@@ -1268,10 +1299,10 @@ class AppState extends ChangeNotifier {
         if (FieldingGen.upgrade(p, r)) n++;
       }
       debugPrint('FIELDING UPGRADE: $n');
-      await db.setKv('fieldGenV2', '1');
-      if (n > 0) await saveData();
+      dirtyKv['fieldGenV2'] = '1';
+      if (n > 0) needSave = true;
     }
-    if (await db.getKv('veloV2') != '1') {
+    if (kv['veloV2'] != '1') {
       // 球速の基準を変えた（2026-11）：NPB 1軍は150km以上、プロ入りの高校生は140km台前半。アンダースローと160km以上はそのまま
       final seen = Set<Player>.identity();
       final pros = [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player), ...foreignPool, ...?otherWorld?.allPlayers];
@@ -1285,12 +1316,11 @@ class AppState extends ChangeNotifier {
         Velo.setTo(p, Velo.lift(p.velocity, amateur: true, slot: p.armSlot));
       }
       debugPrint('VELO V2: ${seen.length}');
-      await saveData();
-      await _saveAmateur();
-      await _saveOther();
-      await db.setKv('veloV2', '1');
+      needSave = true;
+      needSaveWorld = true;
+      dirtyKv['veloV2'] = '1';
     }
-    if (await db.getKv('eyeV1') != '1') {
+    if (kv['eyeV1'] != '1') {
       // 選球眼の平均を60に（チャンス・ピンチと同じ基準）：NPB 12球団の野手の平均との差を、全員に足す
       final bats = [for (final t in leagueTeams) for (final p in t.players) if (!p.isPitcher) p];
       final mean = bats.isEmpty ? 60.0 : bats.fold<int>(0, (s, p) => s + p.eye) / bats.length;
@@ -1302,13 +1332,12 @@ class AppState extends ChangeNotifier {
           p.eye = (p.eye + d).clamp(1, 99);
         }
         debugPrint('EYE V1: +$d (${seen.length})');
-        await saveData();
-        await _saveAmateur();
-        await _saveOther();
+        needSave = true;
+        needSaveWorld = true;
       }
-      await db.setKv('eyeV1', '1');
+      dirtyKv['eyeV1'] = '1';
     }
-    if (await db.getKv('fieldGenV3') != '1') {
+    if (kv['fieldGenV3'] != '1') {
       // 守備の技術（捕球・送球・肩力）の高い選手・守備職人型は、本職の守備適性もある程度高く
       final seen = Set<Player>.identity();
       var n = 0;
@@ -1317,15 +1346,24 @@ class AppState extends ChangeNotifier {
         if (FieldingGen.blendSkill(p, craftsman: CoachEngine.autoType(p) == '守備職人型')) n++;
       }
       debugPrint('FIELDING V3: $n');
-      await saveData();
+      needSave = true;
+      needSaveWorld = true;
+      dirtyKv['fieldGenV3'] = '1';
+    }
+    if (kv['scoutNetV1'] != '1') {
+      _ensureScoutNet(); // 地区担当・海外担当のスカウト（以前の「スカウト」は本拠地の地区担当に）
+      dirtyKv['scoutNetV1'] = '1';
+      needSave = true;
+    }
+    if (needSaveWorld) {
       await _saveAmateur();
       await _saveOther();
-      await db.setKv('fieldGenV3', '1');
     }
-    if (await db.getKv('scoutNetV1') != '1') {
-      _ensureScoutNet(); // 地区担当・海外担当のスカウト（以前の「スカウト」は本拠地の地区担当に）
-      await db.setKv('scoutNetV1', '1');
+    if (needSave) {
       await saveData();
+    }
+    if (dirtyKv.isNotEmpty) {
+      await db.setKvBatch(dirtyKv);
     }
     if (seasonFinished && currentDate.year == startYear) {
       _rollover();
@@ -1562,6 +1600,18 @@ class AppState extends ChangeNotifier {
       'handV1': '1',
       'compactV1': '1',
       'firstsV1': '1',
+      if (_freshInitial) ...const {
+        'proYearFixV1': '1',
+        'originV2': '1',
+        'fa8V1': '1',
+        'sacRecountV2': '1',
+        'fieldGenV1': '1',
+        'fieldGenV2': '1',
+        'veloV2': '1',
+        'eyeV1': '1',
+        'fieldGenV3': '1',
+        'scoutNetV1': '1',
+      },
       'chronFirst': '$chronFirstYear',
       'openingNumbers': openingNumberDay,
       for (final y in [startYear - 1, startYear]) if (chronYears[y] != null) 'chron_$y': jsonEncode(chronYears[y]),
@@ -1614,9 +1664,7 @@ class AppState extends ChangeNotifier {
     Future<void> write() async {
     try {
       await db.syncTeams(changedTeams, teamIds);
-      for (final e in kv.entries) {
-        await db.setKv(e.key, e.value);
-      }
+      await db.setKvBatch(kv);
       if (pitchRows.isNotEmpty) await db.savePitches(pitchRows);
       if (compact != null) await db.compactSeason(compact);
       if (replaceAll) {
@@ -2307,7 +2355,11 @@ class AppState extends ChangeNotifier {
     }
     if (added) {
       _ensureScoutNet();
-      updateAndSave();
+      if (deferWorldGen && _freshInitial) {
+        notifyListeners();
+      } else {
+        updateAndSave();
+      }
     }
   }
 
@@ -2317,19 +2369,24 @@ class AppState extends ChangeNotifier {
 
   Future<void> _templatesFromOtherSlots() async {
     if (!scanOtherSlots) return;
+    final prefs = await SharedPreferences.getInstance();
     final store = InitialStateStore.instance;
     final saved = await store.loadAll();
     for (final n in const [1, 2, 3]) {
       if (n == slot) continue;
+      // 要約キャッシュ（および1番の旧形式）が無い空きスロットはDBを開かない
+      if (prefs.getString('slotSummary_$n') == null && !(n == 1 && prefs.getString('teamsData') != null)) {
+        continue;
+      }
       AppDatabase? other;
       try {
         other = AppDatabase.forSlot(n);
-        await templatesFromDb(other, saved);
+        await templatesFromDb(other, saved).timeout(const Duration(seconds: 4));
       } catch (e) {
         debugPrint('templates from slot $n: $e');
       }
       try {
-        await other?.close();
+        await other?.close().timeout(const Duration(seconds: 2));
       } catch (_) {}
     }
   }

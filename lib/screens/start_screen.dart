@@ -83,6 +83,7 @@ class _StartScreenState extends State<StartScreen> {
     app.setSeasonGames(_games);
     app.finOf(app.teams.firstWhere((t) => t.id == app.myTeamId)).funds = _funds * 10000; // 万円
     app.onTeamChosen();
+    app.updateAndSave();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => widget.mainAppScreen));
   }

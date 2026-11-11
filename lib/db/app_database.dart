@@ -118,6 +118,15 @@ class AppDatabase extends _$AppDatabase {
   Future<void> setKv(String key, String value) =>
       into(kvEntries).insertOnConflictUpdate(KvEntriesCompanion.insert(key: key, value: value));
 
+  Future<void> setKvBatch(Map<String, String> entries) async {
+    if (entries.isEmpty) return;
+    await batch((b) {
+      b.insertAllOnConflictUpdate(kvEntries, [
+        for (final e in entries.entries) KvEntriesCompanion.insert(key: e.key, value: e.value),
+      ]);
+    });
+  }
+
   Future<Map<String, String>> allKv() async {
     final rows = await select(kvEntries).get();
     return {for (final r in rows) r.key: r.value};
