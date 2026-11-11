@@ -175,7 +175,13 @@ class _StartScreenState extends State<StartScreen> {
     final title = Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
       Text('The Authentic', style: TextStyle(color: Color(0xFFEAF5EE), fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
       Text('Baseball 2026', style: TextStyle(color: Color(0xFFEAF5EE), fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 1.2, height: 1.1)),
-      Text('プロ野球ペナントシミュレーション', style: TextStyle(color: _greenText, fontSize: 13)),
+      Row(
+        children: [
+          Text('プロ野球ペナントシミュレーション', style: TextStyle(color: _greenText, fontSize: 13)),
+          SizedBox(width: 8),
+          Text('v1.0.4', style: TextStyle(color: _gold, fontSize: 13, fontWeight: FontWeight.bold)),
+        ],
+      ),
     ]);
     return Container(
       color: _green,

@@ -146,7 +146,13 @@ class _SlotScreenState extends State<SlotScreen> {
           ListView(padding: const EdgeInsets.fromLTRB(16, 20, 16, 24), children: [
             const Text('The Authentic', style: TextStyle(color: Color(0xFFEAF5EE), fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
             const Text('Baseball 2026', style: TextStyle(color: Color(0xFFEAF5EE), fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 1.2, height: 1.1)),
-            const Text('プロ野球ペナントシミュレーション', style: TextStyle(color: _greenText, fontSize: 13)),
+            const Row(
+              children: [
+                Text('プロ野球ペナントシミュレーション', style: TextStyle(color: _greenText, fontSize: 13)),
+                SizedBox(width: 8),
+                Text('v1.0.4', style: TextStyle(color: _gold, fontSize: 13, fontWeight: FontWeight.bold)),
+              ],
+            ),
             const SizedBox(height: 24),
             const Text('プレイデータを選ぶ', style: TextStyle(color: _greenText, fontSize: 12, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
