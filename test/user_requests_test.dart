@@ -89,4 +89,40 @@ void main() {
     expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(newNum)}。')), isTrue);
     expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(oldNum)}。')), isFalse);
   });
+
+  test('④-2 シーズン途中の入団・来日でも1か月の猶予期間中は即時反映＆経歴に当初番号として残る', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+    final t = app.teams.first;
+    final p = t.players.firstWhere((x) => !x.ikusei);
+    final n14 = [for (var n = 14; n <= 99; n++) if (!t.players.any((x) => x.uniformNumber == n)) n].first;
+    final n53 = [for (var n = 53; n <= 99; n++) if (n != n14 && !t.players.any((x) => x.uniformNumber == n)) n].first;
+    p.uniformNumber = n14;
+
+    final joinDate = DateTime(2026, 4, 1);
+    app.currentDate = DateTime(2026, 4, 15);
+    app.markNumberFree(p, joinDate);
+    app.chron.add({
+      'd': '2026-04-01',
+      'team': t.id,
+      'k': 'join',
+      't': '外野手 ${p.registeredName}(${p.age})が来日して入団。背番号は${uniformLabel(n14)}。',
+      'pid': p.id,
+      'pt': '来日して${t.name}に入団。背番号${uniformLabel(n14)}。',
+    });
+
+    final err = app.setNumber(t, p, n53);
+    expect(err, isNull);
+    expect(p.uniformNumber, n53);
+    expect(p.nextNumber, isNull);
+    expect(app.chron.any((c) => c['pid'] == p.id && c['k'] == 'number'), isFalse);
+
+    final tl = await app.playerTimeline(p);
+    expect(tl.any((e) => e.$2.contains('変更')), isFalse);
+    expect(tl.any((e) => e.$2.contains('来日して${t.name}に入団。背番号${uniformLabel(n53)}。')), isTrue);
+    expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(n14)}。')), isFalse);
+  });
 }
