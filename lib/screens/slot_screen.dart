@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/app_database.dart';
@@ -138,12 +139,82 @@ class _SlotScreenState extends State<SlotScreen> {
       await AppState.templatesFromDb(db);
     } catch (_) {}
     await db.wipeAll();
+    await db.vacuumIfBloated(ratio: 0, minPages: 0); // 行を消しただけではファイルが小さくならないので、詰めて枠を空にする
     await db.close();
+    await AppDatabase.deleteBackups(n);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('slotSummary_$n');
     if (n == 1) await prefs.remove('teamsData'); // 古い形式の保存も消す
     _busy = false;
     await _refresh();
+  }
+
+  /// 控え：ドラフト会議・年度替わり・契約更改の直前に、自動で残したデータ（3世代）。戻すと、いまのデータは「復元の直前の状態」に残る
+  Future<void> _showBackups(int n) async {
+    final list = await AppDatabase.listBackups(n);
+    if (!mounted) return;
+    String when(DateTime t) => '${t.month}/${t.day} ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF14352A),
+      showDragHandle: true,
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('プレイデータ$n の控え', style: const TextStyle(color: Color(0xFFEAF5EE), fontSize: 16, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            const Text('ドラフト会議・年度替わり・契約更改の直前に、自動で残します（3世代まで）', style: TextStyle(color: _greenText, fontSize: 12)),
+            const SizedBox(height: 8),
+            if (list.isEmpty)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Text('控えはまだありません', style: TextStyle(color: _greenText))),
+            for (final b in list)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(b.label, style: const TextStyle(color: Color(0xFFEAF5EE), fontWeight: FontWeight.w700)),
+                subtitle: Text('${b.gameDate.isEmpty ? '' : '${b.gameDate}　'}${when(b.savedAt)} に保存　${(b.bytes / 1000000).toStringAsFixed(1)}MB', style: const TextStyle(color: _greenText, fontSize: 12)),
+                trailing: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: _gold, foregroundColor: _green),
+                  onPressed: () {
+                    Navigator.pop(c);
+                    _restore(b);
+                  },
+                  child: const Text('戻す'),
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _restore(BackupInfo b) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('「${b.label}」に戻しますか？'),
+        content: const Text('いまのデータは、控えの「復元の直前の状態」に残るので、あとで戻せます（もう一度戻すと、そのときの状態に入れ替わります）。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('やめる')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('戻す')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    final prefs = await SharedPreferences.getInstance();
+    final cur = _info[b.slot]?.sum;
+    final d = DateTime.tryParse('${cur?['date'] ?? ''}');
+    if (currentApp?.slot == b.slot) {
+      await currentApp!.saveData(); // 開いているデータは、いまの状態を保存してから閉じる（「復元の直前の状態」に残る）
+      await currentApp!.db.close();
+      currentApp = null;
+    }
+    final done = await AppDatabase.restoreBackup(b, currentSummary: prefs.getString('slotSummary_${b.slot}') ?? '', currentGameDate: d == null ? '' : '${d.year}年${d.month}月${d.day}日');
+    _busy = false;
+    await _refresh();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(done ? '「${b.label}」に戻しました。プレイデータ${b.slot}を開くと、その時点からの続きです' : '戻せませんでした（いまのデータは変わっていません）')));
   }
 
   @override
@@ -213,6 +284,12 @@ class _SlotScreenState extends State<SlotScreen> {
                 ),
               ]),
             ),
+            if (has && !kIsWeb)
+              IconButton(
+                tooltip: '控え（自動で残したデータに戻す）',
+                icon: const Icon(Icons.history, color: _green),
+                onPressed: () => _showBackups(n),
+              ),
             if (has)
               IconButton(
                 tooltip: '消去',

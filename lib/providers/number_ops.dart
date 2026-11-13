@@ -6,21 +6,31 @@ extension NumberOps on AppState {
   /// 背番号の記録を始めた日
   static const historyFrom = '2026-02-01';
 
-  /// 入団・移籍した直後で、背番号をすぐ変えられるか（特別に決めた日は全員）
-  bool numberFreeNow(Player p) => isOpeningNumberDay || (p.numberFreeUntil.isNotEmpty && p.numberFreeUntil.compareTo(ChronicleOps.ymd(currentDate)) >= 0);
+  /// オフシーズン（11/1〜1/31）は背番号をすぐ変えられ、変更は経歴に残さない
+  bool get isOffseasonNumberFree => currentDate.month >= 11 || currentDate.month == 1;
+
+  /// 入団・移籍した直後、またはオフ期間（11/1〜1/31）で背番号をすぐ変えられるか（特別に決めた日は全員）
+  bool numberFreeNow(Player p) =>
+      isOpeningNumberDay || isOffseasonNumberFree || (p.numberFreeUntil.isNotEmpty && p.numberFreeUntil.compareTo(ChronicleOps.ymd(currentDate)) >= 0);
 
   /// 今日は、全員の背番号をすぐ変えられる特別な日か（初期の背番号の扱い）
   bool get isOpeningNumberDay => openingNumberDay.isNotEmpty && openingNumberDay == ChronicleOps.ymd(currentDate);
 
-  /// すぐ変える。特別な日は初期の背番号の扱い：変更として残さず、2026年2月からの入団・支配下登録の記録の番号を書き換える
+  /// すぐ変える。初期の背番号・オフ期間（11/1〜1/31）・入団直後の変更は経歴に残さず、入団・支配下登録の記録の番号を書き換える
   void _changeNow(Team t, Player p, int n) {
     if (n == p.uniformNumber) return;
-    if (isOpeningNumberDay) {
+    if (numberFreeNow(p)) {
       final from = 'は${p.uniformText}。', to = 'は${uniformLabel(n)}。';
-      for (final c in chron) {
-        if (c['pid'] != p.id || c['team'] != t.id || !(c['k'] == 'join' || c['k'] == 'reg') || '${c['d']}'.compareTo(historyFrom) < 0) continue;
-        c['t'] = '${c['t']}'.replaceFirst('背番号$from', '背番号$to');
-        if (c['pt'] is String) c['pt'] = (c['pt'] as String).replaceFirst('背番号${p.uniformText}。', '背番号${uniformLabel(n)}。');
+      final cutoff = isOpeningNumberDay ? historyFrom : ChronicleOps.ymd(currentDate.subtract(const Duration(days: 120)));
+      for (final list in chronYears.values) {
+        for (final c in list.reversed) {
+          if (c['pid'] != p.id || c['team'] != t.id || !(c['k'] == 'join' || c['k'] == 'reg')) continue;
+          final d = '${c['d']}';
+          if (d.compareTo(historyFrom) < 0 || d.compareTo(cutoff) < 0) continue;
+          c['t'] = '${c['t']}'.replaceFirst('背番号$from', '背番号$to');
+          if (c['pt'] is String) c['pt'] = (c['pt'] as String).replaceFirst('背番号${p.uniformText}。', '背番号${uniformLabel(n)}。');
+          if (!isOpeningNumberDay) break;
+        }
       }
     } else {
       _numberChron(t, p, p.uniformNumber, n, currentDate);
@@ -68,7 +78,7 @@ extension NumberOps on AppState {
       if (o != null) return '背番号${uniformLabel(e.value)}が${o.registeredName}と${e.key.registeredName}で重なっています';
       seen[e.value] = e.key;
     }
-    if (isOpeningNumberDay) {
+    if (isOpeningNumberDay || isOffseasonNumberFree) {
       for (final p in t.players) {
         _changeNow(t, p, finalNum[p]!);
         p.nextNumber = null;

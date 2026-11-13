@@ -219,7 +219,7 @@ extension OtherOps on AppState {
       p.proYears = 1;
       p.faService = 0;
       final memo = [for (final l in src.abroad) l.replaceFirst('日本独立', OtherLeagueEngine.leagues[x.$1.leagueId]?.name ?? '独立')];
-      p.abroad = [];
+      p.abroad = memo;
       return Prospect(player: p, year: year, category: '独立', school: x.$1.name, ikuseiTier: ikusei, curBias: r.nextInt(9) - 4, memo: memo.isEmpty ? ['（独立リーグでの記録はまだありません）'] : memo);
     }
 

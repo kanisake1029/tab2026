@@ -315,7 +315,10 @@ class _DraftScreenState extends State<DraftScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(_status, style: const TextStyle(color: _lime, fontWeight: FontWeight.w800, fontSize: 14)),
           const SizedBox(height: 4),
-          Text('$name　支配下の空き $slots人（上限${RosterEngine.maxShihaika}人）　指名 ${s.picksOf(my).length}人　候補は長押しで詳細', style: const TextStyle(color: Color(0xFF8EA3BF), fontSize: 12)),
+          const SizedBox(height: 2),
+          Text(slots > 0 ? '本指名 あと $slots人' : '本指名の枠なし', style: TextStyle(color: slots > 0 ? _lime : const Color(0xFFFCA5A5), fontWeight: FontWeight.w900, fontSize: 20)),
+          Text('$name　指名済み ${s.picksOf(my).where((x) => !x.ikusei).length}人（育成 ${s.picksOf(my).where((x) => x.ikusei).length}人）　支配下の上限${RosterEngine.maxShihaika}人', style: const TextStyle(color: Color(0xFF8EA3BF), fontSize: 12)),
+          const Text('本指名は、支配下の枠が許す限り何人でもできます。候補は長押しで詳細', style: TextStyle(color: Color(0xFF8EA3BF), fontSize: 11)),
           if (slots < 6 && s.stage == 'first' && s.lotteries.isEmpty)
             const Text('枠が足りなければ、会議の前に戦力外通告で空けられます（いったん戻って フロント → 補強 → 戦力外通告・育成）。育成指名は枠に関係なくできます',
                 style: TextStyle(color: Color(0xFFFDE68A), fontSize: 12)),
@@ -482,6 +485,7 @@ class _DraftScreenState extends State<DraftScreen> {
       buttons.add(TextButton(onPressed: _auto, child: const Text('残りをおまかせ')));
     }
     return Container(
+      width: double.infinity,
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: SafeArea(top: false, child: Wrap(spacing: 10, runSpacing: 8, alignment: WrapAlignment.end, children: buttons)),

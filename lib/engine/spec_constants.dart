@@ -1,4 +1,5 @@
 import 'dart:math' as m;
+import 'fielding_times.dart';
 
 /// マスター仕様書（第0章・第6章）の数値。on のとき、試合の計算はこの数値を使う（off なら以前の実測合わせの値）
 ///  能力（0〜100）→ 物理の変換式と、球場・用具・守備位置の定数
@@ -45,13 +46,13 @@ class Spec {
 
   // ── 第6章 6.1 打者・野手 ──
   /// 最高走速度（m/s）
-  static double sprint(int run) => 6.8 + 0.028 * run;
+  static double sprint(int run) => FieldTimes.sprintMs.at(run); // 6.8 + 0.028×走力
 
   /// 最大送球初速（km/h）
-  static double throwMaxKmh(int arm) => 110 + 0.48 * arm;
+  static double throwMaxKmh(int arm) => FieldTimes.throwKmh.at(arm); // 110 + 0.48×肩
 
   /// 握り替え時間（秒。標準のステップ送球）
-  static double transfer(int acc) => 0.85 - 0.003 * acc;
+  static double transfer(int acc) => FieldTimes.transferSec.at(acc); // 0.85 − 0.003×送球の正確さ
 
   /// 送球の角度の誤差（度、標準偏差）
   static double throwAngleSigma(int acc) => thrBase * (1 - 0.0085 * acc);
@@ -64,7 +65,7 @@ class Spec {
   static const refieldTime = 1.2;
 
   /// 1歩目の反応（秒）
-  static double reaction(int pos) => 0.18 + 0.25 * (1 - pos / 100);
+  static double reaction(int pos) => FieldTimes.reaction.at(pos); // 0.18 + 0.25×(1 − 守備/100)
 
   /// 最大スイング速度（m/s）
   static double batSpeed(int pow) => (batA + batB * pow) / 3.6;

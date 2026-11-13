@@ -339,7 +339,7 @@ class DraftSession {
   final List<List<CompLot>> compLots = [];
   int round = 1;
   int cursor = 0;
-  static const maxMainRound = 10;
+  static const maxMainRound = 70; // 本指名は、支配下の枠が許す限り何人でも（支配下の上限が70人）
   static const maxIkuseiRound = 12;
   static const ikuseiLimit = 40;
   /// CPU 球団の育成の目標人数（球団 ID → 人数）。無ければ20人

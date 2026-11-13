@@ -237,7 +237,7 @@ extension AmateurOps on AppState {
     p.proYears = 1;
     p.faService = 0;
     final memo = [for (final l in src.abroad) l.replaceFirst('日本独立', OtherLeagueEngine.leagues[ot.leagueId]?.name ?? '独立')];
-    p.abroad = [];
+    p.abroad = memo;
     p.amPath = CareerPath.derive(p, '独立', last: '${ot.name}（${OtherLeagueEngine.leagues[ot.leagueId]?.name ?? '独立リーグ'}）');
     final pr = Prospect(player: p, year: year, category: '独立', school: ot.name, curBias: Random(src.id.hashCode).nextInt(9) - 4, memo: memo.isEmpty ? ['（独立リーグでの記録はまだありません）'] : memo);
     prospects.add(pr);

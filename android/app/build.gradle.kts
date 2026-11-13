@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// 配布版（pub）の署名：android/key.properties があれば、その鍵で署名する。無いときは今までどおりデバッグ鍵。
+//  dev / dbg は、いつもデバッグ鍵のまま。鍵を変えると、いま入っているアプリに上書きインストール（adb install -r）できず、セーブが消えるため。
+//  key.properties の中身（このファイルと鍵は GitHub に上げない。android/.gitignore で除外済み）：
+//    storeFile=C:/鍵の場所/tab-release.jks / storePassword=… / keyAlias=… / keyPassword=…
+val keystoreProperties = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
 
 android {
@@ -29,6 +40,17 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (keystoreProperties.isNotEmpty()) {
+            create("pubRelease") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     // 版の作り分け（S25 に並べて入れる）
     //  dev：開発者版。いまのセーブが入っているアプリと同じ ID。AI寸評あり
     //  dbg：デバッグ版。別の ID（別アプリとして並ぶ・セーブも別）。AI寸評なし
@@ -37,27 +59,28 @@ android {
     productFlavors {
         create("dev") {
             dimension = "edition"
+            signingConfig = signingConfigs.getByName("debug")
             manifestPlaceholders["appLabel"] = "TAB 開発者版"
             manifestPlaceholders["launcherLabel"] = "TAB 開発者版"
         }
         create("dbg") {
             dimension = "edition"
+            signingConfig = signingConfigs.getByName("debug")
             applicationIdSuffix = ".dbg"
             manifestPlaceholders["appLabel"] = "TAB デバッグ"
             manifestPlaceholders["launcherLabel"] = "TAB デバッグ"
         }
         create("pub") {
             dimension = "edition"
+            signingConfig = signingConfigs.findByName("pubRelease") ?: signingConfigs.getByName("debug")
             manifestPlaceholders["appLabel"] = "The Authentic Baseball 2026"
             manifestPlaceholders["launcherLabel"] = "TAB 2026"
         }
     }
 
+    // 署名は版（flavor）ごとに決める（上の signingConfigs と productFlavors）
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }

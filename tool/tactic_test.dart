@@ -52,6 +52,7 @@ class Stat {
 
 Stat run(Scenario? sc, int games) {
   final sim = MatchSimulator(applyForm: false);
+  MatchSimulator.startStats();
   final st = Stat();
   for (var g = 0; g < games; g++) {
     final h = _team('H'), a = _team('A');
@@ -76,7 +77,8 @@ Stat run(Scenario? sc, int games) {
     }
     st.n++;
   }
-  st.dbg = sim.debugStats;
+  st.dbg = Map.of(MatchSimulator.debugStats);
+  MatchSimulator.collectStats = false;
   return st;
 }
 
@@ -133,6 +135,7 @@ void main(List<String> args) {
   // 守備系は「ホームの攻撃」の基準が別なので、基準もホーム得点で出す
   final baseHome = () {
     final sim = MatchSimulator(applyForm: false);
+  MatchSimulator.startStats();
     double runs = 0, hits = 0, bb = 0, so = 0;
     for (var g = 0; g < n; g++) {
       final h = _team('H'), a = _team('A');

@@ -79,7 +79,7 @@ void main() {
     }
     SwingModel.vBatScale = d('VBS') ?? SwingModel.vBatScale;
     SwingModel.noiseScale = d('NSC') ?? SwingModel.noiseScale;
-    MatchSimulator.debugStats.clear();
+    MatchSimulator.startStats();
     PlayResolver.stats.clear();
     final sim = MatchSimulator();
     final rnd = math.Random(7);

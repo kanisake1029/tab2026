@@ -55,8 +55,8 @@ extension ChronicleOps on AppState {
       if (t == null) continue;
       if (cur != null) {
         final last = p.moves.isEmpty ? '' : p.moves.last;
-        final how = last.contains('FA') ? 'FAで' : (last.contains('トレード') ? 'トレードで' : (last.contains('人的補償') ? '人的補償で' : ''));
-        _chron(d, tid, 'leave', '${_pos(p)} ${p.registeredName}(${p.age})が$how${teamShort(cur.$1)}へ移籍。', pid: p.id);
+        final how = _moveHow(last);
+        _chron(d, tid, 'leave', '${_pos(p)} ${p.registeredName}(${p.age})が${how.isEmpty ? '' : '$howで'}${teamShort(cur.$1)}へ移籍。', pid: p.id);
         continue;
       }
       final fa = freeAgents.where((f) => f.player.id == p.id).firstOrNull;
@@ -110,16 +110,38 @@ extension ChronicleOps on AppState {
     _snapRosters();
   }
 
+  static String _moveHow(String last) {
+    if (last.contains('FA')) return 'FA';
+    if (last.contains('トレード')) return 'トレード';
+    if (last.contains('人的補償')) return '人的補償';
+    if (last.contains('現役ドラフト')) return '現役ドラフト';
+    if (last.contains('育成テンダー')) return '育成テンダー';
+    if (last.contains('提携選手')) return '提携選手';
+    if (last.contains('日本球界復帰')) return '日本球界復帰';
+    if (last.contains('自由契約')) return '自由契約';
+    return '';
+  }
+
   /// 入団の経緯（球団の記録の文, 選手の年表の文）
   (String, String) _joinText(Player p, Team t, {Team? from}) {
     final last = p.moves.isEmpty ? '' : p.moves.last;
     if (from != null) {
-      final how = last.contains('FA') ? 'FA' : (last.contains('トレード') ? 'トレード' : (last.contains('人的補償') ? '人的補償' : ''));
+      final how = _moveHow(last);
       return ('${how.isEmpty ? '' : '$howで'}${teamShort(from)}から移籍して入団', '${how.isEmpty ? '' : '$howで'}${from.name}から${t.name}に移籍。');
     }
     if (last.contains('自由契約')) {
       final ik = last.contains('育成');
       return ('自由契約から${ik ? '育成契約で' : ''}入団', '自由契約から${t.name}に${ik ? '育成契約で' : ''}入団。');
+    }
+    if (last.contains('日本球界復帰')) {
+      return ('日本球界復帰で入団', '日本球界復帰で${t.name}に入団。');
+    }
+    if (last.contains('提携選手')) {
+      return ('提携選手として入団', '提携選手として${t.name}に入団。');
+    }
+    if (last.contains('から入団')) {
+      final body = last.replaceFirst(RegExp(r'^\d{4}年\d+月\d+日\s*'), '');
+      return (body, body);
     }
     final m = RegExp(r'ドラフト(育成)?(\d+)位（(.+?)・(.+?)）').firstMatch(p.draftInfo);
     if (m != null && p.moves.isEmpty) {
@@ -353,8 +375,10 @@ extension ChronicleOps on AppState {
       final mm = dre.firstMatch(mv);
       if (mm == null) continue;
       final dt = DateTime(int.parse(mm.group(1)!), int.parse(mm.group(2)!), int.parse(mm.group(3)!));
-      if (!dt.isBefore(start)) continue;
-      out.add((dt, '${mm.group(4)!}。'));
+      final desc = mm.group(4)!;
+      final sameDayMove = out.any((x) => x.$1 == dt && (x.$2.contains('移籍') || x.$2.contains('入団') || x.$2.contains('契約') || x.$2.contains('復帰')));
+      if (!dt.isBefore(start) && sameDayMove) continue;
+      out.add((dt, '$desc。'));
     }
     for (final h in honors) {
       final mm = dre.firstMatch(h);

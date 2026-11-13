@@ -36,7 +36,7 @@ void main() {
       print('■ ${src.registeredName} ${src.throws}投 ${src.age}歳 球速${src.velocity} 球威${src.pitchPower} 制球${src.control} スタ${src.stamina} ク${src.quick} 調子${src.conditionAt(a.currentDate)}');
       for (final pt in src.pitches) { print('   ${pt.name} 速${pt.speed} 変${pt.breakLevel} キレ${pt.sharpness} 重${pt.heaviness} 角${pt.angle} 割合${pt.ratio}'); }
       final js = jsonEncode(src.toJson());
-      final sim = MatchSimulator(); MatchSimulator.debugStats.clear();
+      final sim = MatchSimulator(); MatchSimulator.startStats();
       var runs = 0, outs = 0, pa = 0, h = 0, hr = 0, so = 0, bb = 0, ab = 0, hbp = 0, d2 = 0;
       var paL = 0, hL = 0, abL = 0, paR = 0, hR = 0, abR = 0;
       for (var g = 0; g < n; g++) {

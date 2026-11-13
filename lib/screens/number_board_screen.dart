@@ -56,7 +56,7 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
     }
     final e = widget.app.setNumbersBulk(widget.team, next);
     if (e != null) return setState(() => _err = e);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.isOpeningNumberDay ? '背番号を変えました' : '背番号を決めました（2月1日から。入団・移籍したばかりの選手はすぐ）')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.isOpeningNumberDay || widget.app.isOffseasonNumberFree ? '背番号を変えました' : '背番号を決めました（2月1日から。入団・移籍したばかりの選手はすぐ）')));
     Navigator.of(context).pop(true);
   }
 
@@ -77,7 +77,7 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               Text(p.listName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
-              Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}${free && !app.isOpeningNumberDay ? '　入団直後（すぐ変わる）' : ''}',
+              Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}${free && !app.isOpeningNumberDay && !app.isOffseasonNumberFree ? '　入団直後（すぐ変わる）' : (app.isOffseasonNumberFree ? '　オフ期間（すぐ変わる）' : '')}',
                   style: TextStyle(fontSize: 11, color: free ? const Color(0xFF15803D) : const Color(0xFF78716C))),
             ]),
           ),

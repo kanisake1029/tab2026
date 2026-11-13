@@ -517,6 +517,36 @@ class _ScoutReportState extends State<ScoutReport> {
     return e.isEmpty ? '-' : e.map((x) => '${x.key} ${_ip(x.value)}').join('　');
   }
 
+  /// 別リーグ（海外・独立）の来歴行を成績表の列へ変換する（古い順）
+  List<List<String>> _abroadRows() {
+    final out = <List<String>>[];
+    final lineRe = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)\s*[　 ]\s*(.+)$');
+    for (final line in p.abroad.reversed) {
+      final lm = lineRe.firstMatch(line);
+      if (lm == null) continue;
+      final year = lm.group(1)!, lg = lm.group(2)!, body = lm.group(3)!;
+      if (_tblPitch) {
+        if (!body.contains('防御率')) continue;
+        final g = RegExp(r'(\d+)試合').firstMatch(body)?.group(1) ?? '-';
+        final wl = RegExp(r'(\d+)勝(\d+)敗').firstMatch(body);
+        final sv = RegExp(r'(\d+)\s*S').firstMatch(body)?.group(1) ?? '0';
+        final era = RegExp(r'防御率([\d.]+)').firstMatch(body)?.group(1) ?? '-';
+        final ip = RegExp(r'([\d.]+)回').firstMatch(body)?.group(1) ?? '-';
+        final k = RegExp(r'(\d+)奪三振').firstMatch(body)?.group(1) ?? '-';
+        out.add([year, lg, g, '-', wl?.group(1) ?? '-', wl?.group(2) ?? '-', '-', sv, '-', '-', ip, '-', '-', k, '-', '-', '-', era, '-']);
+      } else {
+        if (!body.contains('打率')) continue;
+        final g = RegExp(r'(\d+)試合').firstMatch(body)?.group(1) ?? '-';
+        final avg = RegExp(r'打率([.\d-]+)').firstMatch(body)?.group(1) ?? '-';
+        final hr = RegExp(r'(\d+)本').firstMatch(body)?.group(1) ?? '-';
+        final rbi = RegExp(r'(\d+)打点').firstMatch(body)?.group(1) ?? '-';
+        final ops = RegExp(r'OPS([.\d-]+)').firstMatch(body)?.group(1) ?? '-';
+        out.add([year, lg, g, '-', '-', '-', '-', '-', '-', hr, '-', rbi, '-', '-', '-', '-', '-', '-', avg, '-', '-', '-', ops]);
+      }
+    }
+    return out;
+  }
+
   List<String> _cells(String year, String team, PlayerStats s) {
     if (_mode == '守備') {
       final starts = s.posGames.values.fold<int>(0, (a, b) => a + b);
@@ -616,6 +646,9 @@ class _ScoutReportState extends State<ScoutReport> {
             rows.add(_cells('${app.startYear}', t == null ? '−' : _teamName([...p.seasonTeams, t.id].join('/'), initial: true), now));
             total.add(now);
           }
+          if (_mode == '1軍' && p.abroad.isNotEmpty) {
+            rows.insertAll(0, _abroadRows());
+          }
           final cols = _cols;
           final totalRow = rows.length > 1 || (!_farm && _mode != '3軍') ? _cells('通算', '', total) : null;
           if (rows.isEmpty) {
@@ -630,7 +663,7 @@ class _ScoutReportState extends State<ScoutReport> {
           final boldAll = [for (var i = 2; i < cols.length; i++) const TextStyle(fontWeight: FontWeight.w800)];
           return FrozenTable(
             leadHeader: '年度・団',
-            leadWidth: 72,
+            leadWidth: 84,
             rowHeight: 22,
             compact: true,
             headers: cols.sublist(2),
@@ -643,6 +676,8 @@ class _ScoutReportState extends State<ScoutReport> {
         },
       ),
       const Text('団＝球団の頭文字。2軍の年度別成績は、このゲームで終えたシーズンの分です', style: TextStyle(fontSize: 9.5, color: _sub)),
+      if (_mode == '1軍' && p.abroad.isNotEmpty)
+        const Text('他リーグ（海外・独立）の成績は上段に表示しています（NPB通算には含みません）', style: TextStyle(fontSize: 9.5, color: _sub)),
     ]);
   }
 
@@ -989,13 +1024,9 @@ class _ScoutReportState extends State<ScoutReport> {
               _title(p.nationality == '海外' ? '来日までの経歴' : 'プロに入るまでの経歴'),
               for (final x in CareerPath.of(p)) Text('・$x', style: const TextStyle(fontSize: 11.5, height: 1.4)),
               const SizedBox(height: 6),
-              _title('年表'),
+              _title('年表（入団・移籍・記録）'),
               if (l.isEmpty) const Text('年表の記録はまだありません', style: TextStyle(fontSize: 11, color: _sub)),
               for (final x in l) timelineLine(x.$1, x.$2),
-              const SizedBox(height: 6),
-              _title('移籍の歩み'),
-              if (p.moves.isEmpty) const Text('移籍なし（ゲーム開始前の移籍は記録がないため、開始時の球団に所属していたとしています）', style: TextStyle(fontSize: 11, color: _sub)),
-              for (final m in p.moves) Text('・$m', style: const TextStyle(fontSize: 11.5, height: 1.4)),
             ]);
           },
         );
@@ -1166,11 +1197,6 @@ class _ScoutReportState extends State<ScoutReport> {
             );
           },
         ),
-        if (p.abroad.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text('海外での成績${p.origin.isNotEmpty ? '（出身：${p.origin}）' : ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: _ink)),
-          for (final m in p.abroad) Text(m, style: const TextStyle(fontSize: 11, height: 1.5, color: Color(0xFF44403C), fontFeatures: [FontFeature.tabularFigures()])),
-        ],
       ]),
     );
   }

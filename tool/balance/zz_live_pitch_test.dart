@@ -19,7 +19,7 @@ void main() {
     final ms = a.matches.where((m) => m.homeScore == null && m.matchType != 'OPEN' && (m.homeTeamId == my.id || m.awayTeamId == my.id)).take(40).toList();
     for (final live in [true, false]) {
       for (final t in a.teams) { for (final q in t.players) { q.seasonStats = PlayerStats(); } }
-      MatchSimulator.debugStats.clear();
+      MatchSimulator.startStats();
       for (final m in ms) {
         final h = a.teams.firstWhere((t) => t.id == m.homeTeamId), w = a.teams.firstWhere((t) => t.id == m.awayTeamId);
         final sim = MatchSimulator();

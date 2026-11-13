@@ -74,6 +74,7 @@ void main(List<String> rawArgs) {
   final homeBat = args.length > 1 ? int.parse(args[1]) : _base;
   final awayPit = args.length > 2 ? int.parse(args[2]) : _base;
   final sim = MatchSimulator(applyForm: false);
+  MatchSimulator.startStats();
   int aAb = 0, aH = 0;
   int hAb = 0, hH = 0, hHr = 0, hBb = 0, hSo = 0, pEr = 0, pOuts = 0, pSo = 0, pBb = 0;
   int runs = 0, hits = 0, ab = 0, hr = 0, so = 0, bb = 0, pitches = 0, pa = 0;
@@ -112,7 +113,7 @@ void main(List<String> rawArgs) {
   print('1試合あたり 三振 ${f(so / games / 2)} / 四球 ${f(bb / games / 2)}  (1チーム)');
   print('打率 ${f(hits / (ab == 0 ? 1 : ab), 3)}   1打席あたり球数 ${f(pitches / (pa == 0 ? 1 : pa))}');
   print('安打内訳 $hitTypes');
-  final d = sim.debugStats; final sw = d['swings'] ?? 1; final pt = d['pitches'] ?? 1;
+  final d = MatchSimulator.debugStats; final sw = d['swings'] ?? 1; final pt = d['pitches'] ?? 1;
   print('ボール球率 ${f((d['ballPitches'] ?? 0) / pt * 100, 1)}% / ボール球スイング率 ${f((d['ballSwings'] ?? 0) / (d['ballPitches'] ?? 1) * 100, 1)}% / ゾーン内スイング率 ${f((d['zoneSwings'] ?? 0) / (d['zonePitches'] ?? 1) * 100, 1)}%');
   print('スイング中: 空振り ${f((d['whiffs'] ?? 0) / sw * 100, 1)}% / ファウル ${f((d['fouls'] ?? 0) / sw * 100, 1)}% / インプレー ${f((d['inplay'] ?? 0) / sw * 100, 1)}%');
   print('打球別 安打率(BABIP): ' + ['ゴロ', 'ライナー', 'フライ', 'ポップフライ'].map((t) => '$t ${d['bip_$t'] ?? 0}本/${f((d['hit_$t'] ?? 0) / (d['bip_$t'] ?? 1) * 100, 0)}%').join(' / '));

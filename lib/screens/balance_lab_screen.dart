@@ -46,7 +46,7 @@ class _BalanceLabPanelState extends State<BalanceLabPanel> {
       played = 0;
       envs = [];
     });
-    MatchSimulator.debugStats.clear();
+    MatchSimulator.startStats();
     PlayResolver.stats.clear();
     final teams = widget.app.teams;
     final h0 = teams.firstWhere((t) => t.id == homeId), a0 = teams.firstWhere((t) => t.id == awayId);
@@ -80,6 +80,7 @@ class _BalanceLabPanelState extends State<BalanceLabPanel> {
       if (!lastPlays.contains(e)) e.path = const [];
     }
     dbg = Map.of(MatchSimulator.debugStats);
+    MatchSimulator.collectStats = false; // 検証が終わったら、普段の試合では集計しない
     pr = Map.of(PlayResolver.stats);
     if (mounted) setState(() => running = false);
   }

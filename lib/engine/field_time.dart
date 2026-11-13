@@ -1,6 +1,7 @@
 import 'dart:math' as m;
 import '../models/player.dart';
 import 'base_path.dart';
+import 'fielding_times.dart';
 import 'spec_constants.dart';
 
 /// 守備と走塁の時間（第4章：時空間の到達レース）
@@ -83,7 +84,7 @@ class Fielding {
   /// フライ・ライナーの落下点の見極め（外野手は 0.35〜0.50秒で判断）。その間は 6割の速さで寄る
   static double judge(int fieldStat, String role) {
     final outfield = role == 'LF' || role == 'CF' || role == 'RF';
-    return (outfield ? 0.32 : 0.18) + (100 - fieldStat) * 0.002; // 見極めは反応の速さの調整とは別（外野 0.35〜0.5秒）
+    return (outfield ? FieldTimes.judgeOutfield : FieldTimes.judgeInfield).at(fieldStat); // 見極めは反応の速さの調整とは別（外野 0.35〜0.5秒）
   }
 
   /// 野手の走り：走力60で最高速 8.0m/s・加速 7.2m/s²（構えた姿勢から10mを約1.8秒。外野手は打ってから2.5秒で約10m＝計測の「1歩目」の平均）

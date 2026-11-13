@@ -418,6 +418,17 @@ extension OffseasonOps on AppState {
     }
   }
 
+  /// ドラフト会議（10/31）の3日前：自球団の支配下の空きが少なければ知らせる（本指名は空きの人数までしかできない）
+  void _draftSlotReminder(DateTime d) {
+    final my = myTeam;
+    if (my == null || !offAfterSeason || draftDoneYear >= d.year) return;
+    final free = RosterEngine.freeSlots(my);
+    if (free >= 8) return;
+    _addNews([free <= 0
+        ? 'ドラフト会議（10/31）まであと3日：支配下が上限の${RosterEngine.maxShihaika}人で、このままだと本指名はできません（育成指名だけ）。戦力外通告で枠を空けられます'
+        : 'ドラフト会議（10/31）まであと3日：支配下の空きは$free人です。本指名は空きの人数まで何人でもできます。増やすなら戦力外通告で枠を空けてください']);
+  }
+
   /// 1日ずつの行事（(from, to] の各日）
   void _dailyEvents(DateTime from, DateTime to) {
     final (firstReg, lastReg) = _regularRange();
@@ -468,6 +479,8 @@ extension OffseasonOps on AppState {
             prospects = _withIndie(DraftEngine.generate(d.year + 1, Random((d.year + 1) * 31 + 7)), d.year + 1); // 種はその年の候補の年（今年の種だと今年と同じ候補になる）。独立出身は他リーグの選手から
             _addNews(['${d.year + 1}年のドラフト候補（${prospects.length}人）の調査を始めました']);
           }
+        case (10, 28):
+          _draftSlotReminder(d);
         case (11, 12):
           _tryout();
         case (11, 20):
@@ -482,6 +495,7 @@ extension OffseasonOps on AppState {
             _postingResolve(); // ポスティング：大リーグとの交渉の結果
             _partnerStayResolve(); // 決めていない提携選手の残留は、残す
             _tenderResolve(); // 育成テンダーの結果
+            _requestBackup('契約更改の前（${d.year}年12月1日）');
             _contractRenewal();
             _cpuForeignDepart();
           }
@@ -734,7 +748,8 @@ extension OffseasonOps on AppState {
     preScoutIfNeeded();
     _fileWishesIfDue(force: true);
     // ゲーム開始直後のドラフト：CPU 球団は先に戦力外通告を済ませて枠を空ける（シーズン後のドラフトでは、シーズン終了時に済んでいる）
-    if (prepDraftYear < currentDate.year && currentDate.year < startYear) {
+    //  シーズン後のオフ（年度は10/25に進んでいる）では、戦力外はシーズン終了時に済んでいる。年度が先に進んでいるのは、はじめから始めたときだけ
+    if (!offAfterSeason && prepDraftYear < currentDate.year && currentDate.year < startYear) {
       prepDraftYear = currentDate.year;
       _cpuReleases(currentDate.year);
     }
@@ -765,6 +780,7 @@ extension OffseasonOps on AppState {
   /// ドラフトの結果を反映（入団・契約金・背番号）
   void applyDraft(DraftSession s) {
     if (draftDoneYear >= s.year) return; // 同じ年のドラフトを二重に反映しない
+    _requestBackup('${s.year}年ドラフト会議の前');
     final rollover = currentDate.year == startYear; // この後の1月1日に年を取る
     final mine = <String>[];
     final firsts = <String>[];

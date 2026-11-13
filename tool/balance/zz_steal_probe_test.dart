@@ -37,7 +37,7 @@ void main() {
       }
     }
     for (final t in a.teams) { for (final p in t.players) { p.seasonStats = PlayerStats(); } }
-    MatchSimulator.debugStats.clear();
+    MatchSimulator.startStats();
     final days = int.parse(env['DAYS'] ?? '70');
     for (var i = 0; i < days; i++) { a.playNextDay(); }
     final npb = a.teams.where((t) => t.league == 'CL' || t.league == 'PL').toList();

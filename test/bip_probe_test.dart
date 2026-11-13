@@ -22,7 +22,7 @@ void main() {
     a.myTeamId = a.teams.first.id;
     a.autoMode = true;
     a.onTeamChosen();
-    MatchSimulator.debugStats.clear();
+    MatchSimulator.startStats();
     for (var d = 0; d < 60; d++) {
       a.playNextDay();
     }
