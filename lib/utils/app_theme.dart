@@ -11,7 +11,7 @@ class AppTheme {
         secondary: Color(0xFF06B6D4),
         surface: Colors.white,
       ),
-      fontFamily: 'ZenKakuGothicNew',
+      fontFamily: 'BIZUDPGothic',
       fontFamilyFallback: const ['Meiryo', 'Yu Gothic', 'Hiragino Sans'], 
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
@@ -19,7 +19,7 @@ class AppTheme {
         elevation: 1,
         centerTitle: true,
         titleTextStyle: TextStyle(
-          fontFamily: 'ZenKakuGothicNew',
+          fontFamily: 'BIZUDPGothic',
           color: Colors.black87,
           fontSize: 18,
           fontWeight: FontWeight.bold,
@@ -66,7 +66,7 @@ class AppTheme {
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         appBarTheme: base.appBarTheme.copyWith(
           toolbarHeight: 44,
-          titleTextStyle: const TextStyle(fontFamily: 'ZenKakuGothicNew', color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
+          titleTextStyle: const TextStyle(fontFamily: 'BIZUDPGothic', color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
         ),
         listTileTheme: const ListTileThemeData(dense: true, contentPadding: EdgeInsets.symmetric(horizontal: 12), minVerticalPadding: 4),
         tabBarTheme: const TabBarThemeData(labelPadding: EdgeInsets.symmetric(horizontal: 10)),

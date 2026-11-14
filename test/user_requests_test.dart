@@ -9,12 +9,12 @@ import 'package:npb_pennant_app/widgets/scout_report.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('① テーマのフォントが ZenKakuGothicNew である', () {
+  test('① テーマのフォントが BIZUDPGothic である', () {
     final t = AppTheme.modernLight;
     final c = AppTheme.compact(t);
-    expect(t.textTheme.bodyMedium?.fontFamily, 'ZenKakuGothicNew');
-    expect(t.appBarTheme.titleTextStyle?.fontFamily, 'ZenKakuGothicNew');
-    expect(c.appBarTheme.titleTextStyle?.fontFamily, 'ZenKakuGothicNew');
+    expect(t.textTheme.bodyMedium?.fontFamily, 'BIZUDPGothic');
+    expect(t.appBarTheme.titleTextStyle?.fontFamily, 'BIZUDPGothic');
+    expect(c.appBarTheme.titleTextStyle?.fontFamily, 'BIZUDPGothic');
   });
 
   testWidgets('② 別リーグ成績は寸評欄ではなく成績表に出る／③ 球団経歴は年表へ移籍経緯付きで載る', (tester) async {

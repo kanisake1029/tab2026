@@ -69,16 +69,12 @@ flutter:
     - assets/faces/
   uses-material-design: true
   fonts:
-    - family: ZenKakuGothicNew
+    - family: BIZUDPGothic
       fonts:
-        - asset: assets/fonts/ZenKakuGothicNew-Regular.ttf
+        - asset: assets/fonts/BIZUDPGothic-Regular.ttf
           weight: 400
-        - asset: assets/fonts/ZenKakuGothicNew-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/ZenKakuGothicNew-Bold.ttf
+        - asset: assets/fonts/BIZUDPGothic-Bold.ttf
           weight: 700
-        - asset: assets/fonts/ZenKakuGothicNew-Black.ttf
-          weight: 900
 
   # To add assets to your application, add an assets section, like this:
   # assets:
