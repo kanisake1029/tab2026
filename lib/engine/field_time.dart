@@ -41,14 +41,17 @@ class Running {
 
   /// 打ってから走り出すまで（スイングを振り切って一塁へ向き、最初の数歩は低い姿勢）：右打者 0.52〜0.62秒、左打者 0.40〜0.48秒、走り打ち 0.18〜0.25秒
   ///  一塁到達は平均で右 約4.3秒・左 約4.15秒（NPB の計測の平均）。俊足の左打者で 3.8〜3.9秒
-  static double exitTime(Player b, {required bool lefty, bool slap = false}) {
+  static double exitTime(Player b, {required bool lefty, bool slap = false, double spray = 0}) {
     if (slap) return 0.22;
     final base = lefty ? 0.45 : 0.57;
-    return base - (b.run - 60) * 0.0006;
+    // フォロースルーの向き：一塁側(+spray)への打球は勢いがそのまま一塁へ向かい、三塁側(-spray)は切り返し分だけ遅れる
+    final follow = (-spray / 45.0).clamp(-1.0, 1.0) * 0.035;
+    return (base - (b.run - 60) * 0.0006 + follow).clamp(0.32, 0.72);
   }
 
   /// 打者が一塁に着くまで（走り抜け）。平均で約4.1〜4.3秒、左の超俊足で3.7〜3.8秒
-  static double batterTo1B(Player b, {required bool lefty, bool slap = false}) => exitTime(b, lefty: lefty, slap: slap) + Sprint.of(b.run).time(basePath);
+  static double batterTo1B(Player b, {required bool lefty, bool slap = false, double spray = 0}) =>
+      exitTime(b, lefty: lefty, slap: slap, spray: spray) + Sprint.of(b.run).time(basePath);
 
   /// 打者が n 個先の塁まで：塁を回るたびに膨らんで減速し（BasePath）、最後の塁はスライディングで足が届くまで（一塁は駆け抜け）
   static double batterToBase(Player b, int bases, {required bool lefty}) =>

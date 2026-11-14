@@ -115,7 +115,7 @@ class SwingModel {
     }
     final dtRaw = p.time - p.time * p.speedKmh / vExp; // ＋＝球が予想より遅い → 打者は早い
     final sigT = (0.007 + (100 - b.meet) * 0.0001) * noiseScale * timingScale * (twoStrikes ? 0.9 : 1.0) * vMul;
-    final dt = dtRaw * recog + _g(rnd) * sigT;
+    final dt = dtRaw * recog + _g(rnd) * sigT + b.pull * 0.004;
     // ── スイング ──
     var vBat = batSpeed(b) * speedMul * (twoStrikes ? 0.97 : 1.0);
     if (dt.abs() > 0.06) vBat *= 0.85; // 大きく崩されると当てにいくだけ
@@ -163,13 +163,21 @@ class SwingModel {
         ? 0.5 * (p.aLate.x - p.guessALate.x) * tRem * tRem * latePow * (b.lefty ? 1 : -1)
         : 0.5 * p.aLate.x * tRem * tRem * latePow * (b.lefty ? 1 : -1) * (p.fastLike ? 0 : 1);
     final ex = outside * 0.09 + exLate + _g(rnd) * (Spec.bat ? Spec.sigEx(b.meet) : (0.02 + (100 - b.meet) * 0.0002) * noiseScale);
-    // ── 横の向き（＋＝右翼側）──
+    // ── 横の向き（＋＝右翼側）とスイング円弧の幾何学・加速プロファイル ──
     final pullSign = b.lefty ? 1.0 : -1.0;
-    final beta = pullSign * (b.pull * 12 + (-outside) * 10 + dt * 2200) + betaBias;
-    final im = Impact(vBat, attack, beta, ey, ex, b.bat.effectiveMass);
+    final beta = pullSign * (b.pull * 8 + (-outside) * 10 + dt * 2200) + betaBias;
+    final thetaPull = pullSign * beta;
+    // 円弧半径 ~0.55m：垂直から傾くほど軌道が体側へ引かれ、芯が先端(+)側へズレる
+    final arcEx = 0.55 * (1.0 - m.cos(beta * deg));
+    final exFull = ex + arcEx;
+    // 人体のスイング加速：体前（+8°＋引っ張りポイント）で最大速度に達し、振り遅れ側は加速途中
+    final thetaPeak = 8.0 + b.pull * 6.0;
+    final dTheta = thetaPull - thetaPeak;
+    final arcSpeed = dTheta < 0 ? m.cos(m.min(50.0, dTheta.abs() * 0.65) * deg) : m.cos(m.min(35.0, dTheta * 0.35) * deg);
+    final im = Impact(vBat * arcSpeed, attack, beta, ey, exFull, b.bat.effectiveMass);
     // タイミングが大きくずれると、バットが打つ場所を通り過ぎている（早すぎ）／まだ来ていない（遅すぎ）
     final missT = ((dt.abs() - 0.025) / 0.03).clamp(0.0, 1.0);
-    if (ey.abs() >= BatPhysics.reach || ex > 0.17 || ex < -0.42 || rnd.nextDouble() < missT || (big > 0 && rnd.nextDouble() < bigWhiff * big)) return SwingOutcome(true, im, null, dt);
+    if (ey.abs() >= BatPhysics.reach || exFull > 0.17 || exFull < -0.42 || rnd.nextDouble() < missT || (big > 0 && rnd.nextDouble() < bigWhiff * big)) return SwingOutcome(true, im, null, dt);
     final ball = BatPhysics.collide(im, p.vel, p.omega, corBase: BatPhysics.cor0 * corScale * (1 - (p.stuff - 74) * stuffCor).clamp(0.9, 1.06)); // 球威：押し込まれて打球が弱い
     return SwingOutcome(false, im, ball, dt);
   }

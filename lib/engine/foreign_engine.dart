@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'abroad_stats.dart';
 import 'velo.dart';
 import '../utils/name_data.dart';
 import '../models/player.dart';
@@ -90,45 +91,12 @@ class ForeignEngine {
     return q >= 50 ? '1A' : '米独立';
   }
 
-  static String _f3(double v) => v.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '');
-
-  /// share：その年にそのリーグで出た割合（2つのレベルを行き来した年は 1 未満）
-  static String _line(Player p, String lg, int year, double share, Random r) {
-    final winter = lg == 'ドミニカンリーグ' || lg == '豪州リーグ';
-    if (p.isPitcher) {
-      final q = (p.pitchPower + p.control) / 2;
-      final era = (4.1 - (q - 60) * 0.06 + (_eraAdj[lg] ?? 0) + _g(r) * 0.55).clamp(1.10, 7.80);
-      final starter = p.stamina >= 55;
-      var games = starter ? 14 + r.nextInt(17) : 28 + r.nextInt(36);
-      if (share < 1) games = (games * share).round().clamp(3, 40);
-      if (winter) games = (games * 0.45).round().clamp(4, 30);
-      final ip = games * (starter ? 4.8 + r.nextDouble() * 1.2 : 0.9 + r.nextDouble() * 0.3);
-      final k = (ip * (0.72 + (p.pitchPower - 55) * 0.012 + _g(r) * 0.06)).round().clamp(0, 400);
-      final dec = starter ? games * 0.62 : games * 0.18;
-      final wr = (0.5 + (4.2 - era) * 0.07).clamp(0.2, 0.8);
-      final w = (dec * wr).round(), l = (dec * (1 - wr)).round();
-      final sv = !starter && p.pitchPower >= 65 && r.nextDouble() < 0.4 ? (games * (0.3 + r.nextDouble() * 0.3)).round() : 0;
-      return '$year　$lg　$games試合 $w勝$l敗${sv > 0 ? '$sv S' : ''} 防御率${era.toStringAsFixed(2)} ${(ip * 3).round() ~/ 3}${(ip * 3).round() % 3 == 0 ? '' : '.${(ip * 3).round() % 3}'}回 $k奪三振';
-    }
-    var games = 95 + r.nextInt(50);
-    if (lg == 'KBO') games = 100 + r.nextInt(45);
-    if (lg == 'CPBL') games = 80 + r.nextInt(40);
-    if (share < 1) games = (games * share).round().clamp(8, 120);
-    if (winter) games = 18 + r.nextInt(28);
-    final avg = (0.248 + (p.contact - 60) * 0.0028 + (_avgAdj[lg] ?? 0) + _g(r) * 0.016).clamp(0.170, 0.370);
-    final ab = (games * (3.4 + r.nextDouble() * 0.5)).round();
-    final hr = max(0, (games * max(0.015, (p.power - 45) * 0.0055) * (_hrMul[lg] ?? 1) + _g(r) * 3).round());
-    final rbi = (hr * 2.5 + games * 0.22 + _g(r) * 6).round().clamp(hr, 200);
-    final obp = avg + 0.062 + (p.eye - 55) * 0.0012;
-    final slg = avg + hr / max(1, ab) * 3.1 + 0.075 + (p.power - 60) * 0.0015;
-    return '$year　$lg　$games試合 打率${_f3(avg)} $hr本 $rbi打点 OPS${_f3(obp + slg)}';
-  }
-
   /// 来日前の成績（新しい順）。lastYear は来日前の最後のシーズン
   static List<String> abroadRecord(Player p, String origin, int lastYear, Random r, {bool young = false, double? quality}) {
     final q = quality ?? p.ovr.toDouble();
     final maxSeasons = young ? (p.age - 17).clamp(1, 3) : 3 + r.nextInt(3);
     final out = <String>[];
+    final stats = <PlayerStats>[];
     for (var k = 0; k < maxSeasons; k++) {
       final lgs = _leagues(origin, q, k, young, r);
       // 2つのレベルを行き来した年は、試合数を分け合う（冬のリーグは別）
@@ -136,9 +104,21 @@ class ForeignEngine {
       final up = 0.25 + r.nextDouble() * 0.4;
       for (final lg in lgs) {
         final share = main.length < 2 || !main.contains(lg) ? 1.0 : (lg == main.first ? up : 1.0 - up + 0.1);
-        out.add(_line(p, lg, lastYear - k, share, r));
+        final res = AbroadStats.generateForeign(
+          p,
+          lg,
+          lastYear - k,
+          share,
+          r,
+          avgAdj: _avgAdj[lg] ?? 0,
+          eraAdj: _eraAdj[lg] ?? 0,
+          hrMul: _hrMul[lg] ?? 1,
+        );
+        out.add(res.$1);
+        stats.add(res.$2);
       }
     }
+    p.abroadStats = stats;
     return out;
   }
 

@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../engine/abroad_stats.dart';
 import '../engine/growth_curve.dart';
 import 'player_avatar.dart';
 import '../engine/scout_comment.dart';
@@ -521,28 +522,14 @@ class _ScoutReportState extends State<ScoutReport> {
   List<List<String>> _abroadRows() {
     final out = <List<String>>[];
     final lineRe = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)\s*[　 ]\s*(.+)$');
-    for (final line in p.abroad.reversed) {
+    for (var i = p.abroad.length - 1; i >= 0; i--) {
+      final line = p.abroad[i];
       final lm = lineRe.firstMatch(line);
       if (lm == null) continue;
       final year = lm.group(1)!, lg = lm.group(2)!, body = lm.group(3)!;
-      if (_tblPitch) {
-        if (!body.contains('防御率')) continue;
-        final g = RegExp(r'(\d+)試合').firstMatch(body)?.group(1) ?? '-';
-        final wl = RegExp(r'(\d+)勝(\d+)敗').firstMatch(body);
-        final sv = RegExp(r'(\d+)\s*S').firstMatch(body)?.group(1) ?? '0';
-        final era = RegExp(r'防御率([\d.]+)').firstMatch(body)?.group(1) ?? '-';
-        final ip = RegExp(r'([\d.]+)回').firstMatch(body)?.group(1) ?? '-';
-        final k = RegExp(r'(\d+)奪三振').firstMatch(body)?.group(1) ?? '-';
-        out.add([year, lg, g, '-', wl?.group(1) ?? '-', wl?.group(2) ?? '-', '-', sv, '-', '-', ip, '-', '-', k, '-', '-', '-', era, '-']);
-      } else {
-        if (!body.contains('打率')) continue;
-        final g = RegExp(r'(\d+)試合').firstMatch(body)?.group(1) ?? '-';
-        final avg = RegExp(r'打率([.\d-]+)').firstMatch(body)?.group(1) ?? '-';
-        final hr = RegExp(r'(\d+)本').firstMatch(body)?.group(1) ?? '-';
-        final rbi = RegExp(r'(\d+)打点').firstMatch(body)?.group(1) ?? '-';
-        final ops = RegExp(r'OPS([.\d-]+)').firstMatch(body)?.group(1) ?? '-';
-        out.add([year, lg, g, '-', '-', '-', '-', '-', '-', hr, '-', rbi, '-', '-', '-', '-', '-', '-', avg, '-', '-', '-', ops]);
-      }
+      if (_tblPitch ? !body.contains('防御率') : !body.contains('打率')) continue;
+      final s = i < p.abroadStats.length ? p.abroadStats[i] : AbroadStats.fromLine(p, line, isPitcher: _tblPitch);
+      out.add(_cells(year, lg, s));
     }
     return out;
   }

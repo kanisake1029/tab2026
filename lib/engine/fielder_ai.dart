@@ -208,7 +208,10 @@ class FielderAI {
         if (back > 0.3) turn[f] = 0.25 * (1.2 - f.judgment / 100) * back;
         // 打球を見ながら走る（Sprint_Look）と全力より遅い。判断力の高い外野手は、遠い打球なら目を切って全力で落下点へ（Sprint_Blind）
         final blind = f.judgment >= 65 && dd > 20 && const {'LF', 'CF', 'RF'}.contains(f.role);
-        if (!blind) f.speed *= 0.93;
+        if (!blind) {
+          f.speed *= 0.93;
+          if (back > 0.3) f.speed *= (1.0 - 0.10 * back); // 背走しながら見上げる分の減速
+        }
       }
     }
     double delayOf(FielderState f) => groundish ? f.reactionDelay : f.reactionDelay + f.judge * (liner ? linerJudge : 0.5) * (1 + 0.8 * (headOn[f] ?? 0)) + (turn[f] ?? 0);

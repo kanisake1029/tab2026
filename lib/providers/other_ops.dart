@@ -220,6 +220,7 @@ extension OtherOps on AppState {
       p.faService = 0;
       final memo = [for (final l in src.abroad) l.replaceFirst('日本独立', OtherLeagueEngine.leagues[x.$1.leagueId]?.name ?? '独立')];
       p.abroad = memo;
+      p.abroadStats = [for (final s in src.abroadStats) PlayerStats.fromJson(s.toJson())];
       return Prospect(player: p, year: year, category: '独立', school: x.$1.name, ikuseiTier: ikusei, curBias: r.nextInt(9) - 4, memo: memo.isEmpty ? ['（独立リーグでの記録はまだありません）'] : memo);
     }
 
@@ -375,7 +376,10 @@ extension OtherOps on AppState {
     final lg = OtherLeagueEngine.leagues[t.leagueId]!;
     final back = w.fromNpb.containsKey(p.id);
     // 今季ここまでの他リーグの成績を来歴に残してから NPB へ
-    if (p.seasonStats.games > 0) p.abroad.insert(0, OtherLeagueEngine.recordLine(p, lg, t, lg.seasonYear(currentDate)));
+    if (p.seasonStats.games > 0) {
+      p.abroad.insert(0, OtherLeagueEngine.recordLine(p, lg, t, lg.seasonYear(currentDate)));
+      p.abroadStats.insert(0, PlayerStats.fromJson(p.seasonStats.toJson()));
+    }
     t.players.remove(p);
     OtherLeagueEngine.fillRoster(t, w.seasonYear, Random(p.id.hashCode));
     w.fromNpb.remove(p.id);

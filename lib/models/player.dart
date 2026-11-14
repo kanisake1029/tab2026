@@ -339,6 +339,7 @@ class Player {
   String styleShift = '';      // ベテランのモデルチェンジ：'技巧派'（投手）・'職人'（野手）。'' はなし
   int styleShiftYear = 0;      // 転向した年
   List<String> abroad;         // 海外での成績（外国人。来日前のシーズンごと）
+  List<PlayerStats> abroadStats; // 海外・独立リーグの詳細成績（abroad と同じ順）
   int talent;                  // 才能（1〜100）。成長率 ×0.7〜×1.5
   int ambition;                // 向上心（1〜100）。成長率 ×0.2〜×3.0
   int phaseShift;              // 成長フェーズの戻り（年）。過渡期・衰退期から1つ前のフェーズに戻った分だけ、年齢を若く数える
@@ -474,6 +475,7 @@ class Player {
     this.origin = '',
     this.birthplace = '',
     List<String>? abroad,
+    List<PlayerStats>? abroadStats,
     int? talent,
     int? ambition,
     this.phaseShift = 0,
@@ -496,6 +498,7 @@ class Player {
        potential = potential ?? {},
        quick = quick ?? _seededTrait(id, 0x51c7), // 生成時は平均50。初期データ・ドラフト・外国人で +10 して平均60にする
        abroad = abroad ?? [],
+       abroadStats = abroadStats ?? [],
        talent = talent ?? _seededTrait(id, 0x7a1e),
        ambition = ambition ?? _seededTrait(id, 0x3b9c),
        yearStart = yearStart ?? {},
@@ -751,6 +754,7 @@ class Player {
       if (styleShift.isNotEmpty) 'shift': styleShift,
       if (styleShiftYear != 0) 'shiftY': styleShiftYear,
       if (abroad.isNotEmpty) 'abroad': abroad,
+      if (abroadStats.isNotEmpty) 'abroadStats': [for (final s in abroadStats) s.toJson()],
       'talent': talent,
       'ambition': ambition,
       'phaseShift': phaseShift,
@@ -909,6 +913,7 @@ class Player {
       origin: json['origin'] ?? '',
       birthplace: json['bp'] ?? '',
       abroad: json['abroad'] != null ? List<String>.from(json['abroad']) : null,
+      abroadStats: json['abroadStats'] != null ? [for (final x in json['abroadStats'] as List) PlayerStats.fromJson(Map<String, dynamic>.from(x as Map))] : null,
       talent: json['talent'],
       ambition: json['ambition'],
       phaseShift: json['phaseShift'] ?? 0,

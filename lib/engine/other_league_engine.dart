@@ -399,8 +399,12 @@ class OtherLeagueEngine {
     for (final t in ts) {
       for (final p in t.players) {
         final s = p.seasonStats;
-        if (s.games > 0) p.abroad.insert(0, recordLine(p, lg, t, year));
+        if (s.games > 0) {
+          p.abroad.insert(0, recordLine(p, lg, t, year));
+          p.abroadStats.insert(0, PlayerStats.fromJson(s.toJson()));
+        }
         if (p.abroad.length > 12) p.abroad.removeLast();
+        if (p.abroadStats.length > 12) p.abroadStats.removeLast();
         p.seasonStats = PlayerStats(); // 通算（NPB の1軍）には足さない。他リーグの成績は来歴の行に残る
       }
       t.w = 0;

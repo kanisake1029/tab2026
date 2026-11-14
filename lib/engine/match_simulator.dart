@@ -1723,8 +1723,9 @@ class MatchSimulator {
         }
 
         FielderAI ai = FielderAI();
+        final double autoShift = ((pullTendency(batter) - 4.0) / 12.0).clamp(-0.15, 0.30) * (effHand == 'L' ? 1.0 : -1.0);
         List<FielderState> fielders = ai.initializeFielders(defenseMap, powerGuard: fldT == FieldTactic.powerGuard, infieldIn: fldT == FieldTactic.infieldIn, dpShift: fldT == FieldTactic.doublePlayShift, infieldBack: fldT == FieldTactic.infieldBack,
-            shift: fldT == FieldTactic.pullShift ? (effHand == 'L' ? 1.0 : -1.0) : (fldT == FieldTactic.oppositeShift ? (effHand == 'L' ? -0.6 : 0.6) : 0.0), holdRunner: state.runner1B != null);
+            shift: fldT == FieldTactic.pullShift ? (effHand == 'L' ? 1.0 : -1.0) : (fldT == FieldTactic.oppositeShift ? (effHand == 'L' ? -0.6 : 0.6) : autoShift), holdRunner: state.runner1B != null);
         final Map<String, List<double>> startPos = {for (final f in fielders) f.role: [f.x, f.y]};
         CatchResult? catchResult = isHomeRun ? null : ai.simulateDefense(trajectory, fielders);
         if (launchAngle < 10) _inc(catchResult == null ? 'gbc_抜けた' : (catchResult.isGroundBall ? 'gbc_${catchResult.fielderRole}' : 'gbc_ノーバン'));
@@ -1788,7 +1789,7 @@ class MatchSimulator {
         final runWeight = (fldT == FieldTactic.infieldIn ? 2.5 : 1.0) + (state.inning >= 8 && scoreDiff.abs() <= 1 ? 0.6 : 0.0);
         final resolver = PlayResolver(_rand, {for (final f in fielders) f.role: f}, startPos,
             runAdj: runAdj, hitRun: hitRun || goFrom == 1, // 盗塁のスタートを切っていた走者も、打球で先へ進みやすい
- infieldIn: fldT == FieldTactic.infieldIn, rightSide: rightSide, batterLefty: effHand == 'L', slowBall: vExit < 22, pressure: pressure, runWeight: runWeight);
+ infieldIn: fldT == FieldTactic.infieldIn, rightSide: rightSide, batterLefty: effHand == 'L', slowBall: vExit < 22, pressure: pressure, runWeight: runWeight, spray: horizontalAngle);
         ev.call = ai.lastCall;
         ev.fielderPlayers = defenseMap;
         ev.batterPlayer = batter;

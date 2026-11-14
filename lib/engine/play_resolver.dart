@@ -63,8 +63,9 @@ class PlayResolver {
   final bool slowBall;   // 打球が弱い（素手で拾ってスナップスロー）
   final double pressure; // 重圧（終盤・接戦・得点圏 0〜1）
   final double runWeight; // 1点の重み（前進守備・終盤の接戦で大きい）
+  final double spray; // 打球方向（度、＋＝一塁側）
   PlayResolver(this.r, this.fielders, this.start,
-      {this.runAdj = 0, this.hitRun = false, this.infieldIn = false, this.rightSide = false, this.batterLefty = false, this.slowBall = false, this.pressure = 0, this.runWeight = 1});
+      {this.runAdj = 0, this.hitRun = false, this.infieldIn = false, this.rightSide = false, this.batterLefty = false, this.slowBall = false, this.pressure = 0, this.runWeight = 1, this.spray = 0});
 
   static const List<List<double>> basePos = [[0, 0], [19.4, 19.4], [0, 38.8], [-19.4, 19.4], [0, 0]];
   static const Map<String, int> posNo = {'P': 1, 'C': 2, '1B': 3, '2B': 4, '3B': 5, 'SS': 6, 'LF': 7, 'CF': 8, 'RF': 9};
@@ -80,7 +81,7 @@ class PlayResolver {
   double _dist(double x0, double y0, double x1, double y1) => _hypot(x1 - x0, y1 - y0);
   double runSpeed(Player p) => Sprint.of(p.run).vTop;                      // 最高速（m/s。走力60で8.7、100で9.5）
   double runnerSpeed(Player p) => runSpeed(p);                              // 塁上の走者（リードから走っている）
-  double batterTo1B(Player b) => Running.batterTo1B(b, lefty: batterLefty); // 脱出＋加速＋全力（平均約4.1〜4.3秒）
+  double batterTo1B(Player b) => Running.batterTo1B(b, lefty: batterLefty, spray: spray); // 脱出＋加速＋全力（平均約4.1〜4.3秒）
   double infieldThrow(Player p) => ThrowStyle.standard.speed * ThrowStyle.armFactor(p); // 内野の送球（142km/h 基準）
   double outfieldThrow(Player p) => ThrowStyle.crowHop.speed * ThrowStyle.armFactor(p); // 外野の遠投（155km/h 基準。遠いほど失速）
   /// 内野手が捕ってから塁へ投げて届くまで（投げ方は時間が最短のものを選ぶ）
@@ -153,7 +154,10 @@ class PlayResolver {
         hold = 0.30; // 二遊間の近い送球はトス（グラブトス・バックトス）
       } else {
         final bs = ThrowStyle.best(hp, d, ballSlow: slowBall, deepHole: hy > 40 && hx.abs() > 6);
-        fl = bs.t;
+        final sp = _startOf(holder);
+        final rangeD = _dist(hx, hy, sp[0], sp[1]);
+        final offBal = rangeD > 5.0 ? ((rangeD - 5.0) * 0.015).clamp(0.0, 0.14) : 0.0;
+        fl = bs.t + offBal;
         hold = bs.style.transferOf(hp) + hp.glove.transferDelay;
       }
       final tThrow = max(tr + fl, coverAt(base));
