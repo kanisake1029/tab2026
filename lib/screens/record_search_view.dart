@@ -8,6 +8,7 @@ import '../providers/app_state.dart';
 import '../utils/standings.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
+import '../widgets/wheel_picker.dart';
 
 const _ink = Color(0xFF1C1917);
 const _sub = Color(0xFF78716C);
@@ -54,16 +55,8 @@ class _RecordSearchViewState extends State<RecordSearchView> {
         _ => true,
       };
 
-  Widget _chips<T>(List<(T, String)> items, T value, ValueChanged<T> on) => Wrap(spacing: 4, runSpacing: 4, children: [
-        for (final it in items)
-          ChoiceChip(
-            label: Text(it.$2, style: const TextStyle(fontSize: 12)),
-            selected: it.$1 == value,
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            onSelected: (_) => setState(() => on(it.$1)),
-          ),
-      ]);
+  Widget _chips<T>(List<(T, String)> items, T value, ValueChanged<T> on, {double minWidth = 64}) =>
+      uniformChipRow(items, value, (v) => setState(() => on(v)), height: 28, minWidth: minWidth);
 
   Widget _label(String s) => Padding(padding: const EdgeInsets.only(top: 6, bottom: 2), child: Text(s, style: const TextStyle(fontSize: 11, color: _sub)));
 

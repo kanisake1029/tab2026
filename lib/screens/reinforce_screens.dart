@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/wheel_picker.dart';
 import 'amateur_screen.dart';
 import 'contract_screen.dart';
 import '../engine/other_league_engine.dart';
@@ -894,9 +895,12 @@ class _TradeSearchScreenState extends State<TradeSearchScreen> {
                   label: Text('${byKey[e.key]!.label} ${e.value}${byKey[e.key]!.atMost ? '以下' : '以上'}', style: const TextStyle(fontSize: 12)),
                   onPressed: () async {
                     final c = byKey[e.key]!;
-                    final v = await showDialog<int>(
-                      context: context,
-                      builder: (_) => SimpleDialog(title: Text(c.label), children: [for (final s in c.steps) SimpleDialogOption(onPressed: () => Navigator.pop(context, s), child: Text('$s${c.atMost ? '以下' : '以上'}'))]),
+                    final v = await showWheelPicker<int>(
+                      context,
+                      title: c.label,
+                      items: c.steps,
+                      initial: c.steps.contains(e.value) ? e.value : c.steps.first,
+                      label: (s) => '$s${c.atMost ? '以下' : '以上'}',
                     );
                     if (v != null) setState(() => _min[e.key] = v);
                   },

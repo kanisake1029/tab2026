@@ -3,6 +3,7 @@ import '../engine/body_gen.dart';
 import '../models/pitching_form.dart';
 import '../models/player.dart';
 import '../models/equipment.dart';
+import 'wheel_picker.dart';
 
 const _sub = Color(0xFF78716C);
 
@@ -93,7 +94,19 @@ class _BodyFormEditorState extends State<BodyFormEditor> {
         child: Row(children: [
           SizedBox(width: 78, child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Color(0xFF334155)))),
           InkWell(onTap: v > lo ? () => _set(() => set(v - 1)) : null, child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.remove, size: 16, color: Color(0xFF64748B)))),
-          SizedBox(width: 58, child: Text('$v$unit', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800))),
+          InkWell(
+            onTap: () async {
+              final picked = await showWheelPicker<int>(
+                context,
+                title: label,
+                items: [for (var i = lo; i <= hi; i++) i],
+                initial: v.clamp(lo, hi),
+                label: (x) => '$x$unit',
+              );
+              if (picked != null) _set(() => set(picked));
+            },
+            child: SizedBox(width: 58, child: Text('$v$unit', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted))),
+          ),
           InkWell(onTap: v < hi ? () => _set(() => set(v + 1)) : null, child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.add, size: 16, color: Color(0xFF64748B)))),
           Expanded(
             child: SliderTheme(
@@ -148,43 +161,25 @@ class _BodyFormEditorState extends State<BodyFormEditor> {
         _sub2('バット'),
         _num('長さ', (bat.length * 10).round(), 'mm', 820, 880, (v) => bat.length = v / 10),
         _num('重さ', bat.weight.round(), 'g', 820, 980, (v) => bat.weight = v.toDouble()),
-        Wrap(spacing: 6, children: [
-          for (final b in Bat.balances) ChoiceChip(label: Text(b), selected: bat.balance == b, onSelected: (_) => _set(() => bat.balance = b)),
-        ]),
+        uniformChipRow([for (final b in Bat.balances) (b, b)], bat.balance, (v) => _set(() => bat.balance = v), height: 28, minWidth: 74),
         _num('短く持つ', bat.choke.round(), 'cm', 0, 8, (v) => bat.choke = v.toDouble()),
-        Wrap(spacing: 6, runSpacing: 4, children: [
-          const Text('バットの塗り：'),
-          for (final f in Bat.finishes.keys) ChoiceChip(label: Text(f), selected: bat.finish == f, onSelected: (_) => _set(() => bat.finish = f)),
-        ]),
-        Wrap(spacing: 6, runSpacing: 4, children: [
-          const Text('バットのメーカー：'),
-          for (final mk in makers) ChoiceChip(label: Text(mk), selected: bat.maker == mk, onSelected: (_) => _set(() => bat.maker = mk)),
-        ]),
+        const Text('バットの塗り', style: TextStyle(fontSize: 11.5, color: _sub)),
+        uniformChipRow([for (final f in Bat.finishes.keys) (f, f)], bat.finish, (v) => _set(() => bat.finish = v), height: 28, minWidth: 74),
+        const Text('バットのメーカー', style: TextStyle(fontSize: 11.5, color: _sub)),
+        uniformChipRow([for (final mk in makers) (mk, mk)], bat.maker, (v) => _set(() => bat.maker = v), height: 28, minWidth: 74),
         Text('振りやすさ ${(bat.swingSpeedRatio * 100).round()}%（標準 85cm・900g＝100）　当たり負けしにくさ（芯の有効質量）${(bat.effectiveMass * 1000).round()}g',
             style: const TextStyle(fontSize: 11.5, color: _sub)),
         _sub2('グラブ'),
         _num('大きさ', (glove.length * 10).round(), 'mm', 280, 330, (v) => glove.length = v / 10),
-        Wrap(spacing: 6, children: [
-          for (final pk in Glove.pockets) ChoiceChip(label: Text('ポケット$pk'), selected: glove.pocket == pk, onSelected: (_) => _set(() => glove.pocket = pk)),
-        ]),
-        Wrap(spacing: 6, runSpacing: 4, children: [
-          const Text('グラブの色：'),
-          for (final c in Glove.colors.keys)
-            ChoiceChip(avatar: CircleAvatar(backgroundColor: Color(Glove.colors[c]!), radius: 7), label: Text(c), selected: glove.color == c, onSelected: (_) => _set(() => glove.color = c)),
-        ]),
-        Wrap(spacing: 6, runSpacing: 4, children: [
-          const Text('ひもの色：'),
-          for (final c in Glove.colors.keys)
-            ChoiceChip(avatar: CircleAvatar(backgroundColor: Color(Glove.colors[c]!), radius: 7), label: Text(c), selected: glove.lace == c, onSelected: (_) => _set(() => glove.lace = c)),
-        ]),
-        Wrap(spacing: 6, runSpacing: 4, children: [
-          const Text('ウェブ：'),
-          for (final w in Glove.webs) ChoiceChip(label: Text(w), selected: glove.web == w, onSelected: (_) => _set(() => glove.web = w)),
-        ]),
-        Wrap(spacing: 6, runSpacing: 4, children: [
-          const Text('グラブのメーカー：'),
-          for (final mk in makers) ChoiceChip(label: Text(mk), selected: glove.maker == mk, onSelected: (_) => _set(() => glove.maker = mk)),
-        ]),
+        uniformChipRow([for (final pk in Glove.pockets) (pk, 'ポケット$pk')], glove.pocket, (v) => _set(() => glove.pocket = v), height: 28, minWidth: 84),
+        const Text('グラブの色', style: TextStyle(fontSize: 11.5, color: _sub)),
+        uniformChipRow([for (final c in Glove.colors.keys) (c, c)], glove.color, (v) => _set(() => glove.color = v), height: 28, minWidth: 64),
+        const Text('ひもの色', style: TextStyle(fontSize: 11.5, color: _sub)),
+        uniformChipRow([for (final c in Glove.colors.keys) (c, c)], glove.lace, (v) => _set(() => glove.lace = v), height: 28, minWidth: 64),
+        const Text('ウェブ', style: TextStyle(fontSize: 11.5, color: _sub)),
+        uniformChipRow([for (final w in Glove.webs) (w, w)], glove.web, (v) => _set(() => glove.web = v), height: 28, minWidth: 74),
+        const Text('グラブのメーカー', style: TextStyle(fontSize: 11.5, color: _sub)),
+        uniformChipRow([for (final mk in makers) (mk, mk)], glove.maker, (v) => _set(() => glove.maker = v), height: 28, minWidth: 74),
         Text('捕れる範囲 ${glove.reachBonus >= 0 ? '+' : ''}${(glove.reachBonus * 100).toStringAsFixed(1)}cm　握り替え +${glove.transferDelay.toStringAsFixed(2)}秒（規則：バット 106.7cm 以下、グラブ 33cm 以下）',
             style: const TextStyle(fontSize: 11.5, color: _sub)),
         _h('体格', reset: widget.bodyEditable ? _resetBody : null),
