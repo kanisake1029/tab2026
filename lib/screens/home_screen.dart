@@ -50,6 +50,9 @@ class _HomeScreenState extends State<HomeScreen> {
   StandingsKind? _kind; // null=日付から自動
   String? _league;
   String? _titleLeague; // タイトル争いのリーグ
+  String _newsFact = 'all'; // 'all' | 'confirmed' | 'rumor'
+  NewsTopic? _newsTopic; // null=すべて
+  String? _newsTeamId; // null=全球団
 
   AppState get app => widget.appState;
 
@@ -228,19 +231,52 @@ class _HomeScreenState extends State<HomeScreen> {
       final p = id == null ? null : t.players.where((x) => x.id == id).firstOrNull;
       final g = p == null ? '' : GradeUtils.getGrade(p.ovr);
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(color: _navy2, borderRadius: BorderRadius.circular(12)),
         child: Row(children: [
-          Text('${teamShort(t)} 先発', style: const TextStyle(fontSize: 12, color: _muted)),
-          const SizedBox(width: 10),
-          if (p != null) ConditionFace(level: p.conditionAt(app.currentDate), size: 16),
+          SizedBox(
+            width: 64,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(teamShort(t), maxLines: 1, style: const TextStyle(fontSize: 12, color: _muted)),
+            ),
+          ),
+          const SizedBox(width: 4),
+          const SizedBox(width: 26, child: Text('先発', maxLines: 1, style: TextStyle(fontSize: 12, color: _muted))),
+          const SizedBox(width: 6),
+          SizedBox(width: 16, child: p != null ? ConditionFace(level: p.conditionAt(app.currentDate), size: 16) : null),
           const SizedBox(width: 6),
           Expanded(child: Text(p == null ? '未定' : p.listName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis)),
           if (p != null) ...[
-            Text(g, style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.getGradeColor(g))),
-            Text(' ${p.ovr}', style: const TextStyle(color: Colors.white)),
-            const SizedBox(width: 10),
-            Text('${p.seasonStats.wins}勝${p.seasonStats.losses}敗 ${p.seasonStats.era.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: _muted)),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 36,
+              child: Row(children: [
+                Text(g, style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.getGradeColor(g))),
+                Text(' ${p.ovr}', style: const TextStyle(color: Colors.white, fontFeatures: [FontFeature.tabularFigures()])),
+              ]),
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 48,
+              child: Text(
+                '${p.seasonStats.wins}勝${p.seasonStats.losses}敗',
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(fontSize: 11.5, color: _muted, fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+            ),
+            const SizedBox(width: 4),
+            SizedBox(
+              width: 34,
+              child: Text(
+                p.seasonStats.era.toStringAsFixed(2),
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(fontSize: 11.5, color: _muted, fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+            ),
           ],
         ]),
       );
@@ -289,7 +325,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? () => _openActiveDraft(context)
                   : (!hasToday && app.seasonOver && !app.seasonFinished) ? () => _finishSeason(context) : () => _playToday(context),
               icon: Icon(app.draftPending || app.activeDraftPending ? Icons.how_to_vote : (hasToday ? Icons.sports_baseball : ((app.seasonOver && !app.seasonFinished) ? Icons.emoji_events : Icons.fast_forward))),
-              label: Text(app.draftPending ? 'ドラフト会議を始める' : app.activeDraftPending ? '現役ドラフトを行う' : (hasToday ? '今日の試合を開始する' : ((app.seasonOver && !app.seasonFinished) ? 'シーズンを終える（成績を確定）' : '${app.nextStopLabel()}まで進める')), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+              label: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(app.draftPending ? 'ドラフト会議を始める' : app.activeDraftPending ? '現役ドラフトを行う' : (hasToday ? '今日の試合を開始する' : ((app.seasonOver && !app.seasonFinished) ? 'シーズンを終える（成績を確定）' : '${app.nextStopLabel()}まで進める')), maxLines: 1, softWrap: false, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+              ),
             ),
           ),
           if (widget.onNavigate != null)
@@ -751,14 +790,16 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 記事の選手を探す範囲：全球団の選手と自由契約の選手
   List<Player> get _newsPeople => [for (final t in app.teams) ...t.players, ...app.freeAgents.map((f) => f.player)];
 
-  /// ニュース：移籍・故障・記録のお知らせを、ネットニュース風の記事にして並べる（押すと記事とコメント）
+  /// ニュース：確定情報（移籍・戦力外・ドラフト・故障・記録）と憶測（予想）を球団・要素別に整理して表示
   Widget _newsArticles() {
     final everyone = _newsPeople;
+    Team? teamById(String? id) => id == null ? null : app.teams.where((t) => t.id == id).firstOrNull;
     Team? teamOf(Player p) {
       for (final t in app.teams) {
         if (t.players.contains(p)) return t;
       }
-      return null;
+      final fa = app.freeAgents.where((f) => f.player.id == p.id).firstOrNull;
+      return fa == null ? null : teamById(fa.fromTeamId);
     }
 
     final today = app.currentDate;
@@ -785,14 +826,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final dated = <(DateTime, ItemNews)>[];
-    // お知らせから（移籍・故障・記録で選手の名前が出てくるもの）
+    // お知らせから（まとめ行・戦力外個別行は下のまとめ記事生成で綺麗に束ねる）
     for (final n in app.news) {
       final (date, text) = NewsKind.split(n);
+      if (text.startsWith('ドラフト1位：') || text.startsWith('自球団の指名：') || text.endsWith('に戦力外を通告しました')) continue;
       final topic = ItemNews.topicOf(text);
       if (topic == null) continue;
       final p = playerInText(text, everyone);
       if (p == null) continue;
-      // トレードは、名前の出てくる全員（今の球団つき）
       final involved = <(Player, Team?)>[];
       if (text.contains('トレード成立')) {
         final seen = <String>{};
@@ -801,8 +842,50 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
       dated.add((dayOf(date), ItemNews.of(date, text, topic, player: p, team: teamOf(p), myTeamId: app.myTeamId, stars: stars, involved: involved)));
-      if (dated.length >= 40) break;
+      if (dated.length >= 50) break;
     }
+
+    // 戦力外・育成満了：球団×日付ごとに1本の記事へまとめる（全員を記載）
+    final relRe = RegExp(r'^(\d+)/(\d+)(?:/(\d+))?\s+(\S+)\s+(.+?)(?:（\d+歳）)?\s*(?:戦力外通告|育成契約満了)$');
+    final relGroups = <String, (DateTime, Team?, List<Player>)>{};
+    for (final tx in app.transactions.take(400)) {
+      final m = relRe.firstMatch(tx);
+      if (m == null) continue;
+      final y = int.parse(m.group(1)!), mo = int.parse(m.group(2)!), da = m.group(3) != null ? int.parse(m.group(3)!) : 15;
+      final d = DateTime(y, mo, da);
+      final tShort = m.group(4)!, name = m.group(5)!;
+      final p = everyone.where((x) => x.registeredName == name).firstOrNull;
+      if (p == null) continue;
+      final t = app.teams.where((x) => teamShort(x) == tShort).firstOrNull ?? teamOf(p);
+      final key = '${y}/${mo}/${da}|${t?.id ?? tShort}';
+      final g = relGroups.putIfAbsent(key, () => (d, t, <Player>[]));
+      if (!g.$3.any((x) => x.id == p.id)) g.$3.add(p);
+    }
+    for (final g in relGroups.values) {
+      final md = '${g.$1.month}/${g.$1.day}';
+      dated.add((g.$1, ItemNews.releaseBatch(md, g.$2, g.$3, myTeamId: app.myTeamId)));
+    }
+
+    // ドラフト指名結果：球団ごとに整理して記事化
+    final draftYear = app.draftDoneYear;
+    final draftList = draftYear > 0 ? app.draftBook[draftYear] : null;
+    if (draftList != null && draftList.isNotEmpty) {
+      final byTeam = <String, List<({String round, Player player, String school})>>{};
+      for (final e in draftList) {
+        final tid = '${e['team'] ?? ''}', pid = '${e['pid'] ?? ''}';
+        final p = everyone.where((x) => x.id == pid).firstOrNull;
+        if (p == null) continue;
+        final round = e['round'] == '補償' ? '補償' : '${e['ikusei'] == true ? '育成' : ''}${e['round']}位';
+        byTeam.putIfAbsent(tid, () => []).add((round: round, player: p, school: '${e['school'] ?? ''}'));
+      }
+      final dd = DateTime(draftYear, 10, 24);
+      for (final entry in byTeam.entries) {
+        final t = teamById(entry.key);
+        if (t == null || entry.value.isEmpty) continue;
+        dated.add((dd, ItemNews.draftSummary('${dd.month}/${dd.day}', t, entry.value, myTeamId: app.myTeamId)));
+      }
+    }
+
     // 新外国人の入団（入団の記録から）
     final txRe = RegExp(r'^(\d+)/(\d+)/(\d+) (\S+) (.+?)（外国人(・育成)?・(.+?)）と契約');
     for (final tx in app.transactions.take(300)) {
@@ -816,7 +899,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final t = teamOf(p);
       final text = '${m.group(4)}が${ik ? '育成選手として' : ''}新外国人の$name（${p.origin.isEmpty ? '' : '${p.origin}出身・'}${m.group(7)}）と契約した';
       dated.add((d, ItemNews.of('${d.month}/${d.day}', text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
-      if (dated.length >= 60) break;
+      if (dated.length >= 80) break;
     }
     // トレード予想（毎週月曜）
     for (final r in TradeRumor.recent(app.teams, today, myTeamId: app.myTeamId, count: 4)) {
@@ -826,13 +909,85 @@ class _HomeScreenState extends State<HomeScreen> {
     Player? byId(String id) => everyone.where((p) => p.id == id).firstOrNull;
     dated.addAll(OffseasonNews.predictions(teams: app.teams, faCases: app.faCases, freeAgents: app.freeAgents, foreignPool: app.foreignPool, today: today, playerById: byId, myTeamId: app.myTeamId));
     dated.sort((x, y) => y.$1.compareTo(x.$1));
-    final items = [for (final x in dated.take(45)) x.$2];
+
+    final filtered = dated.map((e) => e.$2).where((it) {
+      if (_newsFact == 'confirmed' && !it.isConfirmed) return false;
+      if (_newsFact == 'rumor' && it.isConfirmed) return false;
+      if (_newsTopic != null && it.topic != _newsTopic) return false;
+      if (_newsTeamId != null && it.team?.id != _newsTeamId && it.playerTeam?.id != _newsTeamId) return false;
+      return true;
+    }).take(45).toList();
+
+    final leagueTeams = app.teams.where((t) => t.league == 'CL' || t.league == 'PL').toList();
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (items.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('移籍・故障・記録のニュースはまだありません', style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)))),
-        for (final it in items) ItemNewsCard(news: it, teams: app.teams, myTeamId: app.myTeamId, date: app.currentDate),
+        Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'all', label: Text('すべて')),
+              ButtonSegment(value: 'confirmed', label: Text('確定情報')),
+              ButtonSegment(value: 'rumor', label: Text('予想(憶測)')),
+            ],
+            selected: {_newsFact},
+            showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+            onSelectionChanged: (v) => setState(() {
+              _newsFact = v.first;
+              if (_newsFact == 'rumor') _newsTopic = NewsTopic.rumor;
+              if (_newsFact == 'confirmed' && _newsTopic == NewsTopic.rumor) _newsTopic = null;
+            }),
+          ),
+          DropdownButtonHideUnderline(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+              child: DropdownButton<String?>(
+                value: _newsTeamId,
+                isDense: true,
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _navy),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('全球団')),
+                  for (final t in leagueTeams) DropdownMenuItem(value: t.id, child: Text(teamShort(t))),
+                ],
+                onChanged: (v) => setState(() => _newsTeamId = v),
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: const Text('全要素'),
+                selected: _newsTopic == null,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => setState(() => _newsTopic = null),
+              ),
+            ),
+            for (final tp in NewsTopic.values)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  label: Text(ItemNews.label(tp)),
+                  selected: _newsTopic == tp,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => setState(() {
+                    _newsTopic = _newsTopic == tp ? null : tp;
+                    if (_newsTopic == NewsTopic.rumor) _newsFact = 'rumor';
+                    if (_newsTopic != null && _newsTopic != NewsTopic.rumor && _newsFact == 'rumor') _newsFact = 'all';
+                  }),
+                ),
+              ),
+          ]),
+        ),
+        const SizedBox(height: 4),
+        if (filtered.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('条件に合うニュースはまだありません', style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)))),
+        for (final it in filtered) ItemNewsCard(news: it, teams: app.teams, myTeamId: app.myTeamId, date: app.currentDate),
       ]),
     );
   }

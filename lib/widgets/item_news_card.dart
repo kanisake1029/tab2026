@@ -50,7 +50,14 @@ Widget bodyParagraph(String p) => p.startsWith('■')
       )
     : Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(p, style: const TextStyle(fontSize: 14, height: 1.8, color: Color(0xFF1E293B))));
 
-Color topicColor(NewsTopic t) => switch (t) { NewsTopic.transfer => const Color(0xFF2563EB), NewsTopic.injury => const Color(0xFFDC2626), NewsTopic.record => const Color(0xFFB45309), NewsTopic.rumor => const Color(0xFF7C3AED) };
+Color topicColor(NewsTopic t) => switch (t) {
+      NewsTopic.transfer => const Color(0xFF2563EB),
+      NewsTopic.release => const Color(0xFF475569),
+      NewsTopic.draft => const Color(0xFF0D9488),
+      NewsTopic.injury => const Color(0xFFDC2626),
+      NewsTopic.record => const Color(0xFFB45309),
+      NewsTopic.rumor => const Color(0xFF7C3AED),
+    };
 
 /// ニュース一覧の1件（顔・種類・見出し・日付）。押すと記事とコメントを浮かせて出す
 class ItemNewsCard extends StatelessWidget {
@@ -82,6 +89,18 @@ class ItemNewsCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(3)),
                   child: Text(ItemNews.label(n.topic), style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w800)),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: n.isConfirmed ? const Color(0xFFE2E8F0) : const Color(0xFFF3E8FF),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    n.isConfirmed ? '確定' : '憶測',
+                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: n.isConfirmed ? const Color(0xFF334155) : const Color(0xFF7C3AED)),
+                  ),
                 ),
                 const SizedBox(width: 6),
                 if (n.team != null) ...[

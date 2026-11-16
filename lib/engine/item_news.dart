@@ -7,8 +7,8 @@ import 'news_talk.dart';
 /// 大リーグの選手（比べるコメント用）：選手・球団の略称・元のNPB球団（元NPB でなければ null）
 typedef MlbStar = (Player, String, String?);
 
-/// お知らせのうち、ネットニュース風の記事にするもの（移籍・怪我・記録）
-enum NewsTopic { transfer, injury, record, rumor }
+/// お知らせのうち、ネットニュース風の記事にするもの（確定：移籍・戦力外・ドラフト・故障・記録／憶測：予想）
+enum NewsTopic { transfer, release, draft, injury, record, rumor }
 
 /// お知らせ1件から作る記事：見出し・リード・本文（選手の成績など）・ファンのコメント（自球団／他球団）
 class ItemNews {
@@ -24,14 +24,25 @@ class ItemNews {
   final Team? playerTeam;
   ItemNews(this.topic, this.date, this.text, this.headline, this.body, this.player, this.team, this.teamFans, this.otherFans, {Team? playerTeam}) : playerTeam = playerTeam ?? team;
 
-  static String label(NewsTopic t) => switch (t) { NewsTopic.transfer => '移籍', NewsTopic.injury => '故障', NewsTopic.record => '記録', NewsTopic.rumor => '予想' };
+  bool get isConfirmed => topic != NewsTopic.rumor;
 
-  /// お知らせの文から、記事にする種類を決める（登録・抹消・昇格などの入れ替えは記事にしない）
+  static String label(NewsTopic t) => switch (t) {
+        NewsTopic.transfer => '移籍',
+        NewsTopic.release => '戦力外',
+        NewsTopic.draft => 'ドラフト',
+        NewsTopic.injury => '故障',
+        NewsTopic.record => '記録',
+        NewsTopic.rumor => '予想',
+      };
+
+  /// お知らせの文から、記事にする種類を決める（登録・抹消・昇格などの入れ替えやまとめ行は個別に扱う）
   static NewsTopic? topicOf(String t) {
     bool has(List<String> ws) => ws.any(t.contains);
     if (has(['リーグ規定', 'ポストシーズン', '雨天', '提案', 'キャンプ', 'スポンサー', 'グッズ', '施設'])) return null;
     if (has(['負傷', '悪化', '全治', '故障', '離脱'])) return NewsTopic.injury;
-    if (has(['トレード', 'FA', '入団', '退団', '戦力外', '獲得', '移籍', 'ドラフト', '引退', '自由契約', '新外国人', '補償', '加入'])) return NewsTopic.transfer;
+    if (has(['戦力外', '自由契約', '退団', '引退', '育成契約満了'])) return NewsTopic.release;
+    if (has(['ドラフト'])) return NewsTopic.draft;
+    if (has(['トレード', 'FA', '入団', '獲得', '移籍', '新外国人', '補償', '加入', '支配下登録', '育成選手'])) return NewsTopic.transfer;
     if (has(['勝目', '本塁打', '記録', '達成', '猛打', '完封', 'MVP', 'タイトル', '連続', '号'])) return NewsTopic.record;
     return null;
   }
@@ -85,6 +96,14 @@ class ItemNews {
               : [if (name.isNotEmpty) ...['$nameお大事に', '$name、また元気な姿見せてくれ'], if (t.isNotEmpty) '$tにとっては痛いな', 'これはチャンスかもしれん', '主力の離脱はきついな', 'けがだけはどうしようもない'];
         case NewsTopic.rumor:
           return const [];
+        case NewsTopic.draft:
+          return mine
+              ? [if (name.isNotEmpty) ...['$nameようこそ！', '$nameの将来性に期待'], '良い指名できたな', '将来の主軸候補や']
+              : [if (name.isNotEmpty) '$nameいい選手取ったな', '今年のドラフトは豊作やな'];
+        case NewsTopic.release:
+          return mine
+              ? [if (name.isNotEmpty) ...['$name今までありがとう', '$nameには新天地で頑張ってほしい'], '寂しくなるな…', 'フロントの判断を信じるしかない']
+              : [if (name.isNotEmpty) ...['$nameうちで拾ってくれんかな', '$nameはまだやれると思う'], '世代交代やな'];
         case NewsTopic.record:
           return mine
               ? [if (name.isNotEmpty) ...['$nameすごすぎる！', '$nameおめでとう！', '$nameはうちの誇りや', '$nameの記念グッズ出してくれ'], 'こういうニュースは嬉しい', 'まだまだ記録伸ばしてほしい', '現地で見たかった']
@@ -134,7 +153,7 @@ class ItemNews {
       }
     }
 
-    final positive = topic == NewsTopic.record || (topic == NewsTopic.transfer && (inn || stay));
+    final positive = topic == NewsTopic.record || topic == NewsTopic.draft || (topic == NewsTopic.transfer && (inn || stay));
     List<FanComment> fans(bool mine) {
       final lines = [...fanLines(mine), if (p != null) ...NewsTalk.fanInsight(p, r), ...(NewsTalk.generic(positive)..shuffle(r)).take(2)];
       final names = mine
@@ -145,7 +164,7 @@ class ItemNews {
 
     // 見出し：故障は「〇〇・名前が肉離れで離脱　全治約14日」の形に
     var head = _headline(text);
-    final released = topic == NewsTopic.transfer && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay;
+    final released = (topic == NewsTopic.release || topic == NewsTopic.transfer) && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay;
     if (released) {
       head = '${p.registeredName}、新天地でチャンスをつかみ取れるか${t.isEmpty ? '' : '　$tを離れる'}';
       body.add(p.age <= 28
@@ -217,6 +236,87 @@ class ItemNews {
       fanList(r, lines(gain, lose), nm(mine), positive: true, extra: 2),
       fanList(r, lines(other == ta ? pa : pb, other == ta ? pb : pa), nm(other), positive: true, extra: 1),
       playerTeam: keyTeam,
+    );
+  }
+
+  /// 戦力外・育成満了の球団別まとめ記事（同日の複数人通告も全員を取り上げる）
+  static ItemNews releaseBatch(String date, Team? team, List<Player> players, {String? myTeamId}) {
+    final r = Random(Object.hash(date, team?.id, players.length, players.first.id));
+    final critic = NewsTalk.critics[r.nextInt(NewsTalk.critics.length)];
+    final t = team == null ? '' : _short(team);
+    final lead = players.first;
+    final head = players.length == 1
+        ? '${t.isEmpty ? '' : '【$t】'}${lead.registeredName}に戦力外通告'
+        : '${t.isEmpty ? '' : '【$t】'}${lead.registeredName}ら${players.length}選手に戦力外通告';
+    final names = players.map((p) => '${p.registeredName}（${p.age}歳・${p.isPitcher ? '投手' : p.mainPosition}）').join('、');
+    final body = <String>[
+      '${t.isEmpty ? '' : '$tは'}$names${players.length > 1 ? 'の計${players.length}選手' : ''}に戦力外通告を行った。',
+      if (players.length > 1) '■対象選手',
+      for (final p in players) '${NewsTalk.prof(p)}　${NewsTalk.stats(p)}',
+      '野球評論家の$critic氏は「${NewsTalk.strength(lead)}はまだ評価できる部分もある。${players.length > 1 ? '他球団を含め再起の場を見つけられるか注目したい' : '環境が変われば化ける可能性はある'}」と語る。',
+    ];
+    final mineLines = [
+      for (final p in players.take(4)) '${p.registeredName}今までありがとう',
+      if (players.length > 1) '${players.length}人も整理するか…',
+      '寂しくなるな…',
+      '新天地で頑張ってほしい',
+      ...NewsTalk.fanInsight(lead, r),
+    ];
+    final otherLines = [
+      for (final p in players.take(3)) '${p.registeredName}うちで拾ってくれんかな',
+      'まだやれる選手おるやろ',
+      '世代交代やな',
+    ];
+    final nmMine = ['名無しの${t.isEmpty ? '野球' : t}ファン', '${t.isEmpty ? '' : t}一筋30年', 'ライトスタンドの民'];
+    final nmOther = ['他球団ファン', '野球好きの会社員', '中立の野球ファン'];
+    return ItemNews(
+      NewsTopic.release,
+      date,
+      body.first,
+      head,
+      body,
+      lead,
+      team,
+      fanList(r, mineLines, nmMine, positive: false),
+      fanList(r, otherLines, nmOther, positive: true),
+    );
+  }
+
+  /// ドラフト指名結果の球団別まとめ記事（1人だけの羅列ではなく球団ごとに整理）
+  static ItemNews draftSummary(String date, Team team, List<({String round, Player player, String school})> picks, {String? myTeamId}) {
+    final r = Random(Object.hash(date, team.id, picks.length));
+    final critic = NewsTalk.critics[r.nextInt(NewsTalk.critics.length)];
+    final t = _short(team);
+    final top = picks.first;
+    final head = picks.length == 1
+        ? '【$t】${top.round}で${top.player.registeredName}を指名'
+        : '【$t】ドラフト${picks.length}選手を指名　1位は${top.player.registeredName}（${top.school}）';
+    final body = <String>[
+      '$tはドラフト会議で計${picks.length}選手の交渉権を獲得した。',
+      '■指名選手一覧',
+      for (final pk in picks) '${pk.round}　${pk.player.registeredName}（${pk.player.isPitcher ? '投手' : pk.player.mainPosition}・${pk.school}・${pk.player.age}歳）',
+      '野球評論家の$critic氏は「目玉の${top.player.registeredName}を中心に、チームの補強ポイントに沿った指名になった」と評価する。',
+    ];
+    final mineLines = [
+      '${top.player.registeredName}ようこそ$tへ！',
+      '${picks.length}人とも1軍で見たいな',
+      '今年のドラフトは楽しみな選手が多い',
+      ...NewsTalk.fanInsight(top.player, r),
+    ];
+    final otherLines = [
+      '$tのドラフトいい選手取ったな',
+      '${top.player.registeredName}は将来の主力になりそう',
+    ];
+    return ItemNews(
+      NewsTopic.draft,
+      date,
+      body.first,
+      head,
+      body,
+      top.player,
+      team,
+      fanList(r, mineLines, ['名無しの${t}ファン', '${t}党', 'ライトスタンドの民'], positive: true),
+      fanList(r, otherLines, ['他球団ファン', '野球好きの会社員'], positive: true),
     );
   }
 }

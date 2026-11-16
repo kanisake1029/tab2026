@@ -456,11 +456,16 @@ class _ScoutReportState extends State<ScoutReport> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${x.name}　${x.speed}km・${x.ratio}%', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
               const SizedBox(height: 2),
-              Wrap(spacing: 3, runSpacing: 2, children: [
-                if (x.breakLevel > 0) _chip('変化', x.breakLevel),
-                _chip('キレ', x.sharpness),
-                _chip('重さ', x.heaviness),
-              ]),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (x.breakLevel > 0) ...[_chip('変化', x.breakLevel), const SizedBox(width: 3)],
+                  _chip('キレ', x.sharpness),
+                  const SizedBox(width: 3),
+                  _chip('重さ', x.heaviness),
+                ]),
+              ),
             ]),
           ),
         if (p.pitches.isEmpty) const Text('持ち球なし', style: TextStyle(fontSize: 11, color: _sub)),

@@ -231,9 +231,18 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             _pickSelected();
           }),
         ),
-        navBtn(Icons.chevron_left, '前の月', () => _changeMonth(-1)),
-        Text('${app.startYear}年 $_currentMonth月${_farm ? '（${_level + 1}軍）' : ''}', style: TextStyle(fontSize: _narrow ? 18 : 24, fontWeight: FontWeight.w900)),
-        navBtn(Icons.chevron_right, '次の月', () => _changeMonth(1)),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          navBtn(Icons.chevron_left, '前の月', () => _changeMonth(-1)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('${app.startYear}年 $_currentMonth月${_farm ? '（${_level + 1}軍）' : ''}', style: TextStyle(fontSize: _narrow ? 18 : 24, fontWeight: FontWeight.w900)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          navBtn(Icons.chevron_right, '次の月', () => _changeMonth(1)),
+        ]),
         if (t != null)
           Text.rich(TextSpan(children: [
             TextSpan(text: '${teamShort(t)} 月間 ', style: const TextStyle(color: Color(0xFF475569))),

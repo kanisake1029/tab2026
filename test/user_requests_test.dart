@@ -2,9 +2,11 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:npb_pennant_app/db/app_database.dart';
+import 'package:npb_pennant_app/engine/roster_engine.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
 import 'package:npb_pennant_app/utils/app_theme.dart';
+import 'package:npb_pennant_app/widgets/player_detail_dialog.dart';
 import 'package:npb_pennant_app/widgets/scout_report.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -124,5 +126,60 @@ void main() {
     expect(tl.any((e) => e.$2.contains('変更')), isFalse);
     expect(tl.any((e) => e.$2.contains('来日して${t.name}に入団。背番号${uniformLabel(n53)}。')), isTrue);
     expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(n14)}。')), isFalse);
+  });
+
+  testWidgets('支配下登録: 2027/6/12・支配下65人で選手詳細ダイアログから支配下登録できる', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    app.myTeamId = app.teams.first.id;
+    app.startYear = 2027;
+    app.currentDate = DateTime(2027, 6, 12);
+    app.seasonFinished = false;
+    final my = app.myTeam!;
+    final sh = my.players.where((p) => !p.ikusei).toList();
+    while (sh.length > 65) {
+      my.players.remove(sh.removeLast());
+    }
+    final ik = my.players.firstWhere((p) => p.ikusei, orElse: () {
+      final p = my.players.last;
+      p.ikusei = true;
+      p.uniformNumber = 101;
+      return p;
+    });
+    expect(RosterEngine.shihaikaCount(my), lessThanOrEqualTo(65));
+    expect(ik.ikusei, isTrue);
+
+    await tester.binding.setSurfaceSize(const Size(411, 860));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (ctx) => ElevatedButton(
+            onPressed: () => showPlayerDetail(ctx, app, ik),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('支配下登録'), findsOneWidget);
+    await tester.tap(find.text('支配下登録'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('登録する'), findsOneWidget);
+    await tester.tap(find.text('登録する'));
+    await tester.pumpAndSettle();
+
+    expect(ik.ikusei, isFalse);
+    expect(ik.uniformNumber, lessThan(100));
   });
 }

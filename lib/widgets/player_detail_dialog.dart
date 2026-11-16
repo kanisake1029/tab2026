@@ -363,7 +363,8 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
                               ),
                             );
                             if (ok != true || !context.mounted) return;
-                            final err = widget.appState.promoteIkusei(p);
+                            final st = widget.appState;
+                            final String? err = st is AppState ? st.promoteIkusei(p) : st.promoteIkusei(p);
                             if (err != null) {
                               await showDialog<void>(
                                 context: context,
