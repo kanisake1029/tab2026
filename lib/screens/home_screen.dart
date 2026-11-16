@@ -2,6 +2,7 @@ import 'news_archive_screen.dart';
 import '../engine/item_news.dart';
 import '../engine/trade_rumor.dart';
 import '../engine/offseason_news.dart';
+import '../widgets/game_news_card.dart';
 import '../widgets/item_news_card.dart';
 import 'settings_menu_screen.dart';
 import 'package:flutter/material.dart';
@@ -53,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _newsFact = 'all'; // 'all' | 'confirmed' | 'rumor'
   NewsTopic? _newsTopic; // null=すべて
   String? _newsTeamId; // null=全球団
+  int? _newsYear; // null=今年（過去3年まで切り替え可）
 
   AppState get app => widget.appState;
 
@@ -803,11 +805,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final today = app.currentDate;
+    final selYear = _newsYear ?? today.year;
+    final years = [for (var y = today.year; y >= today.year - 2; y--) y];
     DateTime dayOf(String md) {
       final p = md.split('/');
-      if (p.length != 2) return today;
+      if (p.length != 2) return DateTime(selYear, today.month, today.day);
       final mo = int.tryParse(p[0]) ?? today.month, da = int.tryParse(p[1]) ?? today.day;
-      return DateTime(mo > today.month ? today.year - 1 : today.year, mo, da);
+      final y = (selYear == today.year && mo > today.month) ? selYear - 1 : selYear;
+      return DateTime(y, mo, da);
     }
 
     // 大リーグの一流選手（新外国人の記事のコメントで比べる）
@@ -826,8 +831,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final dated = <(DateTime, ItemNews)>[];
+    // 過去3年分：newsLog[selYear]（今年分は app.news も重複なくマージ）
+    final rawNews = <String>[
+      ...?app.newsLog[selYear],
+      if (selYear == today.year) ...app.news,
+    ].toSet().toList();
     // お知らせから（まとめ行・戦力外個別行は下のまとめ記事生成で綺麗に束ねる）
-    for (final n in app.news) {
+    for (final n in rawNews) {
       final (date, text) = NewsKind.split(n);
       if (text.startsWith('ドラフト1位：') || text.startsWith('自球団の指名：') || text.endsWith('に戦力外を通告しました')) continue;
       final topic = ItemNews.topicOf(text);
@@ -842,22 +852,23 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
       dated.add((dayOf(date), ItemNews.of(date, text, topic, player: p, team: teamOf(p), myTeamId: app.myTeamId, stars: stars, involved: involved)));
-      if (dated.length >= 50) break;
+      if (dated.length >= 160) break;
     }
 
     // 戦力外・育成満了：球団×日付ごとに1本の記事へまとめる（全員を記載）
     final relRe = RegExp(r'^(\d+)/(\d+)(?:/(\d+))?\s+(\S+)\s+(.+?)(?:（\d+歳）)?\s*(?:戦力外通告|育成契約満了)$');
     final relGroups = <String, (DateTime, Team?, List<Player>)>{};
-    for (final tx in app.transactions.take(400)) {
+    for (final tx in app.transactions.take(500)) {
       final m = relRe.firstMatch(tx);
       if (m == null) continue;
       final y = int.parse(m.group(1)!), mo = int.parse(m.group(2)!), da = m.group(3) != null ? int.parse(m.group(3)!) : 15;
+      if (y != selYear) continue;
       final d = DateTime(y, mo, da);
       final tShort = m.group(4)!, name = m.group(5)!;
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
       if (p == null) continue;
       final t = app.teams.where((x) => teamShort(x) == tShort).firstOrNull ?? teamOf(p);
-      final key = '${y}/${mo}/${da}|${t?.id ?? tShort}';
+      final key = '$y/$mo/$da|${t?.id ?? tShort}';
       final g = relGroups.putIfAbsent(key, () => (d, t, <Player>[]));
       if (!g.$3.any((x) => x.id == p.id)) g.$3.add(p);
     }
@@ -867,8 +878,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // ドラフト指名結果：球団ごとに整理して記事化
-    final draftYear = app.draftDoneYear;
-    final draftList = draftYear > 0 ? app.draftBook[draftYear] : null;
+    final draftList = app.draftBook[selYear];
     if (draftList != null && draftList.isNotEmpty) {
       final byTeam = <String, List<({String round, Player player, String school})>>{};
       for (final e in draftList) {
@@ -878,7 +888,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final round = e['round'] == '補償' ? '補償' : '${e['ikusei'] == true ? '育成' : ''}${e['round']}位';
         byTeam.putIfAbsent(tid, () => []).add((round: round, player: p, school: '${e['school'] ?? ''}'));
       }
-      final dd = DateTime(draftYear, 10, 24);
+      final dd = DateTime(selYear, 10, 24);
       for (final entry in byTeam.entries) {
         final t = teamById(entry.key);
         if (t == null || entry.value.isEmpty) continue;
@@ -888,10 +898,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // 新外国人の入団（入団の記録から）
     final txRe = RegExp(r'^(\d+)/(\d+)/(\d+) (\S+) (.+?)（外国人(・育成)?・(.+?)）と契約');
-    for (final tx in app.transactions.take(300)) {
+    for (final tx in app.transactions.take(500)) {
       final m = txRe.firstMatch(tx);
       if (m == null) continue;
-      final d = DateTime(int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!));
+      final y = int.parse(m.group(1)!);
+      if (y != selYear) continue;
+      final d = DateTime(y, int.parse(m.group(2)!), int.parse(m.group(3)!));
       final name = m.group(5)!;
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
       if (p == null) continue;
@@ -899,24 +911,37 @@ class _HomeScreenState extends State<HomeScreen> {
       final t = teamOf(p);
       final text = '${m.group(4)}が${ik ? '育成選手として' : ''}新外国人の$name（${p.origin.isEmpty ? '' : '${p.origin}出身・'}${m.group(7)}）と契約した';
       dated.add((d, ItemNews.of('${d.month}/${d.day}', text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
-      if (dated.length >= 80) break;
+      if (dated.length >= 220) break;
     }
-    // トレード予想（毎週月曜）
-    for (final r in TradeRumor.recent(app.teams, today, myTeamId: app.myTeamId, count: 4)) {
-      dated.add((dayOf(r.date), r));
+
+    // 試合終了後の記事（球団ごとに閲覧可。選択年の試合を新しい順で取り込む）
+    final playedMatches = app.matches
+        .where((m) => m.isPlayed && m.date.year == selYear && (_newsTeamId == null || m.homeTeamId == _newsTeamId || m.awayTeamId == _newsTeamId))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    for (final m in playedMatches.take(_newsTeamId == null ? 30 : 80)) {
+      final h = teamById(m.homeTeamId), a = teamById(m.awayTeamId);
+      if (h == null || a == null) continue;
+      dated.add((m.date, ItemNews.fromMatch(m, h, a, myTeamId: app.myTeamId, ctx: newsContext(app, m))));
     }
-    // オフシーズンの去就予想（FA・自由契約・新外国人）
-    Player? byId(String id) => everyone.where((p) => p.id == id).firstOrNull;
-    dated.addAll(OffseasonNews.predictions(teams: app.teams, faCases: app.faCases, freeAgents: app.freeAgents, foreignPool: app.foreignPool, today: today, playerById: byId, myTeamId: app.myTeamId));
+
+    // トレード予想・オフ去就予想（今年を表示中のとき）
+    if (selYear == today.year) {
+      for (final r in TradeRumor.recent(app.teams, today, myTeamId: app.myTeamId, count: 4)) {
+        dated.add((dayOf(r.date), r));
+      }
+      Player? byId(String id) => everyone.where((p) => p.id == id).firstOrNull;
+      dated.addAll(OffseasonNews.predictions(teams: app.teams, faCases: app.faCases, freeAgents: app.freeAgents, foreignPool: app.foreignPool, today: today, playerById: byId, myTeamId: app.myTeamId));
+    }
     dated.sort((x, y) => y.$1.compareTo(x.$1));
 
     final filtered = dated.map((e) => e.$2).where((it) {
       if (_newsFact == 'confirmed' && !it.isConfirmed) return false;
       if (_newsFact == 'rumor' && it.isConfirmed) return false;
       if (_newsTopic != null && it.topic != _newsTopic) return false;
-      if (_newsTeamId != null && it.team?.id != _newsTeamId && it.playerTeam?.id != _newsTeamId) return false;
+      if (_newsTeamId != null && it.team?.id != _newsTeamId && it.playerTeam?.id != _newsTeamId && it.homeTeam?.id != _newsTeamId && it.awayTeam?.id != _newsTeamId) return false;
       return true;
-    }).take(45).toList();
+    }).take(60).toList();
 
     final leagueTeams = app.teams.where((t) => t.league == 'CL' || t.league == 'PL').toList();
     return Container(
@@ -924,6 +949,19 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          DropdownButtonHideUnderline(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+              child: DropdownButton<int>(
+                value: selYear,
+                isDense: true,
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _navy),
+                items: [for (final y in years) DropdownMenuItem(value: y, child: Text('$y年'))],
+                onChanged: (v) => setState(() => _newsYear = v),
+              ),
+            ),
+          ),
           SegmentedButton<String>(
             segments: const [
               ButtonSegment(value: 'all', label: Text('すべて')),
@@ -987,7 +1025,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 4),
         if (filtered.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('条件に合うニュースはまだありません', style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)))),
-        for (final it in filtered) ItemNewsCard(news: it, teams: app.teams, myTeamId: app.myTeamId, date: app.currentDate),
+        for (final it in filtered) ItemNewsCard(news: it, teams: app.teams, myTeamId: app.myTeamId, date: app.currentDate, app: app),
       ]),
     );
   }

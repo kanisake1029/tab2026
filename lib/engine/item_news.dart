@@ -1,14 +1,15 @@
 import 'dart:math';
+import '../utils/schedule_generator.dart';
 import '../models/player.dart';
 import '../models/team.dart';
-import 'game_news.dart' show FanComment;
+import 'game_news.dart';
 import 'news_talk.dart';
 
 /// 大リーグの選手（比べるコメント用）：選手・球団の略称・元のNPB球団（元NPB でなければ null）
 typedef MlbStar = (Player, String, String?);
 
-/// お知らせのうち、ネットニュース風の記事にするもの（確定：移籍・戦力外・ドラフト・故障・記録／憶測：予想）
-enum NewsTopic { transfer, release, draft, injury, record, rumor }
+/// お知らせのうち、ネットニュース風の記事にするもの（確定：移籍・戦力外・ドラフト・故障・記録・試合／憶測：予想）
+enum NewsTopic { transfer, release, draft, injury, record, game, rumor }
 
 /// お知らせ1件から作る記事：見出し・リード・本文（選手の成績など）・ファンのコメント（自球団／他球団）
 class ItemNews {
@@ -20,9 +21,12 @@ class ItemNews {
   final Player? player;
   final Team? team;
   final List<FanComment> teamFans, otherFans;
-  /// 選手の今の球団（トレード予想では、記事の球団と違うことがある）
+  /// 選手の今の球団（トレード予想や試合記事では、もう一方の球団）
   final Team? playerTeam;
-  ItemNews(this.topic, this.date, this.text, this.headline, this.body, this.player, this.team, this.teamFans, this.otherFans, {Team? playerTeam}) : playerTeam = playerTeam ?? team;
+  /// 試合終了後の記事なら対象の試合
+  final Match? match;
+  final Team? homeTeam, awayTeam;
+  ItemNews(this.topic, this.date, this.text, this.headline, this.body, this.player, this.team, this.teamFans, this.otherFans, {Team? playerTeam, this.match, this.homeTeam, this.awayTeam}) : playerTeam = playerTeam ?? team;
 
   bool get isConfirmed => topic != NewsTopic.rumor;
 
@@ -32,6 +36,7 @@ class ItemNews {
         NewsTopic.draft => 'ドラフト',
         NewsTopic.injury => '故障',
         NewsTopic.record => '記録',
+        NewsTopic.game => '試合',
         NewsTopic.rumor => '予想',
       };
 
@@ -95,6 +100,7 @@ class ItemNews {
               ? [if (name.isNotEmpty) ...['$name早く戻ってきて…', '$nameの離脱は痛すぎる', '$nameには無理せず治してほしい', '$nameおらんと打線が組めん'], '起用しすぎやったんちゃうか', 'ここで代わりの選手が出てきてほしい', '今年はけが人が多いな…', 'トレーナー陣どうなってんの', '若手にはチャンスや']
               : [if (name.isNotEmpty) ...['$nameお大事に', '$name、また元気な姿見せてくれ'], if (t.isNotEmpty) '$tにとっては痛いな', 'これはチャンスかもしれん', '主力の離脱はきついな', 'けがだけはどうしようもない'];
         case NewsTopic.rumor:
+        case NewsTopic.game:
           return const [];
         case NewsTopic.draft:
           return mine
@@ -317,6 +323,31 @@ class ItemNews {
       team,
       fanList(r, mineLines, ['名無しの${t}ファン', '${t}党', 'ライトスタンドの民'], positive: true),
       fanList(r, otherLines, ['他球団ファン', '野球好きの会社員'], positive: true),
+    );
+  }
+
+  /// 試合終了後の記事（GameNews をニュースタブ一覧用の ItemNews に変換）
+  static ItemNews fromMatch(Match m, Team home, Team away, {String? myTeamId, GameNewsContext? ctx}) {
+    final g = GameNews.of(m, home, away, myTeamId: myTeamId, ctx: ctx);
+    final aw = m.awayScore ?? 0, hm = m.homeScore ?? 0;
+    final win = hm > aw ? home : (aw > hm ? away : (myTeamId == away.id ? away : home));
+    final lose = win.id == home.id ? away : home;
+    final mvpName = g.mvp?.name;
+    final mvpPlayer = mvpName == null ? null : [...home.players, ...away.players].where((p) => p.registeredName == mvpName).firstOrNull;
+    return ItemNews(
+      NewsTopic.game,
+      '${m.date.month}/${m.date.day}',
+      g.lead,
+      g.headline,
+      [g.lead, ...g.body],
+      mvpPlayer,
+      win,
+      g.homeFans,
+      g.awayFans,
+      playerTeam: lose,
+      match: m,
+      homeTeam: home,
+      awayTeam: away,
     );
   }
 }

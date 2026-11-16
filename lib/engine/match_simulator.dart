@@ -606,6 +606,7 @@ class MatchSimulator {
       int pitchCount = 0;
       double prevSpeedKmh = 140.0;
       double prevKmhPa = 0.0; // この打席の直前の球の速さ（初球は 0）
+      int prevPaCell = -1; // 直前の投球コース（同じ苦手コースの連投には打者が慣れる）
 
       BatTactic batT = BatTactic.none;
       RunTactic runT = RunTactic.none;
@@ -1550,7 +1551,11 @@ class MatchSimulator {
             speedMul: batT == BatTactic.powerSwing ? 1.03 : (batT == BatTactic.contactSwing ? 0.96 : 1.0),
             twoStrikes: state.strikes == 2,
             edge: hanging ? -0.35 : (zoneDist < 0.35 ? -0.25 * (1.0 - zoneDist / 0.35) : (zoneDist <= 0.65 ? 0.0 : ((zoneDist - 0.65) * 1.15).clamp(0.0, 0.85))), // 真ん中は打たれやすくコーナーは打たれにくい
-            courseBias: BattingSplits.courseAffinity(batter, actualX, actualZ, effHand),
+            courseBias: () {
+              final raw = BattingSplits.courseAffinity(batter, actualX, actualZ, effHand);
+              final cell = BattingSplits.cell(actualX, actualZ, effHand);
+              return (raw < 0 && prevPaCell == cell) ? raw * 0.45 : raw;
+            }(),
           );
         }
 
@@ -1569,6 +1574,7 @@ class MatchSimulator {
         double R = sqrt(diffX * diffX + diffZ * diffZ);
 
         prevSpeedKmh = currentSpeed; prevKmhPa = currentSpeed;
+        prevPaCell = BattingSplits.cell(actualX, actualZ, effHand);
 
         if ((sw != null ? sw.whiff : R > 0.069) || pitchOut) {
            _inc('whiffs');

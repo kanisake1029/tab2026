@@ -113,11 +113,13 @@ class SwingModel {
         vExp += (p.prevKmh - vExp) * pull;
       }
     }
+    // 苦手コースは攻め続けるだけで抑えきれないよう、マイナス補正を穏やかに抑える
+    final cbEff = courseBias < 0 ? (courseBias * 0.45).clamp(-0.5, 0.0) : (courseBias * 0.75).clamp(0.0, 0.85);
     final dtRaw = p.time - p.time * p.speedKmh / vExp; // ＋＝球が予想より遅い → 打者は早い
-    final sigT = (0.007 + (100 - b.meet) * 0.0001) * noiseScale * timingScale * (twoStrikes ? 0.9 : 1.0) * vMul * (1.0 - courseBias * 0.12);
+    final sigT = (0.007 + (100 - b.meet) * 0.0001) * noiseScale * timingScale * (twoStrikes ? 0.9 : 1.0) * vMul * (1.0 - cbEff * 0.12);
     final dt = dtRaw * recog + _g(rnd) * sigT + b.pull * 0.004;
     // ── スイング ──
-    var vBat = batSpeed(b) * speedMul * (twoStrikes ? 0.97 : 1.0) * (1.0 + courseBias * 0.025);
+    var vBat = batSpeed(b) * speedMul * (twoStrikes ? 0.97 : 1.0) * (1.0 + cbEff * 0.025);
     if (dt.abs() > 0.06) vBat *= 0.85; // 大きく崩されると当てにいくだけ
     final zPlate = 0.75 + p.zoneZ * 0.28;
     final attack = (Spec.bat ? Spec.attack(b.trajectory) : 3.0 + (b.trajectory - 1) * 3.0) + (0.75 - zPlate) * 14 + launchBias * 0.5;
@@ -155,7 +157,7 @@ class SwingModel {
     // 変化量：小〜中くらいの変化は当たるが芯を外す（山形。大きい変化は空振りで効き、当たれば芯ずれは小さめ）。キレも芯を外す
     final bs = p.brk / brkPeak;
     final brkMul = guessed ? (1 + brkConK * bs * m.exp(1 - bs)) * (1 + (p.sharp - 60) * sharpConK).clamp(0.85, 1.2) : 1.0;
-    final sigY = (Spec.bat ? Spec.sigEy(b.meet) : (0.016 + (100 - b.meet) * 0.00025) * noiseScale * contactScale) * (1 + edge * 0.9).clamp(0.65, 2.0) * (1.0 - courseBias * 0.18) * stuffMul * brkMul * m.pow(vMul, veloContact);
+    final sigY = (Spec.bat ? Spec.sigEy(b.meet) : (0.016 + (100 - b.meet) * 0.00025) * noiseScale * contactScale) * (1 + edge * 0.9).clamp(0.65, 2.0) * (1.0 - cbEff * 0.18) * stuffMul * brkMul * m.pow(vMul, veloContact);
     final ey = aim + eyLate + eyTiming + _g(rnd) * sigY;
     // ── 長さ方向（＋＝先）── 投手から見て右（x の＋）は右打者の外角
     final outside = b.lefty ? -p.zoneX : p.zoneX;

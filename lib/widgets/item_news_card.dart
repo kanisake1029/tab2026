@@ -4,6 +4,7 @@ import '../engine/item_news.dart';
 import '../models/team.dart';
 import '../utils/standings.dart';
 import 'chip_grid.dart';
+import 'game_news_card.dart';
 import 'player_avatar.dart';
 
 const _ink = Color(0xFF0F172A);
@@ -56,6 +57,7 @@ Color topicColor(NewsTopic t) => switch (t) {
       NewsTopic.draft => const Color(0xFF0D9488),
       NewsTopic.injury => const Color(0xFFDC2626),
       NewsTopic.record => const Color(0xFFB45309),
+      NewsTopic.game => const Color(0xFF0284C7),
       NewsTopic.rumor => const Color(0xFF7C3AED),
     };
 
@@ -65,14 +67,21 @@ class ItemNewsCard extends StatelessWidget {
   final List<Team> teams;
   final String? myTeamId;
   final DateTime? date;
-  const ItemNewsCard({super.key, required this.news, required this.teams, this.myTeamId, this.date});
+  final dynamic app;
+  const ItemNewsCard({super.key, required this.news, required this.teams, this.myTeamId, this.date, this.app});
 
   @override
   Widget build(BuildContext context) {
     final n = news;
     final c = topicColor(n.topic);
     return InkWell(
-      onTap: () => showItemNews(context, n, teams, myTeamId: myTeamId, date: date),
+      onTap: () {
+        if (n.match != null && n.homeTeam != null && n.awayTeam != null) {
+          showGameNews(context, n.match!, n.homeTeam!, n.awayTeam!, teams, myTeamId: myTeamId, app: app);
+        } else {
+          showItemNews(context, n, teams, myTeamId: myTeamId, date: date);
+        }
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 9),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _line))),

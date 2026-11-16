@@ -24,13 +24,13 @@ class BattingSplits {
     return (h, v);
   }
 
-  /// コース相性（-1.0=苦手 〜 +1.0=得意）。zoneX: 投手から見て右が+、bats: 'L'/'R'
+  /// コース相性（-1.1=重なり苦手 〜 +1.1=重なり得意）。zoneX: 投手から見て右が+、bats: 'L'/'R'
+  ///  インコースと高めが得意ならアウトコースと低めが苦手になり、領域が重なる角は得意性・不得意性が増す
   static double courseAffinity(Player b, double zoneX, double zoneZ, String bats) {
     final (h, v) = coursePref(b);
     if (h == 0 && v == 0) return 0.0;
     final inside = bats == 'L' ? zoneX : -zoneX;
-    final norm = (h != 0 && v != 0) ? 0.5 : 1.0;
-    return ((inside.clamp(-1.0, 1.0) * h + zoneZ.clamp(-1.0, 1.0) * v) * norm).clamp(-1.0, 1.0);
+    return ((inside.clamp(-1.0, 1.0) * h + zoneZ.clamp(-1.0, 1.0) * v) * 0.55).clamp(-1.1, 1.1);
   }
 
   /// コース傾向の短い表示（例: '得意: 内角・高め / 苦手: 外角・低め'、標準なら null）

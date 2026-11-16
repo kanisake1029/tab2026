@@ -124,7 +124,13 @@ class _OtherLeaguesScreenState extends State<OtherLeaguesScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
           child: _group == '元NPB' || _group == 'リーグ比較' ? const SizedBox.shrink() : SegmentedButton<int>(
-            segments: const [ButtonSegment(value: 0, label: Text('順位')), ButtonSegment(value: 1, label: Text('成績')), ButtonSegment(value: 2, label: Text('球団')), ButtonSegment(value: 3, label: Text('歴代'))],
+            segments: const [
+              ButtonSegment(value: 0, label: Text('順位')),
+              ButtonSegment(value: 1, label: Text('成績')),
+              ButtonSegment(value: 2, label: Text('球団')),
+              ButtonSegment(value: 3, label: Text('歴代')),
+              ButtonSegment(value: 4, label: Text('元NPB')),
+            ],
             selected: {_view},
             showSelectedIcon: false,
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
@@ -136,21 +142,31 @@ class _OtherLeaguesScreenState extends State<OtherLeaguesScreen> {
             0 => _standings(w, lg),
             1 => _leaders(w, lg),
             2 => _teams(w, lg),
-            _ => _history(w, lg),
+            3 => _history(w, lg),
+            _ => _fromNpb(w, onlyLg: lg),
           },
         ),
       ]),
     );
   }
 
-  /// NPB から移った選手（ポスティング・海外FA・戦力外・退団）の今と去就
-  Widget _fromNpb(OtherWorld w) {
+  /// NPB から移った選手（ポスティング・海外FA・戦力外・退団）の今と去就。onlyLg 指定時はそのリーグのみ
+  Widget _fromNpb(OtherWorld w, {OLeague? onlyLg}) {
     final l = [
       for (final e in w.fromNpb.entries)
-        if (w.teamOfPlayer(e.key) case final t?) (t, t.players.firstWhere((p) => p.id == e.key), e.value),
+        if (w.teamOfPlayer(e.key) case final t?)
+          if (onlyLg == null || t.leagueId == onlyLg.id) (t, t.players.firstWhere((p) => p.id == e.key), e.value),
     ];
     if (l.isEmpty) {
-      return const Padding(padding: EdgeInsets.all(16), child: Text('NPB から他リーグへ移った選手はまだいません。ポスティング・海外FA・戦力外（自由契約のまま1月31日を過ぎた選手）・外国人の退団で移った選手がここに出ます', style: TextStyle(color: _sub)));
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          onlyLg == null
+              ? 'NPB から他リーグへ移った選手はまだいません。ポスティング・海外FA・戦力外（自由契約のまま1月31日を過ぎた選手）・外国人の退団で移った選手がここに出ます'
+              : '${onlyLg.name}に所属している元NPB選手はまだいません',
+          style: const TextStyle(color: _sub),
+        ),
+      );
     }
     String line(Player p) {
       final s = p.seasonStats;
@@ -158,19 +174,44 @@ class _OtherLeaguesScreenState extends State<OtherLeaguesScreen> {
       return '${s.games}試合 打率${s.atBats == 0 ? '-' : _r3(s.battingAverage)} ${s.homeRuns}本 ${s.rbi}打点';
     }
 
+    // リーグごとにまとめる（どこに所属しているかを明確にする）
+    final byLg = <String, List<(OTeam, Player, String)>>{};
+    for (final item in l) {
+      byLg.putIfAbsent(item.$1.leagueId, () => []).add(item);
+    }
+
+    Widget tile(OTeam t, Player p, String note) {
+      final lgName = OtherLeagueEngine.leagues[t.leagueId]?.name ?? t.leagueId;
+      return ListTile(
+        dense: true,
+        title: Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(4)),
+            child: Text('$lgName・${OtherLeagueEngine.teamCode(t)}', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: Text('${p.registeredName}（${p.age}歳・${p.mainPosition}）', style: const TextStyle(fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
+        ]),
+        subtitle: Text('${t.name}　${line(p)}\n$note', style: const TextStyle(fontSize: 11.5, height: 1.4)),
+        isThreeLine: true,
+        onTap: () => openOtherPlayer(context, app, p, () => setState(() {})),
+      );
+    }
+
     return ListView(padding: const EdgeInsets.only(bottom: 20), children: [
       const Padding(
         padding: EdgeInsets.fromLTRB(12, 6, 12, 4),
         child: Text('今季の成績と去就。タップすると詳しく見たり、声をかけて日本球界へ呼び戻せます（3A でくすぶっている選手などは受けてくれやすい）', style: TextStyle(fontSize: 11, color: _sub)),
       ),
-      for (final (t, p, note) in l)
-        ListTile(
-          dense: true,
-          title: Text('${p.registeredName}（${p.age}歳・${p.mainPosition}）', style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text('${OtherLeagueEngine.leagues[t.leagueId]?.name}　${t.name}　${line(p)}\n$note', style: const TextStyle(fontSize: 11.5, height: 1.4)),
-          isThreeLine: true,
-          onTap: () => openOtherPlayer(context, app, p, () => setState(() {})),
-        ),
+      for (final entry in byLg.entries) ...[
+        if (onlyLg == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+            child: Text('${OtherLeagueEngine.leagues[entry.key]?.name ?? entry.key}（${entry.value.length}人）', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF15803D))),
+          ),
+        for (final (t, p, note) in entry.value) tile(t, p, note),
+      ],
     ]);
   }
 
@@ -316,35 +357,86 @@ class _OtherLeaguesScreenState extends State<OtherLeaguesScreen> {
     ]);
   }
 
-  /// 歴代：年ごとの順位表とタイトル（開いて見る）。記録を始める前の年は優勝球団だけ
+  /// 歴代：年ごとの順位表とタイトル（表形式で整理して見やすく表示）。記録を始める前の年は優勝球団だけ
   Widget _history(OtherWorld w, OLeague lg) {
     final l = w.champions.where((c) => c.contains('　${lg.name}　')).toList();
     final ss = w.seasons[lg.id] ?? const [];
     final years = {for (final s in ss) s['y'] as int};
+
+    Widget standingRow(String raw) {
+      final parts = raw.split(RegExp(r'\s+|　')).where((e) => e.isNotEmpty).toList();
+      if (parts.length < 2) return Text(raw, style: const TextStyle(fontSize: 12, height: 1.5));
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9)))),
+        child: Row(children: [
+          SizedBox(width: 44, child: Text(parts.first, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _sub))),
+          Expanded(child: Text(parts.length >= 3 ? parts.sublist(1, parts.length - 1).join(' ') : parts[1], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis)),
+          if (parts.length >= 3)
+            Text(parts.last, style: const TextStyle(fontSize: 11.5, fontFeatures: [FontFeature.tabularFigures()])),
+        ]),
+      );
+    }
+
+    Widget titleRow(String raw) {
+      final idx = raw.indexOf('：');
+      final kind = idx > 0 ? raw.substring(0, idx) : '';
+      final val = idx > 0 ? raw.substring(idx + 1).trim() : raw;
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9)))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (kind.isNotEmpty) SizedBox(width: 72, child: Text(kind, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _sub))),
+          Expanded(child: Text(val, style: const TextStyle(fontSize: 12, height: 1.35))),
+        ]),
+      );
+    }
+
     return ListView(padding: const EdgeInsets.all(10), children: [
       const Text('歴代の記録（年をタップすると順位表とタイトル）', style: TextStyle(fontWeight: FontWeight.w900)),
-      const SizedBox(height: 4),
+      const SizedBox(height: 6),
       if (l.isEmpty && ss.isEmpty) const Text('まだありません（このゲームで終えたシーズンから記録します）', style: TextStyle(color: _sub, fontSize: 12)),
       for (final s in ss)
         Card(
-          margin: const EdgeInsets.only(bottom: 6),
+          margin: const EdgeInsets.only(bottom: 8),
           child: ExpansionTile(
             key: PageStorageKey<String>('olHist_${lg.id}_${s['y']}'),
             dense: true,
-            title: Text(l.firstWhere((c) => c.startsWith('${s['y']}　'), orElse: () => '${s['y']}'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            title: Text(l.firstWhere((c) => c.startsWith('${s['y']}　'), orElse: () => '${s['y']}年'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('順位', style: TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w800)),
-              for (final x in (s['st'] as List)) Text('$x', style: const TextStyle(fontSize: 12, height: 1.5, fontFeatures: [FontFeature.tabularFigures()])),
-              const SizedBox(height: 6),
-              const Text('タイトル（上位3人）', style: TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w800)),
-              for (final x in (s['ld'] as List)) Text('$x', style: const TextStyle(fontSize: 12, height: 1.5)),
+              const Padding(
+                padding: EdgeInsets.only(top: 4, bottom: 2),
+                child: Text('順位', style: TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w800)),
+              ),
+              for (final x in (s['st'] as List)) standingRow('$x'),
+              const Padding(
+                padding: EdgeInsets.only(top: 8, bottom: 2),
+                child: Text('タイトル（上位3人）', style: TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w800)),
+              ),
+              for (final x in (s['ld'] as List)) titleRow('$x'),
             ],
           ),
         ),
-      for (final c in l)
-        if (!years.contains(int.tryParse(c.split('　').first))) Text(c, style: const TextStyle(fontSize: 12.5, height: 1.6)),
+      if (l.any((c) => !years.contains(int.tryParse(c.split('　').first)))) ...[
+        const SizedBox(height: 4),
+        Card(
+          child: Column(children: [
+            for (final c in l)
+              if (!years.contains(int.tryParse(c.split('　').first)))
+                () {
+                  final ps = c.split('　');
+                  return ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    leading: Text(ps.first, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _sub)),
+                    title: Text(ps.length > 2 ? ps.sublist(2).join(' ') : c, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  );
+                }(),
+          ]),
+        ),
+      ],
     ]);
   }
 
