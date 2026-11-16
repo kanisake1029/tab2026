@@ -1237,7 +1237,7 @@ class _FreeAgentScreenState extends State<FreeAgentScreen> {
               const Text('契約年数：'),
               DropdownButton<int>(
                 value: years,
-                items: [for (var y = 1; y <= 3; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
+                items: [for (var y = 1; y <= 12; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
                 onChanged: (v) => set(() => years = v ?? 1),
               ),
             ]),

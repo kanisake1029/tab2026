@@ -106,7 +106,7 @@ class _ContractScreenState extends State<ContractScreen> {
 
   Future<void> _openPriorityForeign(FreeAgent fa) async {
     final p = fa.player;
-    var years = app.renewPreferredYears(p).clamp(1, 5);
+    var years = app.renewPreferredYears(p).clamp(1, 12);
     var salary = app.renewAskFor(p, years);
     await showModalBottomSheet(
       context: context,
@@ -134,7 +134,7 @@ class _ContractScreenState extends State<ContractScreen> {
               const SizedBox(width: 10),
               DropdownButton<int>(
                 value: years,
-                items: [for (var y = 1; y <= 5; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
+                items: [for (var y = 1; y <= 12; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
                 onChanged: (v) => set(() => years = v ?? 1),
               ),
               const Spacer(),

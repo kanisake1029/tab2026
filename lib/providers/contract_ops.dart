@@ -81,7 +81,7 @@ extension ContractOps on AppState {
     if (fa.priorityTeamId != my.id) return '優先交渉権がありません';
     if (!p.ikusei && RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
     salary = (salary / 50).round() * 50;
-    years = years.clamp(1, 5);
+    years = years.clamp(1, 12);
     final need = renewAskFor(p, years);
     final tries = (renewTries[p.id] ?? 0) + 1;
     renewTries[p.id] = tries;

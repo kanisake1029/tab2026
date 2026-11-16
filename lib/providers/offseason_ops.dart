@@ -1397,7 +1397,7 @@ extension OffseasonOps on AppState {
         p.prevSalary = p.salary;
         p.salary = salary;
       }
-      p.contractYears = years.clamp(1, 3);
+      p.contractYears = years.clamp(1, 12);
     }
     final from = teamById(fa.fromTeamId);
     if (from != null) midSeasonMove(p, from, t);
@@ -1419,7 +1419,7 @@ extension OffseasonOps on AppState {
     if (ikusei && RosterEngine.ikuseiCount(my) >= ikuseiCap(my)) return '育成選手の上限（${ikuseiCap(my)}人）に達しています（設備や3軍コーチで増やせます）';
     final baseAsk = freeAgentBaseAsk(fa);
     final offerSal = ikusei ? min(fa.player.salary, 600) : (((salary ?? baseAsk) / 50).round() * 50).clamp(450, 999950);
-    final offerY = ikusei ? 1 : years.clamp(1, 3);
+    final offerY = ikusei ? 1 : years.clamp(1, 12);
     final fe = _fundsCheck(my, offerSal);
     if (fe != null) return fe;
     if (!ikusei && salary != null) {
