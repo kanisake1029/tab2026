@@ -417,6 +417,26 @@ extension OffseasonOps on AppState {
         _overseasFa();
         _faDeclare();
         updateAndSave();
+      } else if (faCases.any((f) => f.result.isEmpty)) {
+        // 既存セーブの FA 希望額（旧倍率で高騰していた分）を現行カーブへ補正
+        var changed = false;
+        for (final f in faCases) {
+          if (f.result.isNotEmpty) continue;
+          final p = _findPlayer(f.playerId);
+          if (p == null) continue;
+          final nextAsk = TransferEngine.marketValue(p, Random(p.id.hashCode ^ y));
+          if (f.ask > (nextAsk * 1.25).round()) {
+            final ratio = nextAsk / max(1, f.ask);
+            f.ask = nextAsk;
+            for (final tid in f.offers.keys.toList()) {
+              if (tid == myTeamId) continue;
+              final o = f.offers[tid]!;
+              f.offers[tid] = [((o[0] * ratio) / 50).round() * 50, o[1]];
+            }
+            changed = true;
+          }
+        }
+        if (changed) updateAndSave();
       }
     }
   }

@@ -25,7 +25,7 @@ class FaCase {
   final String playerId;
   final String fromTeamId;
   final String rank;        // A / B / C（元の球団での年俸順位）
-  final int ask;            // 希望年俸（万円）
+  int ask;                  // 希望年俸（万円）
   final Map<String, List<int>> offers; // 球団ID → [年俸, 年数]
   String result;            // 決まった球団ID（'' は未定）
 
