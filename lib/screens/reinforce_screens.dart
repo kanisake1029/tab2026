@@ -618,7 +618,7 @@ class _TradeScreenState extends State<TradeScreen> {
   Widget build(BuildContext context) {
     final my = app.myTeam;
     if (my == null) return const Scaffold(body: Center(child: Text('球団が選ばれていません')));
-    final others = app.teams.where((t) => t.id != my.id).toList();
+    final others = app.leagueTeams.where((t) => t.id != my.id).toList();
     _partner ??= others.first;
     final pt = _partner!;
     List<Player> sorted(Team t) => t.players.where((p) => p.ikusei == _ikusei).toList()..sort((a, b) => b.ovr.compareTo(a.ovr));
@@ -833,7 +833,7 @@ class _TradeSearchScreenState extends State<TradeSearchScreen> {
   Widget build(BuildContext context) {
     final my = app.myTeam;
     if (my == null) return const Scaffold(body: Center(child: Text('球団が選ばれていません')));
-    final others = app.teams.where((t) => t.id != my.id).toList();
+    final others = app.leagueTeams.where((t) => t.id != my.id).toList();
     final pitchNames = <String>{for (final t in others) for (final p in t.players) if (p.canPitch) for (final x in p.pitches) x.name}.toList()..sort();
     final byKey = {for (final c in _conds) c.key: c};
 

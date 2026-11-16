@@ -907,18 +907,45 @@ class _ScoutReportState extends State<ScoutReport> {
       final m = RegExp(r'^(\d{4})年').firstMatch(h);
       byYear.putIfAbsent(m == null ? 0 : int.parse(m.group(1)!), () => []).add(h);
     }
-    Widget honorChip(String h, {bool est = false}) {
-      final rec = _isRecord(h);
-      final text = h.replaceFirst(RegExp(r'^\d{4}年(\d+月\d+日)?\s?'), '');
+    (String, Color, Color, Color) honorStyle(String h) {
+      if (h.contains('保持者') || h.contains('NPB記録') || h.contains('日本記録') || h.contains('歴代1位') || h.contains('シーズン最多')) {
+        return ('現1位記録', const Color(0xFFFFE4E6), const Color(0xFFFB7185), const Color(0xFF9F1239));
+      }
+      if (h.contains('連続')) {
+        return ('連続記録', const Color(0xFFDCFCE7), const Color(0xFF4ADE80), const Color(0xFF166534));
+      }
+      if (h.contains('ベストナイン') || h.contains('ゴールデングラブ')) {
+        return ('表彰', const Color(0xFFF3E8FF), const Color(0xFFC084FC), const Color(0xFF6B21A8));
+      }
+      if (_isRecord(h) || h.contains('通算') || h.contains('達成') || h.contains('ノーヒット') || h.contains('完全試合')) {
+        return ('通算記録', const Color(0xFFDBEAFE), const Color(0xFF60A5FA), const Color(0xFF1E40AF));
+      }
+      return ('タイトル', const Color(0xFFFEF3C7), const Color(0xFFF59E0B), const Color(0xFF92400E));
+    }
+
+    Widget honorRow(String yearText, String h, {bool est = false}) {
+      final (cat, bg, border, fg) = honorStyle(h);
+      final text = h.replaceFirst(RegExp(r'^\d{4}年(\d+月\d+日)?\s?'), '') + (est ? '（推定）' : '');
       return Container(
-        margin: const EdgeInsets.only(right: 4, bottom: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: est ? Colors.white : (rec ? const Color(0xFFEFF6FF) : const Color(0xFFFEF9C3)),
+          color: est ? Colors.white : bg.withValues(alpha: 0.45),
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: rec ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A)),
+          border: Border.all(color: border.withValues(alpha: 0.7)),
         ),
-        child: Text('$text${est ? '（推定）' : ''}', style: TextStyle(fontSize: 10.5, color: est ? _sub : _ink)),
+        child: Row(children: [
+          SizedBox(width: 48, child: Text(yearText, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800))),
+          Container(
+            width: 66,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(3), border: Border.all(color: border)),
+            child: Text(cat, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: fg)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 11.5, color: _ink))),
+        ]),
       );
     }
 
@@ -981,18 +1008,33 @@ class _ScoutReportState extends State<ScoutReport> {
           _title('記録（回数）'),
           ..._recordLines(total),
         ]);
+        final chronologicalHonors = <(int, String, String, bool)>[
+          for (final r in rows)
+            for (final h in r.$4) (int.tryParse(r.$1.replaceAll(RegExp(r'[^0-9]'), '')) ?? 9999, r.$1, h, r.$5),
+        ]..sort((a, b) => a.$1.compareTo(b.$1));
         final honorsView = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (_titles.isNotEmpty || estTitles.isNotEmpty) _honorsSection(estTitles) else const Text('タイトル・表彰はまだありません', style: TextStyle(fontSize: 11.5, color: _sub)),
           const SizedBox(height: 6),
-          _title('年ごとの表彰と記録'),
-          for (final r in rows.where((r) => r.$4.isNotEmpty))
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SizedBox(width: 50, child: Text(r.$1, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800))),
-                Expanded(child: Wrap(children: [for (final h in r.$4) honorChip(h, est: r.$5)])),
-              ]),
-            ),
+          _title('表彰・記録（時系列）'),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            for (final b in const [
+              ('タイトル', Color(0xFFFEF3C7), Color(0xFFF59E0B), Color(0xFF92400E)),
+              ('表彰', Color(0xFFF3E8FF), Color(0xFFC084FC), Color(0xFF6B21A8)),
+              ('連続記録', Color(0xFFDCFCE7), Color(0xFF4ADE80), Color(0xFF166534)),
+              ('通算記録', Color(0xFFDBEAFE), Color(0xFF60A5FA), Color(0xFF1E40AF)),
+              ('現1位記録', Color(0xFFFFE4E6), Color(0xFFFB7185), Color(0xFF9F1239)),
+            ])
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(color: b.$2, borderRadius: BorderRadius.circular(3), border: Border.all(color: b.$3)),
+                child: Text(b.$1, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: b.$4)),
+              ),
+          ]),
+          const SizedBox(height: 6),
+          if (chronologicalHonors.isEmpty)
+            const Text('表彰・記録はまだありません', style: TextStyle(fontSize: 11.5, color: _sub))
+          else
+            for (final it in chronologicalHonors) honorRow(it.$2, it.$3, est: it.$4),
         ]);
         final timelineView = FutureBuilder<List<(DateTime, String)>>(
           future: _timeline,

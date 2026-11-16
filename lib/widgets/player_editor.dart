@@ -151,25 +151,25 @@ class _PlayerEditorState extends State<PlayerEditor> {
 
   // ───────── 部品 ─────────
 
-  Widget _grade(int v, {double size = 15}) {
+  Widget _grade(int v, {double size = 12.5}) {
     final g = GradeUtils.getGrade(v);
     return Text(g, style: TextStyle(fontWeight: FontWeight.w900, fontSize: size, color: AppTheme.getGradeColor(g)));
   }
 
   /// 数値の入力欄。選手が変わると作り直す（key に選手IDを含める）
-  Widget _numBox(String key, int value, ValueChanged<int> onChanged, {double width = 58, int min = 1, int max = 100}) {
+  Widget _numBox(String key, int value, ValueChanged<int> onChanged, {double width = 48, int min = 1, int max = 100}) {
     return SizedBox(
       width: width,
-      height: 30,
+      height: 26,
       child: TextFormField(
         key: ValueKey('${p.id}_$key'),
         initialValue: '$value',
         keyboardType: TextInputType.number,
         textAlign: TextAlign.right,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]),
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]),
         decoration: const InputDecoration(
           isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          contentPadding: EdgeInsets.symmetric(horizontal: 5, vertical: 4),
           border: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFD6D3D1))),
           enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFD6D3D1))),
         ),
@@ -185,10 +185,10 @@ class _PlayerEditorState extends State<PlayerEditor> {
     return TextFormField(
       key: ValueKey('${p.id}_$key'),
       initialValue: value,
-      style: style ?? const TextStyle(fontSize: 13.5),
+      style: style ?? const TextStyle(fontSize: 12),
       decoration: const InputDecoration(
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+        contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
         border: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFD6D3D1))),
         enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFD6D3D1))),
       ),
@@ -198,14 +198,14 @@ class _PlayerEditorState extends State<PlayerEditor> {
 
   Widget _dropdown<T>(T value, List<(T, String)> items, ValueChanged<T> onChanged) {
     return Container(
-      height: 36,
-      padding: const EdgeInsets.only(left: 8),
+      height: 30,
+      padding: const EdgeInsets.only(left: 6),
       decoration: BoxDecoration(color: Colors.white, border: Border.all(color: const Color(0xFFD6D3D1)), borderRadius: BorderRadius.circular(4)),
       child: DropdownButton<T>(
         value: value,
         isExpanded: true,
         underline: const SizedBox(),
-        style: const TextStyle(fontSize: 13.5, color: _ink),
+        style: const TextStyle(fontSize: 12, color: _ink),
         items: [for (final it in items) DropdownMenuItem(value: it.$1, child: Text(it.$2, overflow: TextOverflow.ellipsis))],
         onChanged: (v) {
           if (v != null) _set(() => onChanged(v));
@@ -214,53 +214,53 @@ class _PlayerEditorState extends State<PlayerEditor> {
     );
   }
 
-  Widget _field(String label, Widget child, {double width = 150}) => SizedBox(
+  Widget _field(String label, Widget child, {double width = 120}) => SizedBox(
         width: width,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: _sub)),
-          const SizedBox(height: 3),
+          Text(label, style: const TextStyle(fontSize: 10, color: _sub)),
+          const SizedBox(height: 2),
           child,
         ]),
       );
 
   Widget _section(String title, List<Widget> rows, {Widget? trailing}) => Container(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+        padding: const EdgeInsets.fromLTRB(10, 7, 10, 6),
         decoration: BoxDecoration(color: Colors.white, border: Border.all(color: _line)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900)), const Spacer(), if (trailing != null) trailing]),
-          const SizedBox(height: 4),
+          Row(children: [Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)), const Spacer(), if (trailing != null) trailing]),
+          const SizedBox(height: 3),
           ...rows,
         ]),
       );
 
   /// 能力1行：項目名・評価・入力欄
   Widget _abilityRow(String label, int value, ValueChanged<int> onChanged, {String? note, String? key}) => Container(
-        height: 38,
+        height: 28,
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF5F5F4)))),
         child: Row(children: [
           Expanded(
             child: Text.rich(TextSpan(children: [
-              TextSpan(text: label, style: const TextStyle(fontSize: 13.5)),
-              if (note != null) TextSpan(text: '  $note', style: const TextStyle(fontSize: 11, color: _sub)),
+              TextSpan(text: label, style: const TextStyle(fontSize: 12)),
+              if (note != null) TextSpan(text: '  $note', style: const TextStyle(fontSize: 10, color: _sub)),
             ]), overflow: TextOverflow.ellipsis),
           ),
-          SizedBox(width: 22, child: Center(child: _grade(value))),
-          const SizedBox(width: 8),
+          SizedBox(width: 20, child: Center(child: _grade(value))),
+          const SizedBox(width: 6),
           _numBox(key ?? label, value, onChanged),
         ]),
       );
 
   Widget _displayRow(String label, String grade, String value, {String? note}) => Container(
-        height: 38,
+        height: 28,
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF5F5F4)))),
         child: Row(children: [
           Expanded(child: Text.rich(TextSpan(children: [
-            TextSpan(text: label, style: const TextStyle(fontSize: 13.5)),
-            if (note != null) TextSpan(text: '  $note', style: const TextStyle(fontSize: 11, color: _sub)),
+            TextSpan(text: label, style: const TextStyle(fontSize: 12)),
+            if (note != null) TextSpan(text: '  $note', style: const TextStyle(fontSize: 10, color: _sub)),
           ]))),
-          SizedBox(width: 22, child: Center(child: Text(grade, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppTheme.getGradeColor(grade))))),
-          const SizedBox(width: 8),
-          SizedBox(width: 58, child: Text(value, textAlign: TextAlign.right, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _sub))),
+          SizedBox(width: 20, child: Center(child: Text(grade, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12.5, color: AppTheme.getGradeColor(grade))))),
+          const SizedBox(width: 6),
+          SizedBox(width: 48, child: Text(value, textAlign: TextAlign.right, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: _sub))),
         ]),
       );
 
@@ -273,29 +273,29 @@ class _PlayerEditorState extends State<PlayerEditor> {
       final sections = _abilitySections();
       final side = _sideColumn();
       return SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(wide ? 26 : 14, 18, wide ? 26 : 14, 30),
+        padding: EdgeInsets.fromLTRB(wide ? 16 : 8, 10, wide ? 16 : 8, 18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _header(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _profile(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           if (wide)
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(child: _twoColumns(sections)),
-              const SizedBox(width: 20),
-              SizedBox(width: 280, child: side),
+              const SizedBox(width: 12),
+              SizedBox(width: 245, child: side),
             ])
           else ...[
-            for (final s in sections) Padding(padding: const EdgeInsets.only(bottom: 12), child: s),
+            for (final s in sections) Padding(padding: const EdgeInsets.only(bottom: 8), child: s),
             side,
           ],
           ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             _pitchSection(wide),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           _statsSection(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           _careerSection(),
         ]),
       );
@@ -305,11 +305,11 @@ class _PlayerEditorState extends State<PlayerEditor> {
   Widget _twoColumns(List<Widget> items) {
     final left = <Widget>[], right = <Widget>[];
     for (int i = 0; i < items.length; i++) {
-      (i.isEven ? left : right).add(Padding(padding: const EdgeInsets.only(bottom: 14), child: items[i]));
+      (i.isEven ? left : right).add(Padding(padding: const EdgeInsets.only(bottom: 8), child: items[i]));
     }
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: left)),
-      const SizedBox(width: 14),
+      const SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: right)),
     ]);
   }

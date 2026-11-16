@@ -31,7 +31,7 @@ extension TradeScoutOps on AppState {
     // 補強ポイント：層の薄さ・主力の質（RosterEngine.need）
     final needs = {for (final k in _posKeys) k: RosterEngine.need(my, k)};
     final cands = <(double, Player, Team)>[];
-    for (final t in teams.where((t) => t.id != my.id)) {
+    for (final t in leagueTeams.where((t) => t.id != my.id)) {
       final g = max(1, games[t.id] ?? 0);
       for (final p in t.players.where((p) => !p.ikusei && p.age <= 33)) {
         final s = p.seasonStats;

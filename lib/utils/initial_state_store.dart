@@ -10,6 +10,7 @@ class InitialStateStore {
 
   /// ファイルが使えないとき（テストなど）はメモリに置く
   final Map<String, String> _mem = {};
+  final Map<String, String> _memOrig = {};
   Directory? _dir;
   bool _noFiles = false;
 
@@ -44,13 +45,35 @@ class InitialStateStore {
     if (await f.exists()) await f.delete();
   }
 
+  /// オリジナル球団：初めてリーグに属す前の最後の状態を控える
+  Future<void> saveOrig(String teamId, Map<String, dynamic> json) async {
+    final s = jsonEncode(json);
+    _memOrig[teamId] = s;
+    final d = await _folder();
+    if (d != null) await File('${d.path}/${_safe(teamId)}_orig.json').writeAsString(s);
+  }
+
+  Future<Map<String, dynamic>?> loadOrig(String teamId) async {
+    final d = await _folder();
+    if (d != null) {
+      final f = File('${d.path}/${_safe(teamId)}_orig.json');
+      if (await f.exists()) {
+        try {
+          return jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+        } catch (_) {}
+      }
+    }
+    final m = _memOrig[teamId];
+    return m == null ? null : jsonDecode(m) as Map<String, dynamic>;
+  }
+
   /// すべての初期状態（球団ID → 球団のデータ）
   Future<Map<String, Map<String, dynamic>>> loadAll() async {
     final out = <String, Map<String, dynamic>>{};
     final d = await _folder();
     if (d != null) {
       await for (final f in d.list()) {
-        if (f is! File || !f.path.endsWith('.json')) continue;
+        if (f is! File || !f.path.endsWith('.json') || f.path.endsWith('_orig.json')) continue;
         try {
           final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
           final id = j['id'] as String?;

@@ -1319,8 +1319,54 @@ class AppState extends ChangeNotifier {
 
   Team _teamFromInitial(Map<String, dynamic> j) => Team.fromJson(jsonDecode(jsonEncode(j)) as Map<String, dynamic>, Player.fromJson);
 
-  /// 球団の今の状態を「初期状態」にする（新しいデータはこの状態から始まる）
-  Future<void> saveInitialState(Team t) => InitialStateStore.instance.save(t.id, t.toJson());
+  /// 球団の今の状態を「初期状態」にする（新しいデータはこの状態から始まる）。
+  ///  リーグ所属球団の場合は移籍による選手重複・消失を防ぐため、リーグ12球団をまとめて保存する。
+  Future<void> saveInitialState(Team t) async {
+    final store = InitialStateStore.instance;
+    if (t.league == 'CL' || t.league == 'PL' || !t.id.startsWith('T_')) {
+      for (final x in leagueTeams) {
+        await store.save(x.id, x.toJson());
+      }
+      return;
+    }
+    await store.save(t.id, t.toJson());
+    await store.saveOrig(t.id, t.toJson());
+    // 他球団の初期状態に同じ選手IDが残っていれば除去する
+    final ids = {for (final p in t.players) p.id};
+    final all = await store.loadAll();
+    for (final e in all.entries) {
+      if (e.key == t.id) continue;
+      final list = e.value['players'];
+      if (list is List && list.any((x) => x is Map && ids.contains(x['id']))) {
+        list.removeWhere((x) => x is Map && ids.contains(x['id']));
+        await store.save(e.key, e.value);
+      }
+    }
+  }
+
+  /// 「初期化」：固有12はインストール時の初期状態へ、オリジナルは初めてリーグに属す前の最後のセーブ状態へ戻す
+  Future<String> resetTeamToFactory(Team t) async {
+    final store = InitialStateStore.instance;
+    if (!t.id.startsWith('T_')) {
+      await store.remove(t.id);
+      final factoryTeam = _initialTeams().where((x) => x.id == t.id).firstOrNull;
+      if (factoryTeam != null) {
+        factoryTeam.league = t.league;
+        final idx = teams.indexOf(t);
+        if (idx >= 0) teams[idx] = factoryTeam;
+        updateAndSave();
+      }
+      return '${t.name} をインストール時の初期状態に戻しました';
+    }
+    final orig = await store.loadOrig(t.id);
+    if (orig == null) return 'リーグ初参加前の控えが見つかりませんでした';
+    await store.save(t.id, orig);
+    final restored = _teamFromInitial(orig)..league = t.league;
+    final idx = teams.indexOf(t);
+    if (idx >= 0) teams[idx] = restored;
+    updateAndSave();
+    return '${t.name} をリーグ初参加前の最後の状態に戻しました';
+  }
 
   Future<void> removeInitialState(String teamId) => InitialStateStore.instance.remove(teamId);
 

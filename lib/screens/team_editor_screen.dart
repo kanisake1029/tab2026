@@ -1,11 +1,19 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import '../engine/fielding_gen.dart';
+import '../engine/growth_curve.dart';
+import '../engine/pitch_catalog.dart';
+import '../engine/roster_engine.dart';
 import '../providers/app_state.dart';
 import '../models/team.dart';
 import '../models/stadium.dart';
 import '../models/player.dart';
 import '../utils/app_theme.dart';
 import '../utils/grade_utils.dart';
+import '../utils/initial_state_store.dart';
+import '../utils/name_pool.dart';
+import '../utils/salary_utils.dart';
 import '../widgets/initial_data_export.dart';
 import '../widgets/player_editor.dart';
 import '../widgets/condition_face.dart';
@@ -61,11 +69,16 @@ class _TeamEditorScreenState extends State<TeamEditorScreen> {
 
   /// この球団の今の状態（選手・設定）を「初期状態」にする。新しいデータ（はじめから）はこの状態から始まる
   Future<void> _setInitial() async {
+    final inLeague = team.league == 'CL' || team.league == 'PL' || !team.id.startsWith('T_');
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('初期状態にする'),
-        content: Text('${team.name} の今の選手・設定を「初期状態」にします。新しいデータ（はじめから）では、この状態から始まります。\n（試合を進めたあとだと、移籍で入った選手もそのまま初期状態に入ります）'),
+        content: Text(
+          inLeague
+              ? '移籍による選手の重複や消失を防ぐため、リーグ12球団すべての今の選手・設定を「初期状態」としてまとめて保存します。'
+              : '${team.name} の今の選手・設定を「初期状態」にします（他球団の初期状態にいる同じ選手は自動で整理されます）。',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('やめる')),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('初期状態にする')),
@@ -76,13 +89,133 @@ class _TeamEditorScreenState extends State<TeamEditorScreen> {
     if (_dirty.isNotEmpty) _saveAll();
     await widget.appState.saveInitialState(team);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${team.name} の今の状態を初期状態にしました')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(inLeague ? 'リーグ12球団の今の状態を初期状態にしました' : '${team.name} の今の状態を初期状態にしました')));
+  }
+
+  /// 「初期化」：固有12はインストール時の初期状態へ、オリジナルはリーグ初参加前の最後のセーブ状態へ戻す
+  Future<void> _resetInitial() async {
+    final isOrig = team.id.startsWith('T_');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('初期化'),
+        content: Text(isOrig ? '${team.name} を「リーグに初めて属す前の最後のセーブ状態」に戻しますか？' : '${team.name} をインストール時の初期状態に戻しますか？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('やめる')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('初期化する')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final msg = await widget.appState.resetTeamToFactory(team);
+    if (!mounted) return;
+    setState(() {
+      _selected = null;
+      _dirty.clear();
+      final cur = widget.appState.teams.where((x) => x.id == team.id).firstOrNull ?? team;
+      _snapshot = jsonEncode(cur.toJson());
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _addRandomPlayer() async {
+    var pos = '投手';
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (c) => StatefulBuilder(builder: (c, set) {
+        return AlertDialog(
+          title: const Text('選手を追加（ランダム生成）'),
+          content: DropdownButton<String>(
+            value: pos,
+            isExpanded: true,
+            items: [for (final k in _positions) DropdownMenuItem(value: k, child: Text(k))],
+            onChanged: (v) => set(() => pos = v ?? '投手'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text('やめる')),
+            FilledButton(onPressed: () => Navigator.pop(c, pos), child: const Text('追加する')),
+          ],
+        );
+      }),
+    );
+    if (picked == null || !mounted) return;
+    final r = Random();
+    final isP = picked == '投手';
+    final age = 19 + r.nextInt(14);
+    final used = {for (final x in team.players) x.uniformNumber};
+    var uni = isP ? 11 + r.nextInt(55) : 1 + r.nextInt(65);
+    while (used.contains(uni)) {
+      uni = (uni + 1) % 99 + 1;
+    }
+    final ln = NamePool.jpLast(r, avoid: {for (final x in team.players) x.lastName});
+    final fn = NamePool.jpFirst(r, older: age >= 28);
+    final p = Player(
+      id: 'ED_${team.id}_${DateTime.now().microsecondsSinceEpoch}_${r.nextInt(999)}',
+      isPitcher: isP,
+      lastName: ln,
+      firstName: fn,
+      age: age,
+      proYears: max(1, age - 18 - r.nextInt(4)),
+      mainPos: picked,
+      uniformNumber: uni,
+      bats: r.nextDouble() < 0.35 ? 'L' : 'R',
+      throws: isP ? (r.nextDouble() < 0.28 ? 'L' : 'R') : 'R',
+      trajectory: isP ? 1 : 2 + r.nextInt(3),
+      contactLeft: 38 + r.nextInt(42),
+      contactRight: 38 + r.nextInt(42),
+      power: 38 + r.nextInt(44),
+      run: 40 + r.nextInt(42),
+      arm: 45 + r.nextInt(38),
+      throwAccuracy: 45 + r.nextInt(35),
+      catchSkill: 45 + r.nextInt(35),
+      eye: 42 + r.nextInt(38),
+      clutch: 42 + r.nextInt(36),
+      velocity: isP ? 139 + r.nextInt(17) : 128,
+      pitchPower: isP ? 44 + r.nextInt(38) : 25,
+      control: isP ? 42 + r.nextInt(38) : 25,
+      stamina: isP ? (r.nextBool() ? 55 + r.nextInt(32) : 32 + r.nextInt(25)) : 25,
+    );
+    if (isP) p.pitches = PitchCatalog.generate(p, r, starter: p.stamina >= 50);
+    FieldingGen.blendSkill(p);
+    GrowthCurve.generate(p, r);
+    p.salary = estimateSalary(p);
+    RosterEngine.addPlayer(team, p);
+    if (team.roster1G.length < 29 && !team.roster1G.contains(p.id)) team.roster1G.add(p.id);
+    setState(() {
+      _selected = p;
+      _dirty.add(p.id);
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    final p = _selected;
+    if (p == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('選手を削除'),
+        content: Text('${p.registeredName} を ${team.name} から削除しますか？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('やめる')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), style: FilledButton.styleFrom(backgroundColor: Colors.red), child: const Text('削除する')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    RosterEngine.removePlayer(team, p);
+    setState(() {
+      _dirty.add('team');
+      _selected = null;
+    });
   }
 
   void _saveAll() {
     if (_dirty.isEmpty) return;
     final what = _what();
     widget.appState.updateAndSave();
+    if (team.id.startsWith('T_') && team.league.isEmpty) {
+      InitialStateStore.instance.saveOrig(team.id, team.toJson());
+    }
     _snapshot = jsonEncode(team.toJson());
     setState(() => _dirty.clear());
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('セーブしました（$what）')));
@@ -156,9 +289,20 @@ class _TeamEditorScreenState extends State<TeamEditorScreen> {
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _leave),
         title: Text('${team.name}　初期選手編集', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
         actions: [
+          if (_selected != null)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: 'この選手を削除',
+              onPressed: _deleteSelected,
+            ),
           TextButton.icon(
-            icon: const Icon(Icons.flag_outlined, size: 18),
-            label: const Text('初期状態にする'),
+            icon: const Icon(Icons.restore, size: 17),
+            label: const Text('初期化', style: TextStyle(fontSize: 12)),
+            onPressed: _resetInitial,
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.flag_outlined, size: 17),
+            label: const Text('初期状態にする', style: TextStyle(fontSize: 12)),
             onPressed: _setInitial,
           ),
           IconButton(
@@ -230,19 +374,33 @@ class _TeamEditorScreenState extends State<TeamEditorScreen> {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-        child: TextField(
-          decoration: const InputDecoration(
-            labelText: '選手を探す（名前・背番号）',
-            isDense: true,
-            prefixIcon: Icon(Icons.search, size: 20),
-            border: OutlineInputBorder(),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        child: Row(children: [
+          Expanded(
+            child: TextField(
+              decoration: const InputDecoration(
+                labelText: '選手を探す（名前・背番号）',
+                isDense: true,
+                prefixIcon: Icon(Icons.search, size: 18),
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (s) {
+                setState(() => _query = s);
+                refresh?.call();
+              },
+            ),
           ),
-          onChanged: (s) {
-            setState(() => _query = s);
-            refresh?.call();
-          },
-        ),
+          const SizedBox(width: 6),
+          FilledButton.tonalIcon(
+            onPressed: () async {
+              await _addRandomPlayer();
+              refresh?.call();
+            },
+            icon: const Icon(Icons.person_add_alt_1, size: 16),
+            label: const Text('追加', style: TextStyle(fontSize: 12)),
+            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
+          ),
+        ]),
       ),
       Expanded(
         child: ListView(children: [
