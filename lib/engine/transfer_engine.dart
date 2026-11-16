@@ -210,7 +210,12 @@ class TransferEngine {
     return p.salary;
   }
 
-  static double _topSalaryMult(Player p) => p.ovr >= 62 ? 1.0 + ((p.ovr - 62) * 0.24).clamp(0.0, 3.60) : 1.0;
+  /// 総合値に応じた年俸倍率（B70≒1倍→約0.9億、A80≒1.75倍→約4.8億、S90≒1倍→約8.8億）
+  static double _topSalaryMult(Player p) {
+    if (p.ovr <= 72) return 1.0;
+    if (p.ovr <= 80) return 1.0 + (p.ovr - 72) * 0.09375;
+    return (1.75 - (p.ovr - 80) * 0.075).clamp(1.0, 1.75);
+  }
 
   /// 契約更改の目安の年俸（今季の働きから。年俸は書き換えない。生え抜きトップ 5〜6億・FA経験者は高め）
   static int renewTarget(Player p) {
@@ -235,8 +240,8 @@ class TransferEngine {
     return 'C';
   }
 
-  /// 市場価値（FA の希望年俸の基準）。FA トップクラスは年8億前後に上がりやすい
-  static int marketValue(Player p, Random r) => ((estimateSalary(p) * _topSalaryMult(p) * performance(p) * (1.35 + r.nextDouble() * 0.30)) / 50).round() * 50;
+  /// 市場価値（FA の初期希望年俸。競争相手がつくとここから1.1〜1.3倍へ競り上がる：B70≒8000万台→1億級、A80≒4.8億→6億級、S90≒8.2億→10億級）
+  static int marketValue(Player p, Random r) => ((estimateSalary(p) * _topSalaryMult(p) * performance(p) * (0.95 + r.nextDouble() * 0.15)) / 50).round() * 50;
 
   /// FA 宣言するか（力のある選手ほど、チームが弱い・信頼が低いほど宣言しやすい。残留要請で下がる）
   static double declareChance(Player p, double teamStrength) {

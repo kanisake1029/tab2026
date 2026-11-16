@@ -1256,7 +1256,8 @@ extension OffseasonOps on AppState {
         final interest = RosterEngine.need(t, p.mainPosition) * 0.6 + (cpuValue(t, p) - 60) / 30 + r.nextDouble() * 0.35 + (pol == 'contend' ? 0.15 : 0) - (pol == 'rebuild' ? (p.age >= 30 ? 0.5 : 0.1) : 0); // 監督の見る目（実績重視・将来性重視）と球団の方針で評価
         if (interest < 0.55) continue;
         final years = p.age <= 29 ? 3 + r.nextInt(2) : (p.age <= 32 ? 2 + r.nextInt(2) : 1 + r.nextInt(2));
-        f.offers[t.id] = [((f.ask * (0.95 + r.nextDouble() * 0.25)) / 10).round() * 10, years];
+        final bidBump = (f.offers.length * 0.05).clamp(0.0, 0.15);
+        f.offers[t.id] = [((f.ask * (1.0 + bidBump + r.nextDouble() * 0.20)) / 50).round() * 50, years];
         count[t.id] = (count[t.id] ?? 0) + 1;
       }
     }

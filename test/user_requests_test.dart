@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
 import 'package:npb_pennant_app/engine/roster_engine.dart';
+import 'package:npb_pennant_app/engine/transfer_engine.dart';
 import 'package:npb_pennant_app/utils/schedule_generator.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
@@ -252,5 +254,31 @@ void main() {
     app.createDraftSession();
     expect(app.prospects, isNotEmpty);
     expect(app.prospects.every((p) => p.reports > 0 && p.talentLo != null), isTrue);
+  });
+
+  test('FA市場価値: B70≒1億未満〜1億・A80≒4〜5億・S90≒7〜9億（競合で6億/10億級）', () {
+    Player makeBat(int ovr) => Player(
+          id: 'fa_$ovr',
+          lastName: '選手$ovr',
+          isPitcher: false,
+          mainPos: '左翼手',
+          age: 29,
+          proYears: 8,
+          contactLeft: ovr,
+          contactRight: ovr,
+          power: ovr,
+          eye: ovr,
+          clutch: ovr,
+          run: ovr,
+          arm: ovr,
+          throwAccuracy: ovr,
+          catchSkill: ovr,
+        );
+    final b70 = TransferEngine.marketValue(makeBat(70), Random(1));
+    final a80 = TransferEngine.marketValue(makeBat(80), Random(1));
+    final s90 = TransferEngine.marketValue(makeBat(90), Random(1));
+    expect(b70, inInclusiveRange(6000, 11000));
+    expect(a80, inInclusiveRange(35000, 56000));
+    expect(s90, inInclusiveRange(65000, 96000));
   });
 }
