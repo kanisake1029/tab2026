@@ -364,7 +364,20 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
                             );
                             if (ok != true || !context.mounted) return;
                             final err = widget.appState.promoteIkusei(p);
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err ?? '${p.registeredName}を支配下登録しました（背番号${p.uniformNumber}）')));
+                            if (err != null) {
+                              await showDialog<void>(
+                                context: context,
+                                builder: (c) => AlertDialog(
+                                  title: const Text('支配下登録できません'),
+                                  content: Text(err),
+                                  actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+                                ),
+                              );
+                              return;
+                            }
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.registeredName}を支配下登録しました（背番号${p.uniformNumber}）')));
+                            }
                             setState(() {});
                             if (widget.onRosterChanged != null) widget.onRosterChanged!();
                           },
