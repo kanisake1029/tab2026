@@ -877,9 +877,19 @@ class _HomeScreenState extends State<HomeScreen> {
       dated.add((g.$1, ItemNews.releaseBatch(md, g.$2, g.$3, myTeamId: app.myTeamId)));
     }
 
-    // ドラフト指名結果：球団ごとに整理して記事化
-    final draftList = app.draftBook[selYear];
-    if (draftList != null && draftList.isNotEmpty) {
+    // ドラフト指名結果：球団ごとに整理して記事化（1年目 10/31 のドラフトは draftBook[selYear + 1] に入る）
+    final draftYearsToCheck = <int>[
+      if (app.draftBook[selYear]?.isNotEmpty ?? false)
+        if (app.transactions.any((tx) => tx.startsWith('$selYear/10/') && tx.contains('ドラフト')) ||
+            (app.draftDoneYear == selYear && !(app.draftBook[selYear + 1]?.isNotEmpty ?? false)))
+          selYear,
+      if ((app.draftBook[selYear + 1]?.isNotEmpty ?? false) &&
+          (selYear == app.startYear - 1 || app.transactions.any((tx) => tx.startsWith('$selYear/10/') && tx.contains('ドラフト'))))
+        selYear + 1,
+    ];
+    for (final dy in draftYearsToCheck.toSet()) {
+      final draftList = app.draftBook[dy];
+      if (draftList == null || draftList.isEmpty) continue;
       final byTeam = <String, List<({String round, Player player, String school})>>{};
       for (final e in draftList) {
         final tid = '${e['team'] ?? ''}', pid = '${e['pid'] ?? ''}';
@@ -888,12 +898,58 @@ class _HomeScreenState extends State<HomeScreen> {
         final round = e['round'] == '補償' ? '補償' : '${e['ikusei'] == true ? '育成' : ''}${e['round']}位';
         byTeam.putIfAbsent(tid, () => []).add((round: round, player: p, school: '${e['school'] ?? ''}'));
       }
-      final dd = DateTime(selYear, 10, 24);
+      final dd = DateTime(selYear, 10, 31);
       for (final entry in byTeam.entries) {
         final t = teamById(entry.key);
         if (t == null || entry.value.isEmpty) continue;
         dated.add((dd, ItemNews.draftSummary('${dd.month}/${dd.day}', t, entry.value, myTeamId: app.myTeamId)));
       }
+    }
+
+    // FA宣言（進行中の faCases および transactions の履歴から）
+    final faDeclaredIds = <String>{};
+    if (selYear == today.year && app.faCases.isNotEmpty) {
+      final dFa = app.faDeclareDate(selYear);
+      for (final f in app.faCases) {
+        final p = everyone.where((x) => x.id == f.playerId).firstOrNull;
+        final from = teamById(f.fromTeamId);
+        if (p == null || from == null) continue;
+        faDeclaredIds.add('${p.id}|${dFa.month}/${dFa.day}');
+        final text = '${teamShort(from)}の${p.registeredName}がFA宣言（${f.rank}ランク）';
+        dated.add((dFa, ItemNews.of('${dFa.month}/${dFa.day}', text, NewsTopic.transfer, player: p, team: from, myTeamId: app.myTeamId, stars: stars)));
+      }
+    }
+    final faDecRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)\s+FA宣言（([^）]+)）');
+    for (final tx in app.transactions.take(500)) {
+      final m = faDecRe.firstMatch(tx);
+      if (m == null) continue;
+      final y = int.parse(m.group(1)!);
+      if (y != selYear) continue;
+      final d = DateTime(y, int.parse(m.group(2)!), int.parse(m.group(3)!));
+      final name = m.group(5)!;
+      final p = everyone.where((x) => x.registeredName == name).firstOrNull;
+      if (p == null || !faDeclaredIds.add('${p.id}|${d.month}/${d.day}')) continue;
+      final t = app.teams.where((x) => teamShort(x) == m.group(4)).firstOrNull ?? teamOf(p);
+      final text = '${m.group(4)}の$nameがFA宣言（${m.group(6)}）';
+      dated.add((d, ItemNews.of('${d.month}/${d.day}', text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
+    }
+
+    // 戦力外・自由契約からの獲得（入団の記録から）
+    final faSignRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)と(育成)?契約（自由契約・([^）]+)）');
+    for (final tx in app.transactions.take(500)) {
+      final m = faSignRe.firstMatch(tx);
+      if (m == null) continue;
+      final y = int.parse(m.group(1)!);
+      if (y != selYear) continue;
+      final d = DateTime(y, int.parse(m.group(2)!), int.parse(m.group(3)!));
+      final name = m.group(5)!;
+      final p = everyone.where((x) => x.registeredName == name).firstOrNull;
+      if (p == null) continue;
+      final ik = m.group(6) != null;
+      final t = app.teams.where((x) => teamShort(x) == m.group(4)).firstOrNull ?? teamOf(p);
+      final text = '${m.group(4)}が自由契約の$nameと${ik ? '育成' : ''}契約（${m.group(7)}）';
+      if (dated.any((e) => e.$2.player?.id == p.id && e.$2.date == '${d.month}/${d.day}' && e.$2.text.contains('自由契約'))) continue;
+      dated.add((d, ItemNews.of('${d.month}/${d.day}', text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
     }
 
     // 新外国人の入団（入団の記録から）

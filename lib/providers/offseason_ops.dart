@@ -1204,7 +1204,8 @@ extension OffseasonOps on AppState {
       for (final p in t.players) {
         if (r.nextDouble() >= TransferEngine.declareChance(p, st)) continue;
         faCases.add(FaCase(playerId: p.id, fromTeamId: t.id, rank: TransferEngine.faRank(teams, p), ask: TransferEngine.marketValue(p, r)));
-      if (t.id == myTeamId) mine.add(p.registeredName);
+        transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName} FA宣言（${TransferEngine.faRank(teams, p)}ランク）');
+        if (t.id == myTeamId) mine.add(p.registeredName);
       }
     }
     for (final t in leagueTeams) {
@@ -1419,6 +1420,7 @@ extension OffseasonOps on AppState {
     logMove(p, ikusei ? '自由契約から育成契約' : '自由契約から入団', from, t);
     RosterEngine.addPlayer(t, p);
     transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}契約（自由契約・${formatSalary(p.salary)}${p.contractYears > 1 ? '・${p.contractYears}年' : ''}・元${teamById(fa.fromTeamId) == null ? '−' : teamShort(teamById(fa.fromTeamId)!)}）');
+    _addNews(['${teamShort(t)}が自由契約の${p.registeredName}と${ikusei ? '育成' : ''}契約（${formatSalary(p.salary)}）']);
   }
 
   /// 自由契約選手の基準希望額
