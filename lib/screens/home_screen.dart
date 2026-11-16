@@ -789,8 +789,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return playerInText(text, _newsPeople) != null;
   }
 
-  /// 記事の選手を探す範囲：全球団の選手と自由契約の選手
-  List<Player> get _newsPeople => [for (final t in app.teams) ...t.players, ...app.freeAgents.map((f) => f.player)];
+  /// 記事の選手を探す範囲：全球団の選手・自由契約の選手・海外/他リーグへ移った選手
+  List<Player> get _newsPeople => [
+        for (final t in app.teams) ...t.players,
+        ...app.freeAgents.map((f) => f.player),
+        if (app.otherWorld != null)
+          for (final ot in app.otherWorld!.teams) ...ot.players,
+      ];
 
   /// ニュース：確定情報（移籍・戦力外・ドラフト・故障・記録）と憶測（予想）を球団・要素別に整理して表示
   Widget _newsArticles() {
@@ -851,7 +856,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (x.registeredName.length >= 2 && text.contains(x.registeredName) && seen.add(x.registeredName)) involved.add((x, teamOf(x)));
         }
       }
-      dated.add((dayOf(date), ItemNews.of(date, text, topic, player: p, team: teamOf(p), myTeamId: app.myTeamId, stars: stars, involved: involved)));
+      dated.add((dayOf(date), ItemNews.of(date, text, topic, player: p, team: teamOf(p) ?? app.teams.where((t) => text.contains(teamShort(t))).firstOrNull, myTeamId: app.myTeamId, stars: stars, involved: involved)));
       if (dated.length >= 160) break;
     }
 

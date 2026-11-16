@@ -45,9 +45,10 @@ class ItemNews {
     bool has(List<String> ws) => ws.any(t.contains);
     if (has(['リーグ規定', 'ポストシーズン', '雨天', '提案', 'キャンプ', 'スポンサー', 'グッズ', '施設'])) return null;
     if (has(['負傷', '悪化', '全治', '故障', '離脱'])) return NewsTopic.injury;
+    if (has(['ポスティング', '海外FA', 'FA宣言', 'FA 宣言', 'FA：', 'トレード', '新外国人', '補償', '支配下登録', '育成再契約', '再契約', 'と契約', 'と育成契約'])) return NewsTopic.transfer;
     if (has(['戦力外', '自由契約', '退団', '引退', '育成契約満了'])) return NewsTopic.release;
     if (has(['ドラフト'])) return NewsTopic.draft;
-    if (has(['トレード', 'FA', '入団', '獲得', '移籍', '新外国人', '補償', '加入', '支配下登録', '育成選手'])) return NewsTopic.transfer;
+    if (has(['FA', '入団', '獲得', '移籍', '加入', '育成選手'])) return NewsTopic.transfer;
     if (has(['勝目', '本塁打', '記録', '達成', '猛打', '完封', 'MVP', 'タイトル', '連続', '号'])) return NewsTopic.record;
     return null;
   }
@@ -90,9 +91,9 @@ class ItemNews {
     }
     final name = p?.registeredName ?? '';
     final t = team == null ? '' : _short(team);
-    final out = ['戦力外', '自由契約', '退団', '引退', '放出'].any(text.contains);
-    final inn = ['獲得', '入団', '加入', '新外国人', 'ドラフト', '指名'].any(text.contains);
-    final stay = text.contains('残留');
+    final stay = text.contains('残留') || text.contains('再契約');
+    final out = topic == NewsTopic.release && !stay && !['契約', 'FA宣言', 'FA 宣言'].any(text.contains);
+    final inn = ['獲得', '入団', '加入', '新外国人', 'ドラフト', '指名', '契約'].any(text.contains);
     List<String> fanLines(bool mine) {
       switch (topic) {
         case NewsTopic.injury:
@@ -170,7 +171,7 @@ class ItemNews {
 
     // 見出し：故障は「〇〇・名前が肉離れで離脱　全治約14日」の形に
     var head = _headline(text);
-    final released = (topic == NewsTopic.release || topic == NewsTopic.transfer) && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay;
+    final released = topic == NewsTopic.release && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay && !['契約', 'FA宣言', 'FA 宣言', '育成選手として'].any(text.contains);
     if (released) {
       head = '${p.registeredName}、新天地でチャンスをつかみ取れるか${t.isEmpty ? '' : '　$tを離れる'}';
       body.add(p.age <= 28
