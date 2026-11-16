@@ -925,7 +925,9 @@ class _ScoutReportState extends State<ScoutReport> {
 
     Widget honorRow(String yearText, String h, {bool est = false}) {
       final (cat, bg, border, fg) = honorStyle(h);
-      final text = h.replaceFirst(RegExp(r'^\d{4}年(\d+月\d+日)?\s?'), '') + (est ? '（推定）' : '');
+      final dm = RegExp(r'^(\d{4})年(?:(\d+)月(\d+)日)?\s*(.*)$').firstMatch(h);
+      final dateLabel = dm != null && dm.group(2) != null ? '${dm.group(1)}/${dm.group(2)}/${dm.group(3)}' : yearText;
+      final text = (dm != null ? dm.group(4)! : h) + (est ? '（推定）' : '');
       return Container(
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -935,7 +937,7 @@ class _ScoutReportState extends State<ScoutReport> {
           border: Border.all(color: border.withValues(alpha: 0.7)),
         ),
         child: Row(children: [
-          SizedBox(width: 48, child: Text(yearText, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800))),
+          SizedBox(width: 76, child: Text(dateLabel, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800))),
           Container(
             width: 66,
             alignment: Alignment.center,
@@ -1008,17 +1010,18 @@ class _ScoutReportState extends State<ScoutReport> {
           _title('記録（回数）'),
           ..._recordLines(total),
         ]);
-        int honorMonth(String h) {
-          final m = RegExp(r'\d{4}年(\d+)').firstMatch(h);
-          return m != null ? int.parse(m.group(1)!) : 11;
+        (int, int) honorMd(String h) {
+          final m = RegExp(r'\d{4}年(\d+)月(\d+)日').firstMatch(h);
+          if (m != null) return (int.parse(m.group(1)!), int.parse(m.group(2)!));
+          final m2 = RegExp(r'\d{4}年(\d+)').firstMatch(h);
+          return m2 != null ? (int.parse(m2.group(1)!), 1) : (11, 30);
         }
-        final chronologicalHonors = <(int, int, String, String, bool)>[
+        final chronologicalHonors = <(int, int, int, String, String, bool)>[
           for (final r in rows)
-            for (final h in r.$4) (int.tryParse(r.$1.replaceAll(RegExp(r'[^0-9]'), '')) ?? 9999, honorMonth(h), r.$1, h, r.$5),
-        ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+            for (final h in r.$4)
+              (int.tryParse(r.$1.replaceAll(RegExp(r'[^0-9]'), '')) ?? 9999, honorMd(h).$1, honorMd(h).$2, r.$1, h, r.$5),
+        ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : (a.$2 != b.$2 ? a.$2.compareTo(b.$2) : a.$3.compareTo(b.$3)));
         final honorsView = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (_titles.isNotEmpty || estTitles.isNotEmpty) _honorsSection(estTitles) else const Text('タイトル・表彰はまだありません', style: TextStyle(fontSize: 11.5, color: _sub)),
-          const SizedBox(height: 6),
           _title('表彰・記録（時系列）'),
           Wrap(spacing: 6, runSpacing: 4, children: [
             for (final b in const [
@@ -1038,7 +1041,7 @@ class _ScoutReportState extends State<ScoutReport> {
           if (chronologicalHonors.isEmpty)
             const Text('表彰・記録はまだありません', style: TextStyle(fontSize: 11.5, color: _sub))
           else
-            for (final it in chronologicalHonors) honorRow(it.$3, it.$4, est: it.$5),
+            for (final it in chronologicalHonors) honorRow(it.$4, it.$5, est: it.$6),
         ]);
         final timelineView = FutureBuilder<List<(DateTime, String)>>(
           future: _timeline,

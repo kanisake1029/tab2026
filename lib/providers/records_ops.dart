@@ -167,7 +167,7 @@ extension RecordOps on AppState {
       for (final (kind, e) in [('野手', bestBat), ('投手', bestPit)]) {
         if (e == null) continue;
         monthlyMvps.add({'year': year, 'month': label, 'league': lg, 'kind': kind, 'id': e.$1.id, 'name': e.$1.registeredName, 'team': e.$2.id, 'teamName': teamShort(e.$2), 'line': e.$4});
-        e.$1.honors.add('$year年$label 月間MVP（$kind）');
+        e.$1.honors.add('$year年${currentDate.month}月${currentDate.day}日 $label 月間MVP（$kind）');
         if (e.$2.id == myTeamId) _addNews(['$label の月間MVP（$kind）に ${e.$1.registeredName} が選ばれました（${e.$4}）']);
       }
     }
@@ -186,10 +186,11 @@ extension RecordOps on AppState {
   /// シーズンの表彰を、選手ごとの表彰の記録に書き込む
   void _recordHonors(int year, Map<String, dynamic> awards) {
     final byId = {for (final t in teams) for (final p in t.players) p.id: p};
+    final awardDate = currentDate.add(const Duration(days: 1)); // 年間表彰日：日本シリーズ終了の翌日
     void give(dynamic winners, String label) {
       if (winners is! List) return;
       for (final w in winners) {
-        if (w is Map && byId[w['id']] != null) byId[w['id']]!.honors.add('$year年 $label');
+        if (w is Map && byId[w['id']] != null) byId[w['id']]!.honors.add('${awardDate.year}年${awardDate.month}月${awardDate.day}日 $label');
       }
     }
     final leagues = awards['leagues'];
