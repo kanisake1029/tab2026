@@ -914,7 +914,7 @@ class _ScoutReportState extends State<ScoutReport> {
       if (h.contains('連続')) {
         return ('連続記録', const Color(0xFFDCFCE7), const Color(0xFF4ADE80), const Color(0xFF166534));
       }
-      if (h.contains('ベストナイン') || h.contains('ゴールデングラブ')) {
+      if (h.contains('ベストナイン') || h.contains('ゴールデングラブ') || h.contains('月間MVP')) {
         return ('表彰', const Color(0xFFF3E8FF), const Color(0xFFC084FC), const Color(0xFF6B21A8));
       }
       if (_isRecord(h) || h.contains('通算') || h.contains('達成') || h.contains('ノーヒット') || h.contains('完全試合')) {
@@ -1008,10 +1008,14 @@ class _ScoutReportState extends State<ScoutReport> {
           _title('記録（回数）'),
           ..._recordLines(total),
         ]);
-        final chronologicalHonors = <(int, String, String, bool)>[
+        int honorMonth(String h) {
+          final m = RegExp(r'\d{4}年(\d+)').firstMatch(h);
+          return m != null ? int.parse(m.group(1)!) : 11;
+        }
+        final chronologicalHonors = <(int, int, String, String, bool)>[
           for (final r in rows)
-            for (final h in r.$4) (int.tryParse(r.$1.replaceAll(RegExp(r'[^0-9]'), '')) ?? 9999, r.$1, h, r.$5),
-        ]..sort((a, b) => a.$1.compareTo(b.$1));
+            for (final h in r.$4) (int.tryParse(r.$1.replaceAll(RegExp(r'[^0-9]'), '')) ?? 9999, honorMonth(h), r.$1, h, r.$5),
+        ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
         final honorsView = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (_titles.isNotEmpty || estTitles.isNotEmpty) _honorsSection(estTitles) else const Text('タイトル・表彰はまだありません', style: TextStyle(fontSize: 11.5, color: _sub)),
           const SizedBox(height: 6),
@@ -1034,7 +1038,7 @@ class _ScoutReportState extends State<ScoutReport> {
           if (chronologicalHonors.isEmpty)
             const Text('表彰・記録はまだありません', style: TextStyle(fontSize: 11.5, color: _sub))
           else
-            for (final it in chronologicalHonors) honorRow(it.$2, it.$3, est: it.$4),
+            for (final it in chronologicalHonors) honorRow(it.$3, it.$4, est: it.$5),
         ]);
         final timelineView = FutureBuilder<List<(DateTime, String)>>(
           future: _timeline,
