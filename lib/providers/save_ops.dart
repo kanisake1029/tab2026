@@ -313,9 +313,9 @@ extension SaveOps on AppState {
       _needFirsts = false;
     }
     // 以前のセーブの修復：シーズン中やオフ宣言前の古いFAケースを破棄、または宣言日を過ぎていれば宣言
-    if (!offAfterSeason && !seasonFinished) {
+    if (!offAfterSeason && !seasonFinished && currentDate.year >= startYear) {
       faCases = [];
-    } else if (offAfterSeason) {
+    } else if (offAfterSeason || seasonFinished || currentDate.year < startYear) {
       final declareDay = faDeclareDate(currentDate.year);
       if (currentDate.isBefore(declareDay)) {
         faCases = [];

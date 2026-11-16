@@ -404,13 +404,16 @@ extension OffseasonOps on AppState {
   /// FA の交渉期間か（宣言〜結果）
   bool get faOpen => faCases.isNotEmpty && faCases.any((f) => f.result.isEmpty);
 
-  /// シーズン後のオフで、FA宣言日以降なのにまだ宣言が行われていなければ宣言を行う（既存セーブの修復・救済用）
+  /// オフ（1年目オフまたはシーズン後オフ）で、FA宣言日以降なのにまだ宣言が行われていなければ宣言を行う
   void ensureFaDeclaredIfNeeded() {
-    if (!offAfterSeason) return;
+    if (!offAfterSeason && !seasonFinished && currentDate.year >= startYear) return;
     final y = currentDate.year;
     final declareDay = faDeclareDate(y);
     if (!currentDate.isBefore(declareDay) && currentDate.month <= 12) {
-      if (faCases.isEmpty) {
+      if (faCases.isEmpty && !transactions.any((t) => t.startsWith('$y/11/') && t.contains('FA宣言'))) {
+        if (y == 2025 && currentDate.month == 11 && currentDate.day == 17) {
+          currentDate = declareDay; // 25/11/17 → 1週間巻き戻して 11/10（第2月曜）にFA宣言
+        }
         _overseasFa();
         _faDeclare();
         updateAndSave();
@@ -464,7 +467,7 @@ extension OffseasonOps on AppState {
         if (inSeason) _cpuWeekly();
       }
       final played = offAfterSeason; // シーズンを1つ終えた後のオフ
-      if (played && d.month == 11 && d.day == faDeclareDate(d.year).day) {
+      if ((played || d.year < startYear || seasonFinished) && d.month == 11 && d.day == faDeclareDate(d.year).day) {
         faCases = [];
         _overseasFa(); // 海外FA（国内FA の宣言より先）
         _faDeclare();
@@ -534,8 +537,9 @@ extension OffseasonOps on AppState {
 
   /// オフシーズンの止まる日（FA 宣言・契約更改・FA の期限）
   List<DateTime> _offseasonStops(DateTime d0) {
-    if (!_afterSeason) return const [];
     final y = d0.year;
+    if (!offAfterSeason && !seasonFinished && d0.year >= startYear) return const [];
+    if (!offAfterSeason) return [faDeclareDate(y), DateTime(y, 12, 31)];
     return [faDeclareDate(y), DateTime(y, 12, 1), DateTime(y, 12, 9), DateTime(y, 12, 31)];
   }
 

@@ -933,7 +933,7 @@ class AppState extends ChangeNotifier {
     }
     // 試合のない期間（ドラフト明け〜開幕）は毎週月曜日に止まる（補強・練習の見直しのため）
     final monday = d0.add(Duration(days: (DateTime.monday - d0.weekday + 7) % 7 == 0 ? 7 : (DateTime.monday - d0.weekday + 7) % 7));
-    for (final c in [DateTime(d0.year, 10, 31), DateTime(d0.year + 1, 1, 1), if (offAfterSeason) ..._offseasonStops(d0), if (_offPeriod(d0)) monday]) {
+    for (final c in [DateTime(d0.year, 10, 31), DateTime(d0.year + 1, 1, 1), ..._offseasonStops(d0), if (_offPeriod(d0)) monday]) {
       if (c.isAfter(d0) && (best == null || c.isBefore(best))) best = c;
     }
     return best ?? d0.add(const Duration(days: 1));
