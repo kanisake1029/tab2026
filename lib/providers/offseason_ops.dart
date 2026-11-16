@@ -1365,7 +1365,7 @@ extension OffseasonOps on AppState {
     final cpu = leagueTeams.where((t) => t.id != myTeamId).toList()..shuffle(r);
     for (final t in cpu) {
       var signed = 0;
-      final pool = List.of(freeAgents)..sort((a, b) => RosterEngine.value(b.player).compareTo(RosterEngine.value(a.player)));
+      final pool = freeAgents.where((f) => f.priorityTeamId.isEmpty).toList()..sort((a, b) => RosterEngine.value(b.player).compareTo(RosterEngine.value(a.player)));
       for (final fa in pool) {
         if (signed >= 2) break;
         final v = cpuValue(t, fa.player);
@@ -1384,30 +1384,53 @@ extension OffseasonOps on AppState {
     _addNews(['${currentDate.month == 1 ? '自由契約' : 'トライアウト'}：$n人が他球団と契約。自由契約の選手は1月31日までに契約がなければ引退します']);
   }
 
-  void _signFa(FreeAgent fa, Team t, {required bool ikusei}) {
+  void _signFa(FreeAgent fa, Team t, {required bool ikusei, int? salary, int years = 1}) {
     freeAgents.remove(fa);
     final p = fa.player;
     p.ikusei = ikusei;
     p.ikuseiYears = 0;
-    if (ikusei) p.salary = min(p.salary, 600);
-    p.contractYears = 1;
+    if (ikusei) {
+      p.salary = min(p.salary, 600);
+      p.contractYears = 1;
+    } else {
+      if (salary != null) {
+        p.prevSalary = p.salary;
+        p.salary = salary;
+      }
+      p.contractYears = years.clamp(1, 3);
+    }
     final from = teamById(fa.fromTeamId);
     if (from != null) midSeasonMove(p, from, t);
     logMove(p, ikusei ? '自由契約から育成契約' : '自由契約から入団', from, t);
     RosterEngine.addPlayer(t, p);
-    transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}契約（自由契約・元${teamById(fa.fromTeamId) == null ? '−' : teamShort(teamById(fa.fromTeamId)!)}）');
+    transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}契約（自由契約・${formatSalary(p.salary)}${p.contractYears > 1 ? '・${p.contractYears}年' : ''}・元${teamById(fa.fromTeamId) == null ? '−' : teamShort(teamById(fa.fromTeamId)!)}）');
   }
 
-  /// 自球団が自由契約の選手と契約する
-  String? signFreeAgent(FreeAgent fa, {required bool ikusei}) {
+  /// 自由契約選手の基準希望額
+  int freeAgentBaseAsk(FreeAgent fa) => max(450, round50(fa.reason == '戦力外' ? fa.player.salary * 0.7 : fa.player.salary));
+
+  /// 自球団が自由契約の選手と契約する（支配下は年俸・年数の交渉が可能）
+  String? signFreeAgent(FreeAgent fa, {required bool ikusei, int? salary, int years = 1}) {
     final my = myTeam;
     if (my == null) return '球団が選ばれていません';
+    if (fa.priorityTeamId.isNotEmpty && fa.priorityTeamId != my.id) return '他球団の優先交渉期間中です';
     if (!ikusei && RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
     if (!ikusei && !tradeOpen) return '支配下での契約は7月31日までです';
     if (ikusei && RosterEngine.ikuseiCount(my) >= ikuseiCap(my)) return '育成選手の上限（${ikuseiCap(my)}人）に達しています（設備や3軍コーチで増やせます）';
-    final fe = _fundsCheck(my, ikusei ? min(fa.player.salary, 600) : fa.player.salary);
+    final baseAsk = freeAgentBaseAsk(fa);
+    final offerSal = ikusei ? min(fa.player.salary, 600) : (((salary ?? baseAsk) / 50).round() * 50).clamp(450, 999950);
+    final offerY = ikusei ? 1 : years.clamp(1, 3);
+    final fe = _fundsCheck(my, offerSal);
     if (fe != null) return fe;
-    _signFa(fa, my, ikusei: ikusei);
+    if (!ikusei && salary != null) {
+      final need = TrustEngine.askForYears(fa.player, baseAsk, offerY);
+      final r = Random(fa.player.id.hashCode ^ offerSal ^ offerY ^ currentDate.day);
+      if (!TrustEngine.acceptOffer(fa.player, offerSalary: offerSal, needSalary: need, r: r)) {
+        final prefY = TrustEngine.preferredYears(fa.player).clamp(1, 3);
+        return '${fa.player.registeredName}は条件に納得しませんでした（希望は${formatSalary(need)}・$prefY年くらい）';
+      }
+    }
+    _signFa(fa, my, ikusei: ikusei, salary: offerSal, years: offerY);
     updateAndSave();
     return null;
   }

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:npb_pennant_app/engine/transfer_engine.dart';
 import 'package:npb_pennant_app/engine/trust_engine.dart';
 import 'package:npb_pennant_app/models/player.dart';
 
@@ -67,5 +68,29 @@ void main() {
     }
     expect(highAcc, greaterThan(120));
     expect(lowAcc, 0);
+  });
+
+  test('トップクラスの生え抜き年俸（5〜6億）とFA市場価値（約8億）の相場', () {
+    final star = Player(
+      id: 'ST1',
+      isPitcher: false,
+      mainPos: '右翼手',
+      age: 29,
+      proYears: 8,
+      contactLeft: 85,
+      contactRight: 85,
+      power: 85,
+      run: 72,
+      arm: 75,
+      fieldRF: 78,
+      eye: 82,
+      clutch: 82,
+      salary: 45000,
+      seasonStats: PlayerStats(games: 140, atBats: 520, hits: 165, doubles: 30, homeRuns: 35, rbi: 105, walks: 75),
+    );
+    final homegrown = TransferEngine.renewTarget(star);
+    final fa = TransferEngine.marketValue(star, Random(1));
+    expect(homegrown, inInclusiveRange(45000, 75000));
+    expect(fa, inInclusiveRange(65000, 100000));
   });
 }

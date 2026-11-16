@@ -210,9 +210,11 @@ class TransferEngine {
     return p.salary;
   }
 
-  /// 契約更改の目安の年俸（今季の働きから。年俸は書き換えない）
+  static double _topSalaryMult(Player p) => p.ovr >= 62 ? 1.0 + ((p.ovr - 62) * 0.24).clamp(0.0, 3.60) : 1.0;
+
+  /// 契約更改の目安の年俸（今季の働きから。年俸は書き換えない。生え抜きトップ 5〜6億・FA経験者は高め）
   static int renewTarget(Player p) {
-    final base = estimateSalary(p);
+    final base = estimateSalary(p) * _topSalaryMult(p) * (p.faCount > 0 ? 1.15 : 1.0);
     final target = (base * performance(p)).round();
     final lo = (p.salary * 0.75).round(), hi = p.salary * 2;
     var s = target.clamp(lo, max(lo, hi));
@@ -233,8 +235,8 @@ class TransferEngine {
     return 'C';
   }
 
-  /// 市場価値（FA の希望年俸の基準）。FA は高くなりやすい（×1.2〜1.5）
-  static int marketValue(Player p, Random r) => ((estimateSalary(p) * performance(p) * (1.2 + r.nextDouble() * 0.3)) / 10).round() * 10;
+  /// 市場価値（FA の希望年俸の基準）。FA トップクラスは年8億前後に上がりやすい
+  static int marketValue(Player p, Random r) => ((estimateSalary(p) * _topSalaryMult(p) * performance(p) * (1.35 + r.nextDouble() * 0.30)) / 50).round() * 50;
 
   /// FA 宣言するか（力のある選手ほど、チームが弱い・信頼が低いほど宣言しやすい。残留要請で下がる）
   static double declareChance(Player p, double teamStrength) {

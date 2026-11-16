@@ -1208,6 +1208,52 @@ class FreeAgentScreen extends StatefulWidget {
 }
 
 class _FreeAgentScreenState extends State<FreeAgentScreen> {
+  Future<void> _negotiate(FreeAgent fa) async {
+    final app = widget.app;
+    final p = fa.player;
+    final baseAsk = app.freeAgentBaseAsk(fa);
+    final prefY = TrustEngine.preferredYears(p).clamp(1, 3);
+    var years = prefY;
+    var salary = TrustEngine.askForYears(p, baseAsk, years);
+    final res = await showDialog<(int, int)?>(
+      context: context,
+      builder: (d) => StatefulBuilder(builder: (d, set) {
+        final need = TrustEngine.askForYears(p, baseAsk, years);
+        Widget step(String label, int delta) => OutlinedButton(
+              onPressed: () => set(() => salary = (salary + delta).clamp(450, 999950)),
+              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: Text(label, style: const TextStyle(fontSize: 11.5)),
+            );
+        return AlertDialog(
+          title: Text('${p.registeredName}と契約交渉'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${fa.reason}　目安：${formatSalary(need)}（推奨 $prefY年）', style: const TextStyle(fontSize: 12, color: _sub)),
+            const SizedBox(height: 8),
+            Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
+            const SizedBox(height: 8),
+            Row(children: [
+              const Text('契約年数：'),
+              DropdownButton<int>(
+                value: years,
+                items: [for (var y = 1; y <= 3; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
+                onChanged: (v) => set(() => years = v ?? 1),
+              ),
+            ]),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),
+            FilledButton(onPressed: () => Navigator.pop(d, (salary, years)), child: const Text('提示する')),
+          ],
+        );
+      }),
+    );
+    if (res == null || !mounted) return;
+    _toast(context, app.signFreeAgent(fa, ikusei: false, salary: res.$1, years: res.$2), '${p.registeredName}と契約しました（${formatSalary(res.$1)}・${res.$2}年）');
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = widget.app;
@@ -1233,12 +1279,9 @@ class _FreeAgentScreenState extends State<FreeAgentScreen> {
                 note: '${fa.reason}（元${from(fa.fromTeamId)}）　${fa.player.draftInfo}',
                 trailing: Column(mainAxisSize: MainAxisSize.min, children: [
                   FilledButton(
-                    onPressed: () {
-                      _toast(context, app.signFreeAgent(fa, ikusei: false), '${fa.player.registeredName}と契約しました');
-                      setState(() {});
-                    },
+                    onPressed: () => _negotiate(fa),
                     style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-                    child: const Text('支配下'),
+                    child: const Text('交渉'),
                   ),
                   TextButton(
                     onPressed: () {
