@@ -298,6 +298,7 @@ class Player {
   int recovery;         // 回復力 1〜100（体力の毎日の回復量）
   int durability;       // 怪我しにくさ 1〜100
   int trust;            // 監督への信頼 1〜100
+  int teamLove;         // チーム愛 1〜100
   double conditionFreq; // 調子の波の速さ t（調子 = 2.5·sin(t·x + φ) を0方向に丸める）
   double conditionPhase;// 調子の波の位相 φ
   int motivation;       // モチベーション 0〜100
@@ -443,6 +444,7 @@ class Player {
     this.recovery = 50,
     this.durability = 50,
     this.trust = 50,
+    this.teamLove = 50,
     this.conditionFreq = 0.3,
     this.conditionPhase = 0.0,
     this.motivation = 50,
@@ -721,6 +723,7 @@ class Player {
       'recovery': recovery,
       'durability': durability,
       'trust': trust,
+      'teamLove': teamLove,
       'conditionFreq': conditionFreq,
       'conditionPhase': conditionPhase,
       'motivation': motivation,
@@ -881,6 +884,7 @@ class Player {
       recovery: json['recovery'] ?? 50,
       durability: json['durability'] ?? 50,
       trust: json['trust'] ?? 50,
+      teamLove: json['teamLove'] ?? 50,
       conditionFreq: (json['conditionFreq'] as num?)?.toDouble() ?? 0.3,
       conditionPhase: (json['conditionPhase'] as num?)?.toDouble() ?? 0.0,
       motivation: json['motivation'] ?? 50,

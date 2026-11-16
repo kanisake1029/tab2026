@@ -20,10 +20,12 @@ extension CampOps on AppState {
       for (final p in home ? s.homePitchers : s.awayPitchers) {
         if (!done.add(p.id)) continue;
         GrowthEngine.gameExp(p, level, innings: (s.pitcherOuts[p.id] ?? 0) / 3.0, coach: (st) => _gameExpMult(t, p, st));
+        TrustEngine.addTrust(p, level >= 1.0 ? 0.45 : 0.22);
       }
       for (final p in home ? s.homeAppeared : s.awayAppeared) {
         if (!done.add(p.id)) continue;
         GrowthEngine.gameExp(p, level, coach: (st) => _gameExpMult(t, p, st));
+        TrustEngine.addTrust(p, level >= 1.0 ? 0.45 : 0.22);
       }
       // 1軍の試合：ベンチにいて出なかった選手にも、2軍の試合に出たのと同じ経験値（先発ローテの投手は登板間隔のため除く）
       if (level >= 1.0) {
@@ -248,6 +250,7 @@ extension CampOps on AppState {
     final ab0 = {for (final pl in [...home.$1, ...away.$1]) pl.id: pl.thirdStats.atBats};
     for (final pl in [...home.$1, ...away.$1]) {
       pl.thirdStats.games++;
+      TrustEngine.addTrust(pl, 0.15);
     }
     for (var i = 1; i <= 9; i++) {
       for (final side in [0, 1]) {

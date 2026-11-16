@@ -14,6 +14,7 @@ import '../utils/initial_data_format.dart';
 import '../engine/match_simulator.dart';
 import '../engine/condition_engine.dart';
 import '../engine/growth_engine.dart';
+import '../engine/trust_engine.dart';
 import '../engine/farm_engine.dart';
 import '../engine/postseason.dart';
 import '../engine/awards.dart';
@@ -1101,18 +1102,53 @@ class AppState extends ChangeNotifier {
       hTeam.wins++;
       aTeam.losses++;
       _managerWin(hTeam, m.date);
+      for (final p in hTeam.players) {
+        if (hTeam.roster1G.contains(p.id)) TrustEngine.addTeamLove(p, 0.25);
+      }
     } else if (result.homeScore < result.awayScore) {
       hTeam.losses++;
       aTeam.wins++;
       _managerWin(aTeam, m.date);
+      for (final p in aTeam.players) {
+        if (aTeam.roster1G.contains(p.id)) TrustEngine.addTeamLove(p, 0.25);
+      }
     } else {
       hTeam.draws++;
       aTeam.draws++;
     }
   }
 
+  Map<String, Set<String>>? _roster1GSnap;
+
+  void _diffRoster1G() {
+    if (offAfterSeason || seasonFinished || currentDate.month < 3 || currentDate.month > 10) {
+      _roster1GSnap = {for (final t in teams) t.id: {...t.roster1G}};
+      return;
+    }
+    final prev = _roster1GSnap;
+    if (prev == null) {
+      _roster1GSnap = {for (final t in teams) t.id: {...t.roster1G}};
+      return;
+    }
+    for (final t in teams) {
+      final old = prev[t.id];
+      final cur = t.roster1G.toSet();
+      if (old != null) {
+        for (final p in t.players) {
+          if (!old.contains(p.id) && cur.contains(p.id)) {
+            TrustEngine.addTrust(p, 3.0);
+          } else if (old.contains(p.id) && !cur.contains(p.id) && !p.isInjuredOut) {
+            TrustEngine.addTrust(p, -5.0);
+          }
+        }
+      }
+      prev[t.id] = cur;
+    }
+  }
+
   void playNextDay() {
     if (fired) return; // 解任された：次の行き先を選ぶまで進めない
+    _diffRoster1G();
     if (draftPending) {
       if (!autoMode) return; // ドラフト会議を済ませるまで進めない
       runAutoDraft();
@@ -1697,6 +1733,9 @@ class AppState extends ChangeNotifier {
 
     final standingsSnap = _standingsSnapshot(); // 順位表の詳細（年度を切り替えると試合が消えるので先に）
     // 記録を締めてオフシーズンへ（年齢・日程が変わるのは1月1日）
+    for (final t in leagueTeams) {
+      TrustEngine.seasonEndAdjust(t, wins: t.wins, losses: t.losses);
+    }
     reviewPolicies(); // CPU 球団の方針を、今季の順位と戦力の年齢で見直す
     seasonFinished = true;
     notifyListeners();

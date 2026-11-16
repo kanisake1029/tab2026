@@ -12,11 +12,12 @@ import 'roster_engine.dart';
 class FreeAgent {
   final Player player;
   final String fromTeamId; // 元の球団（'' は海外・新規）
-  final String reason;     // 戦力外 / 育成満了 / 退団 など
-  FreeAgent(this.player, this.fromTeamId, this.reason);
+  final String reason;     // 戦力外 / 育成満了 / 契約満了 / 退団 など
+  String priorityTeamId;   // 優先交渉権を持つ球団ID（外国人契約満了など）
+  FreeAgent(this.player, this.fromTeamId, this.reason, {this.priorityTeamId = ''});
 
-  Map<String, dynamic> toJson() => {'player': player.toJson(), 'from': fromTeamId, 'reason': reason};
-  factory FreeAgent.fromJson(Map<String, dynamic> j) => FreeAgent(Player.fromJson(Map<String, dynamic>.from(j['player'] as Map)), j['from'] ?? '', j['reason'] ?? '');
+  Map<String, dynamic> toJson() => {'player': player.toJson(), 'from': fromTeamId, 'reason': reason, if (priorityTeamId.isNotEmpty) 'prio': priorityTeamId};
+  factory FreeAgent.fromJson(Map<String, dynamic> j) => FreeAgent(Player.fromJson(Map<String, dynamic>.from(j['player'] as Map)), j['from'] ?? '', j['reason'] ?? '', priorityTeamId: j['prio'] ?? '');
 }
 
 /// FA 宣言した選手と、各球団の条件

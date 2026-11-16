@@ -273,6 +273,8 @@ class _ScoutReportState extends State<ScoutReport> {
       if (_otherTeam == null) ('契約', Text('残り${p.contractYears}年${p.ikusei ? '（育成${p.ikuseiYears + 1}年目）' : ''}')),
       if (_otherTeam == null) ('FA', Text(p.isPartner ? '提携（${p.partnerMlb}）' : (p.hasFA ? '権利あり${p.faService >= Player.overseasFaYears && p.nationality != '海外' ? '（海外も）' : ''}' : '${p.faService}／${p.faNeed}年'))),
       if (_otherTeam == null) ('所属', Text(t == null ? '−' : (t.roster1G.contains(p.id) ? (t.active26.contains(p.id) ? '1軍' : '1軍ベンチ外') : (p.ikusei ? '育成' : '2軍')))),
+      if (_otherTeam == null) ('監督信頼', Text('${p.trust}')),
+      if (_otherTeam == null) ('チーム愛', Text('${p.teamLove}')),
       ('調子', Row(mainAxisSize: MainAxisSize.min, children: [ConditionFace(level: cond, size: 13), const SizedBox(width: 3), Text(ConditionFace.labels[cond]!)])),
       ('故障', Text(p.injuryDays > 0 ? '${p.injuryName}（残り${p.injuryDays}日）' : 'なし', style: TextStyle(color: p.injuryDays > 0 ? const Color(0xFFDC2626) : null))),
       ('成長', Text(GrowthEngine.phaseOf(p).label)),

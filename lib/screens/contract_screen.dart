@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../engine/coach_engine.dart';
 import '../engine/other_league_engine.dart';
+import '../engine/transfer_engine.dart';
+import '../engine/trust_engine.dart';
 import '../models/amateur.dart';
 import '../models/player.dart';
 import '../providers/app_state.dart';
@@ -66,13 +68,32 @@ class _ContractScreenState extends State<ContractScreen> {
             ),
         ]),
         const SizedBox(height: 8),
+        if (app.priorityForeigns.isNotEmpty) ...[
+          const Text('契約満了・優先交渉（外国人）', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1E3A8A))),
+          const SizedBox(height: 4),
+          for (final fa in app.priorityForeigns)
+            Card(
+              margin: const EdgeInsets.only(bottom: 6),
+              color: const Color(0xFFEFF6FF),
+              child: ListTile(
+                title: Text('${fa.player.registeredName}　${fa.player.isPitcher ? '投手' : fa.player.mainPosition}　${fa.player.age}歳', style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(
+                  '前年 ${formatSalary(fa.player.salary)}　希望 ${formatSalary(app.renewAsk(fa.player))}（${app.renewPreferredYears(fa.player)}年）　信頼 ${fa.player.trust}・愛着 ${fa.player.teamLove}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openPriorityForeign(fa),
+              ),
+            ),
+          const SizedBox(height: 8),
+        ],
         for (final p in list)
           Card(
             margin: const EdgeInsets.only(bottom: 6),
             child: ListTile(
               title: Text('${p.registeredName}　${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳', style: const TextStyle(fontWeight: FontWeight.w800)),
               subtitle: Text(
-                '今 ${formatSalary(p.salary)}${app.inMultiYear(p) ? '　複数年契約中（残り${p.contractYears}年）' : app.renewalDone(p) ? '　更改済み${p.contractYears > 1 ? '（${p.contractYears}年）' : ''}' : p.draftYear == app.currentDate.year ? '　新人（来年から）' : '　希望 ${formatSalary(app.renewAsk(p))}'}　信頼 ${p.trust}',
+                '今 ${formatSalary(p.salary)}${app.inMultiYear(p) ? '　複数年契約中（残り${p.contractYears}年）' : app.renewalDone(p) ? '　更改済み${p.contractYears > 1 ? '（${p.contractYears}年）' : ''}' : p.draftYear == app.currentDate.year ? '　新人（来年から）' : '　希望 ${formatSalary(app.renewAsk(p))}（${app.renewPreferredYears(p)}年）'}　信頼 ${p.trust}・愛着 ${p.teamLove}',
                 style: const TextStyle(fontSize: 12),
               ),
               trailing: const Icon(Icons.chevron_right),
@@ -83,9 +104,59 @@ class _ContractScreenState extends State<ContractScreen> {
     );
   }
 
+  Future<void> _openPriorityForeign(FreeAgent fa) async {
+    final p = fa.player;
+    var years = app.renewPreferredYears(p).clamp(1, 5);
+    var salary = app.renewAskFor(p, years);
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (c) => StatefulBuilder(builder: (c, set) {
+        Widget step(String label, int d) => OutlinedButton(
+              onPressed: () => set(() => salary = (salary + d).clamp(450, 999950)),
+              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: Text(label, style: const TextStyle(fontSize: 12)),
+            );
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 20 + MediaQuery.of(c).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${p.registeredName}（優先交渉）', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳　前年 ${formatSalary(p.salary)}　信頼 ${p.trust}・愛着 ${p.teamLove}', style: const TextStyle(color: _sub, fontSize: 12.5)),
+            const SizedBox(height: 12),
+            Text('希望（$years年なら）：${formatSalary(app.renewAskFor(p, years))}', style: const TextStyle(fontSize: 12.5, color: _sub)),
+            const SizedBox(height: 6),
+            Text(formatSalary(salary), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: _ink)),
+            Wrap(spacing: 6, runSpacing: 4, children: [step('−1億', -10000), step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000), step('+1億', 10000)]),
+            const SizedBox(height: 8),
+            Row(children: [
+              const Text('年数'),
+              const SizedBox(width: 10),
+              DropdownButton<int>(
+                value: years,
+                items: [for (var y = 1; y <= 5; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
+                onChanged: (v) => set(() => years = v ?? 1),
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: () {
+                  final msg = app.offerForeignReSign(fa, salary, years);
+                  Navigator.pop(c);
+                  _toast(msg);
+                  setState(() {});
+                },
+                child: const Text('再契約を提示'),
+              ),
+            ]),
+          ]),
+        );
+      }),
+    );
+  }
+
   Future<void> _open(Player p) async {
-    var salary = app.renewalDone(p) ? p.salary : app.renewAsk(p);
-    var years = 1;
+    var years = app.renewPreferredYears(p);
+    var salary = app.renewalDone(p) ? p.salary : app.renewAskFor(p, years);
     final canRenew = app.renewalOpen && !app.renewalDone(p) && !app.inMultiYear(p) && p.draftYear != app.currentDate.year;
     await showModalBottomSheet(
       context: context,
@@ -101,7 +172,7 @@ class _ContractScreenState extends State<ContractScreen> {
           padding: EdgeInsets.fromLTRB(16, 0, 16, 20 + MediaQuery.of(c).viewInsets.bottom),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(p.registeredName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-            Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳・プロ${p.proYears}年　今の年俸 ${formatSalary(p.salary)}　信頼 ${p.trust}　提示 ${app.renewTries[p.id] ?? 0}回', style: const TextStyle(color: _sub, fontSize: 12.5)),
+            Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳・プロ${p.proYears}年　今の年俸 ${formatSalary(p.salary)}　信頼 ${p.trust}・愛着 ${p.teamLove}　提示 ${app.renewTries[p.id] ?? 0}回', style: const TextStyle(color: _sub, fontSize: 12.5)),
             const SizedBox(height: 12),
             if (canRenew) ...[
               Text('希望（$years年なら）：${formatSalary(app.renewAskFor(p, years))}', style: const TextStyle(fontSize: 12.5, color: _sub)),

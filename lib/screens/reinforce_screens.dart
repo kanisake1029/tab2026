@@ -9,6 +9,7 @@ import '../ai/ai_text.dart';
 import 'dart:math' show min;
 import '../engine/roster_engine.dart';
 import '../engine/transfer_engine.dart';
+import '../engine/trust_engine.dart';
 import '../engine/foreign_engine.dart';
 import '../engine/draft_engine.dart';
 import '../models/prospect.dart';
@@ -1043,16 +1044,60 @@ class _ForeignScreenState extends State<ForeignScreen> {
 
   Future<void> _sign(Player p) async {
     final app = widget.app;
-    final ok = await showDialog<bool>(
+    if (p.ikusei) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: Text('${p.registeredName}と育成契約しますか？'),
+          content: Text('年俸 ${formatSalary(p.salary)}・1年契約'),
+          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('やめる')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('契約する'))],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      _toast(context, app.signForeign(p), '${p.registeredName}と契約しました');
+      setState(() {});
+      return;
+    }
+    final prefY = TrustEngine.preferredYears(p, isInitialForeign: true);
+    var years = prefY;
+    var salary = TrustEngine.askForYears(p, p.salary, years, isInitialForeign: true);
+    final res = await showDialog<(int, int)?>(
       context: context,
-      builder: (d) => AlertDialog(
-        title: Text('${p.registeredName}と${p.ikusei ? '育成' : ''}契約しますか？'),
-        content: Text('年俸 ${formatSalary(p.salary)}・1年契約${p.ikusei ? '' : '\n入団すると環境適応力に応じて、打撃・投球の能力に倍率がかかります。'}'),
-        actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('やめる')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('契約する'))],
-      ),
+      builder: (d) => StatefulBuilder(builder: (d, set) {
+        final need = TrustEngine.askForYears(p, p.salary, years, isInitialForeign: true);
+        Widget step(String label, int delta) => OutlinedButton(
+              onPressed: () => set(() => salary = (salary + delta).clamp(450, 999950)),
+              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: Text(label, style: const TextStyle(fontSize: 11.5)),
+            );
+        return AlertDialog(
+          title: Text('${p.registeredName}と契約交渉'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('希望：${formatSalary(need)}（推奨 $prefY年・全盛期近接は短期志向）', style: const TextStyle(fontSize: 12, color: _sub)),
+            const SizedBox(height: 8),
+            Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
+            const SizedBox(height: 8),
+            Row(children: [
+              const Text('契約年数：'),
+              DropdownButton<int>(
+                value: years,
+                items: [for (var y = 1; y <= 3; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
+                onChanged: (v) => set(() => years = v ?? 1),
+              ),
+            ]),
+            const Text('入団すると環境適応力に応じて、打撃・投球の能力に倍率がかかります。', style: TextStyle(fontSize: 11, color: _sub)),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),
+            FilledButton(onPressed: () => Navigator.pop(d, (salary, years)), child: const Text('提示する')),
+          ],
+        );
+      }),
     );
-    if (ok != true || !mounted) return;
-    _toast(context, app.signForeign(p), '${p.registeredName}と契約しました');
+    if (res == null || !mounted) return;
+    _toast(context, app.signForeign(p, salary: res.$1, years: res.$2), '${p.registeredName}と契約しました（${formatSalary(res.$1)}・${res.$2}年）');
     setState(() {});
   }
 

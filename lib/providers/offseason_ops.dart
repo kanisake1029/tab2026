@@ -473,6 +473,7 @@ extension OffseasonOps on AppState {
         case (11, 1):
           if (played) {
             _partnerTermEnd(); // 提携の期間が終わった選手
+            _expireForeignContracts(d); // 外国人契約満了 → 自由契約（元球団に優先交渉権）
             _postingRequests(); // ポスティングの希望
           }
           if (draftDoneYear >= d.year && amWorld == null) {
@@ -506,6 +507,9 @@ extension OffseasonOps on AppState {
           _addNews(['新しいスポンサー候補（${sponsorOffers.length}社）と経営コンサルタントの一覧が届きました']);
           _addNews(['海外の選手の一覧が届きました（${foreignPool.length}人）']);
         case (12, 15):
+          for (final f in freeAgents) {
+            if (f.priorityTeamId.isNotEmpty) f.priorityTeamId = '';
+          }
           _cpuSponsors(december: true);
           _cpuForeignSign();
           _cpuIkuseiPromote();
@@ -1482,7 +1486,36 @@ extension OffseasonOps on AppState {
 
   // ───────── 契約更改 ─────────
 
+  void _expireForeignContracts(DateTime d) {
+    for (final t in leagueTeams) {
+      for (final p in t.players.where((p) => p.foreignSlot && p.contractYears <= 1 && p.offJoin != offseasonYear).toList()) {
+        RosterEngine.removePlayer(t, p);
+        freeAgents.add(FreeAgent(p, t.id, '契約満了', priorityTeamId: t.id));
+        transactions.insert(0, '${d.year}/${d.month}/${d.day} ${teamShort(t)} ${p.registeredName} 契約満了（自由契約・優先交渉権あり）');
+        if (t.id == myTeamId) _addNews(['契約満了：${p.registeredName}は自由契約となりました（優先交渉権あり。契約更改画面から再契約交渉できます）']);
+      }
+    }
+  }
+
   void _contractRenewal() {
+    // CPU 球団の契約満了外国人への優先再契約（条件を満たせば再契約、そうでなければ優先権を手放す）
+    for (final fa in freeAgents.where((f) => f.priorityTeamId.isNotEmpty && f.priorityTeamId != myTeamId && f.reason == '契約満了').toList()) {
+      final t = teamById(fa.priorityTeamId);
+      final p = fa.player;
+      if (t != null && p.ovr >= 60 && p.age < 36 && finOf(t).funds > 0 && RosterEngine.cpuRoom(t) > 0) {
+        final years = TrustEngine.preferredYears(p);
+        final sal = renewAskFor(p, years);
+        freeAgents.remove(fa);
+        p.prevSalary = p.salary;
+        p.salary = sal;
+        p.contractYears = years;
+        p.offJoin = offseasonYear;
+        RosterEngine.addPlayer(t, p);
+        transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName} 優先交渉で再契約（${formatSalary(sal)}・$years年）');
+      } else {
+        fa.priorityTeamId = '';
+      }
+    }
     final moved = faCases.map((f) => f.playerId).toSet(); // FA 宣言した選手（交渉中も含む）は契約更改の対象外
     final y = currentDate.year;
     final notes = <String>[];
@@ -1533,6 +1566,7 @@ extension OffseasonOps on AppState {
         _removeFromOther(p.id);
         ForeignEngine.applyAdapt(p);
         p.offJoin = offseasonYear;
+        p.contractYears = TrustEngine.preferredYears(p, isInitialForeign: true);
         if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
         RosterEngine.addPlayer(t, p);
         transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}（外国人・${p.mainPosition}）と契約（${formatSalary(p.salary)}）');
@@ -1556,25 +1590,36 @@ extension OffseasonOps on AppState {
     }
   }
 
-  /// 自球団が外国人選手と契約する
-  String? signForeign(Player p) {
+  /// 自球団が外国人選手と契約する（1〜3年・〇円提示、信頼×チーム愛・全盛期近接の短年志向で交渉）
+  String? signForeign(Player p, {int? salary, int years = 1}) {
     final my = myTeam;
     if (my == null) return '球団が選ばれていません';
-    if (p.ikusei) {
-    } else {
+    if (!p.ikusei) {
       if (RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
       if (!tradeOpen) return '7月31日を過ぎると契約できません';
     }
-    final fe = _fundsCheck(my, p.salary);
+    final offerSal = (((salary ?? p.salary) / 50).round() * 50).clamp(p.ikusei ? 250 : 450, 999950);
+    final offerY = p.ikusei ? 1 : years.clamp(1, 3);
+    final fe = _fundsCheck(my, offerSal);
     if (fe != null) return fe;
+    if (!p.ikusei) {
+      final need = TrustEngine.askForYears(p, p.salary, offerY, isInitialForeign: true);
+      final r = Random(p.id.hashCode ^ offerSal ^ offerY ^ currentDate.day);
+      if (!TrustEngine.acceptOffer(p, offerSalary: offerSal, needSalary: need, r: r)) {
+        final prefY = TrustEngine.preferredYears(p, isInitialForeign: true);
+        return '${p.registeredName}は条件に納得しませんでした（希望は${formatSalary(need)}・$prefY年くらい）';
+      }
+    }
     foreignPool.remove(p);
     _removeFromOther(p.id);
     if (!p.ikusei) ForeignEngine.applyAdapt(p); // 環境への適応：入団前の能力に倍率がかかる
+    p.salary = offerSal;
+    p.contractYears = offerY;
     p.offJoin = offseasonYear;
     if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
     RosterEngine.addPlayer(my, p);
-    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（外国人・${p.ikusei ? '育成・' : ''}${p.mainPosition}）と契約（${formatSalary(p.salary)}）');
-    _addNews(['${p.registeredName}と契約しました（${formatSalary(p.salary)}）']);
+    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（外国人・${p.ikusei ? '育成・' : ''}${p.mainPosition}）と契約（${formatSalary(offerSal)}${offerY > 1 ? '・$offerY年' : ''}）');
+    _addNews(['${p.registeredName}と契約しました（${formatSalary(offerSal)}・$offerY年）']);
     updateAndSave();
     return null;
   }

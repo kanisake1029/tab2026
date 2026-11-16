@@ -19,11 +19,17 @@ extension ContractOps on AppState {
     return max(p.ikusei ? 250 : 450, (a / 50).round() * 50);
   }
 
-  /// 年数による希望額の変わり方：ベテラン（30歳〜）は長い契約なら少し下げてよい。若手は長い契約には上乗せを求める
-  int renewAskFor(Player p, int years) {
-    final ask = renewAsk(p);
-    final per = p.age >= 30 ? -0.025 : (p.age <= 26 ? 0.03 : 0.0);
-    return max(p.ikusei ? 250 : 450, (ask * (1 + per * (years - 1)) / 50).round() * 50);
+  /// 選手の希望年数
+  int renewPreferredYears(Player p) => TrustEngine.preferredYears(p);
+
+  /// 年数による希望額の変わり方：全盛期前はFA権年数を超えると上乗せ、全盛期〜過渡期は長期を好む
+  int renewAskFor(Player p, int years) => TrustEngine.askForYears(p, renewAsk(p), years);
+
+  /// 優先交渉権のある契約満了外国人（自球団）
+  List<FreeAgent> get priorityForeigns {
+    final my = myTeam;
+    if (my == null) return const [];
+    return freeAgents.where((f) => f.priorityTeamId == my.id && f.reason == '契約満了').toList();
   }
 
   /// 提示する。戻り値：結果の文
@@ -38,13 +44,13 @@ extension ContractOps on AppState {
     final tries = (renewTries[p.id] ?? 0) + 1;
     renewTries[p.id] = tries;
     final r = Random(p.id.hashCode ^ tries ^ currentDate.day);
-    if (salary >= need) {
+    if (TrustEngine.acceptOffer(p, offerSalary: salary, needSalary: need, r: r)) {
       final old = p.salary;
       p.prevSalary = old;
       p.salary = salary;
       p.contractYears = years;
       renewSigned.add(p.id);
-      if (salary > need * 1.1) p.trust = (p.trust + 3).clamp(0, 100);
+      if (salary > need * 1.1) TrustEngine.addTrust(p, 3, r);
       transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 契約更改 ${formatSalary(old)}→${formatSalary(salary)}${years > 1 ? '（$years年契約）' : ''}');
       updateAndSave();
       return '${p.registeredName}は${formatSalary(salary)}${years > 1 ? '・$years年' : ''}で契約しました';
@@ -65,6 +71,42 @@ extension ContractOps on AppState {
     }
     updateAndSave();
     return '${p.registeredName}は保留しました（希望は${formatSalary(need)}${years > 1 ? '・$years年' : ''}くらい。信頼 ${p.trust}）';
+  }
+
+  /// 契約満了外国人の優先再契約交渉（短い契約を好む傾向はなし、信頼×チーム愛で判定）
+  String offerForeignReSign(FreeAgent fa, int salary, int years) {
+    final my = myTeam;
+    if (my == null) return '球団が選ばれていません';
+    final p = fa.player;
+    if (fa.priorityTeamId != my.id) return '優先交渉権がありません';
+    if (!p.ikusei && RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
+    salary = (salary / 50).round() * 50;
+    years = years.clamp(1, 5);
+    final need = renewAskFor(p, years);
+    final tries = (renewTries[p.id] ?? 0) + 1;
+    renewTries[p.id] = tries;
+    final r = Random(p.id.hashCode ^ tries ^ currentDate.day);
+    if (TrustEngine.acceptOffer(p, offerSalary: salary, needSalary: need, r: r)) {
+      freeAgents.remove(fa);
+      p.prevSalary = p.salary;
+      p.salary = salary;
+      p.contractYears = years;
+      p.offJoin = offseasonYear;
+      renewSigned.add(p.id);
+      RosterEngine.addPlayer(my, p);
+      transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 優先交渉で再契約（${formatSalary(salary)}・$years年）');
+      _addNews(['${p.registeredName}が優先交渉で${teamShort(my)}と再契約しました（${formatSalary(salary)}・$years年）']);
+      updateAndSave();
+      return '${p.registeredName}は${formatSalary(salary)}・$years年で再契約しました';
+    }
+    TrustEngine.addTrust(p, -3, r);
+    if (tries >= 3 && TrustEngine.bondFactor(p) < 0.7) {
+      fa.priorityTeamId = '';
+      updateAndSave();
+      return '${p.registeredName}は交渉を打ち切り、一般の自由契約になりました';
+    }
+    updateAndSave();
+    return '${p.registeredName}は条件に納得せず保留しました（希望は${formatSalary(need)}・$years年くらい）';
   }
 
   /// まだの選手をまとめて希望額（1年）で更改する
