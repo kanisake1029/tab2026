@@ -4,17 +4,18 @@ import '../models/player.dart';
 import '../models/team.dart';
 
 /// 監督への信頼（trust）とチーム愛（teamLove）の計算・契約希望年数・交渉判定。
-///  ・どちらも 1〜100、平均 60 前後、主力スタメンの信頼度は S90 前後に達する逓減カーブ
+///  ・どちらも 1〜100、平均 70 前後、主力スタメンの信頼度は S90 前後に達する逓減カーブ
+///  ・信頼度はオフの自然収束なし（キャンプ・試合起用・昇降格で変動）
 ///  ・交渉受諾は「チーム愛 × 監督への信頼」の相乗効果で決まる
 class TrustEngine {
   static int _applyDelta(int cur, double rawDelta, Random r) {
     if (rawDelta == 0) return cur;
     final double eff;
     if (rawDelta > 0) {
-      // 大きくなるほどゆるやかに上がる（95 付近で頭打ち、主力で S90 前後）
-      eff = rawDelta * ((95 - cur) / 45.0).clamp(0.10, 1.40);
+      // 大きくなるほどゆるやかに上がる（95 付近で頭打ち、主力で S90 前後・平均 70 前後）
+      eff = rawDelta * ((95 - cur) / 35.0).clamp(0.10, 1.50);
     } else {
-      eff = rawDelta * (cur / 60.0).clamp(0.50, 1.20);
+      eff = rawDelta * (cur / 70.0).clamp(0.50, 1.20);
     }
     final absE = eff.abs();
     final whole = absE.floor();
@@ -33,7 +34,7 @@ class TrustEngine {
     p.teamLove = _applyDelta(p.teamLove, rawDelta, r ?? Random(p.id.hashCode ^ p.teamLove));
   }
 
-  /// シーズン終了時のチーム愛・信頼度の調整（勝敗・憧れの選手・在籍年数・平均60への緩やかな回帰）
+  /// シーズン終了時のチーム愛の調整（勝敗・憧れの選手・在籍年数。信頼度のオフ自然収束はなし）
   static void seasonEndAdjust(Team t, {required int wins, required int losses, Set<String> movedIn = const {}, Random? r}) {
     final rnd = r ?? Random(t.id.hashCode ^ wins ^ losses);
     final totalG = max(1, wins + losses);
@@ -42,30 +43,24 @@ class TrustEngine {
 
     for (final p in t.players) {
       // 1. 勝敗によるチーム愛
-      if (winPct >= 0.55) {
-        addTeamLove(p, 2.5, rnd);
-      } else if (winPct < 0.40) {
-        addTeamLove(p, -2.0, rnd);
+      if (winPct >= 0.52) {
+        addTeamLove(p, 3.5, rnd);
+      } else if (winPct < 0.38) {
+        addTeamLove(p, -1.5, rnd);
       }
 
       // 2. 憧れの選手（チーム内のスター・ベテラン）の存在
       final idol = stars.any((s) => s.id != p.id && ((s.isPitcher == p.isPitcher) || (p.nationality == '海外' && s.nationality == '海外')));
       if (idol) {
-        addTeamLove(p, 2.5, rnd);
+        addTeamLove(p, 3.5, rnd);
       } else if (stars.any((s) => s.id != p.id)) {
-        addTeamLove(p, 1.2, rnd);
+        addTeamLove(p, 2.0, rnd);
       }
 
       // 3. 長年在籍によるチーム愛（今年移籍していなければ増加）
       if (!movedIn.contains(p.id)) {
-        addTeamLove(p, p.proYears >= 6 ? 2.5 : 1.5, rnd);
+        addTeamLove(p, p.proYears >= 6 ? 4.0 : 2.5, rnd);
       }
-
-      // 4. リーグ平均が約 60 に落ち着く緩やかな自然収束（スタメンは試合出場で高いまま維持）
-      final lovePull = (60 - p.teamLove) * 0.08;
-      if (lovePull.abs() >= 0.3) addTeamLove(p, lovePull, rnd);
-      final trustPull = (58 - p.trust) * 0.06;
-      if (trustPull.abs() >= 0.3) addTrust(p, trustPull, rnd);
     }
   }
 
@@ -94,8 +89,8 @@ class TrustEngine {
     return 1;
   }
 
-  /// チーム愛 × 監督への信頼（平均 60×60 なら 1.0、90×90 なら 2.25）
-  static double bondFactor(Player p) => (p.teamLove / 60.0) * (p.trust / 60.0);
+  /// チーム愛 × 監督への信頼（平均 70×70 なら 1.0、90×90 なら 1.65）
+  static double bondFactor(Player p) => (p.teamLove / 70.0) * (p.trust / 70.0);
 
   /// 提示年数に応じた希望年俸の計算（希望年数とズレる場合は上乗せを求める）
   static int askForYears(Player p, int baseAsk, int years, {bool isInitialForeign = false}) {

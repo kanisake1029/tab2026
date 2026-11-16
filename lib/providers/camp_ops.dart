@@ -83,11 +83,23 @@ extension CampOps on AppState {
       if (d.month == 2 || d.month == 12) campProposals.clear(); // キャンプが終わったら、答えていない提案は消える
       if (d.month == 2) {
         for (final t in teams) {
+          final inCamp = t.springCamp.toSet();
+          for (final p in t.players) {
+            TrustEngine.addTrust(p, inCamp.contains(p.id) ? 2.5 : 1.5);
+            if (inCamp.contains(p.id)) TrustEngine.addTeamLove(p, 1.5);
+          }
           t.springCamp = [];
         }
       }
       if (d.month == 12) {
         for (final t in teams) {
+          final inCamp = t.autumnCamp.toSet();
+          for (final p in t.players) {
+            if (inCamp.contains(p.id)) {
+              TrustEngine.addTrust(p, 2.5);
+              TrustEngine.addTeamLove(p, 1.0);
+            }
+          }
           t.autumnCamp = [];
         }
       }

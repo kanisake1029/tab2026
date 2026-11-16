@@ -66,7 +66,7 @@ void main() {
       if (TrustEngine.acceptOffer(highBond, offerSalary: 8500, needSalary: 10000, r: r)) highAcc++;
       if (TrustEngine.acceptOffer(lowBond, offerSalary: 8500, needSalary: 10000, r: r)) lowAcc++;
     }
-    expect(highAcc, greaterThan(120));
+    expect(highAcc, greaterThan(100));
     expect(lowAcc, 0);
   });
 
