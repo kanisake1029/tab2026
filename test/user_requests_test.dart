@@ -6,6 +6,7 @@ import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
 import 'package:npb_pennant_app/engine/roster_engine.dart';
+import 'package:npb_pennant_app/utils/schedule_generator.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
 import 'package:npb_pennant_app/utils/app_theme.dart';
@@ -206,5 +207,36 @@ void main() {
     expect(a1, inInclusiveRange(-1.0, 1.0));
     expect(a2, inInclusiveRange(-1.0, 1.0));
     expect(a1, closeTo(-a2, 1e-9));
+  });
+
+  test('試合数118/143/156の交流戦・同一リーグ試合数内訳', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+    final leagueTeams = app.teams.where((t) => t.league == 'CL' || t.league == 'PL').toList();
+    for (final total in [118, 143, 156]) {
+      final ms = ScheduleGenerator.generateSeasonSchedule(2026, leagueTeams, games: total);
+      final t0 = leagueTeams.first;
+      final lgGames = ms.where((m) => m.matchType == 'LEAGUE' && (m.homeTeamId == t0.id || m.awayTeamId == t0.id)).length;
+      final ilGames = ms.where((m) => m.matchType == 'INTERLEAGUE' && (m.homeTeamId == t0.id || m.awayTeamId == t0.id)).length;
+      expect(lgGames + ilGames, total);
+      if (total == 118) {
+        expect(lgGames, 100);
+        expect(ilGames, 18);
+      } else if (total == 143) {
+        expect(lgGames, 125);
+        expect(ilGames, 18);
+      } else if (total == 156) {
+        expect(lgGames, 120);
+        expect(ilGames, 36);
+        final other = leagueTeams.firstWhere((t) => t.league != t0.league);
+        final homeVs = ms.where((m) => m.matchType == 'INTERLEAGUE' && m.homeTeamId == t0.id && m.awayTeamId == other.id).length;
+        final awayVs = ms.where((m) => m.matchType == 'INTERLEAGUE' && m.homeTeamId == other.id && m.awayTeamId == t0.id).length;
+        expect(homeVs, 3);
+        expect(awayVs, 3);
+      }
+    }
   });
 }

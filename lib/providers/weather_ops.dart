@@ -107,6 +107,27 @@ extension WeatherOps on AppState {
     final lastRegular = official.isEmpty ? from : official.reduce((x, y) => x.isAfter(y) ? x : y);
     final limit = DateTime(from.year, 10, 2);
     bool busy(DateTime day) => matches.any((x) => !identical(x, m) && !x.cancelled && DateUtils.isSameDay(x.date, day) && (x.matchType == 'ALLSTAR' || ids.contains(x.homeTeamId) || ids.contains(x.awayTeamId)));
+    // 交流戦は交流戦期間〜予備日に優先して消化する
+    if (m.matchType == 'INTERLEAGUE') {
+      final interDates = matches.where((x) => x.matchType == 'INTERLEAGUE').map((x) => x.date).toList();
+      final lastInter = interDates.isEmpty ? from : interDates.reduce((x, y) => x.isAfter(y) ? x : y);
+      final nextLeague = matches
+          .where((x) => x.matchType == 'LEAGUE' && !x.done && x.date.isAfter(from))
+          .map((x) => x.date)
+          .fold<DateTime?>(null, (a, b) => a == null || b.isBefore(a) ? b : a);
+      final interLimit = nextLeague != null ? nextLeague.subtract(const Duration(days: 1)) : lastInter.add(const Duration(days: 4));
+      for (var day = from.add(const Duration(days: 1)); !day.isAfter(interLimit); day = day.add(const Duration(days: 1))) {
+        if (!busy(day)) return (day, null);
+      }
+      final sameInter = matches
+          .where((x) => !identical(x, m) && !x.done && x.dh == 0 && x.matchType == 'INTERLEAGUE' && x.date.isAfter(from) && !x.date.isAfter(interLimit) && ids.contains(x.homeTeamId) && ids.contains(x.awayTeamId))
+          .toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
+      for (final x in sameInter) {
+        final dayGames = matches.where((y) => !y.cancelled && DateUtils.isSameDay(y.date, x.date) && (ids.contains(y.homeTeamId) || ids.contains(y.awayTeamId))).length;
+        if (dayGames == 1) return (x.date, x);
+      }
+    }
     // ① 空き日：月曜（ふだんの休み）か、日程の最終日より後の予備日
     for (var day = from.add(const Duration(days: 1)); !day.isAfter(limit); day = day.add(const Duration(days: 1))) {
       if (busy(day)) continue;

@@ -450,6 +450,7 @@ extension OffseasonOps on AppState {
       if (d.day == 1) _scoutTradeTips(d); // 毎月1日：スカウトのトレード候補
       if (d.day == 1 && (d.month == 7 || teamPolicy.isEmpty)) reviewPolicies(); // CPU 球団の方針の見直し
       _monthlyMvpOn(d);
+      _interleagueAwardsCheck(d);
       _settleGoods(d);
       if (d.weekday == DateTime.monday) {
         _amScoutWeek(d); // 地区担当の発掘（4〜10月）

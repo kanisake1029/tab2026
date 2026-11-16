@@ -1,3 +1,4 @@
+import 'dart:math';
 import '../models/team.dart';
 
 class Match {
@@ -78,14 +79,14 @@ class Match {
 class ScheduleGenerator {
   /// 公式戦の試合数（1球団あたり）の選択肢
   ///  143（標準・NPB と同じ）：同一リーグ 25回戦×5＝125 ＋ 交流戦 3回戦×6＝18
-  ///  120（短期）：同一リーグ 20回戦×5＝100 ＋ 交流戦 20（3〜4回戦×6）
-  ///  156（タフな日程）：同一リーグ 27回戦×5＝135 ＋ 交流戦 21（3〜4回戦×6）
-  static const seasonLengths = [120, 143, 156];
+  ///  118（短期）：同一リーグ 20回戦×5＝100 ＋ 交流戦 3回戦×6＝18
+  ///  156（タフな日程）：同一リーグ 24回戦×5＝120 ＋ 交流戦 6回戦×6＝36（ホーム3・ビジター3）
+  static const seasonLengths = [118, 143, 156];
 
-  /// 同一リーグの「巡」（5カードで全チームと 1 回ずつ当たる）ごとのカードの試合数と、交流戦 6 カードそれぞれの試合数
+  /// 同一リーグの「巡」（5カードで全チームと 1 回ずつ当たる）ごとのカードの試合数と、交流戦カードごとの試合数
   static (List<int>, List<int>) shapeOf(int games) => switch (games) {
-        120 => (const [3, 3, 3, 3, 3, 3, 2], const [3, 3, 3, 3, 4, 4]),
-        156 => (const [3, 3, 3, 3, 3, 3, 3, 3, 3], const [4, 4, 4, 3, 3, 3]),
+        118 => (const [3, 3, 3, 3, 3, 3, 2], const [3, 3, 3, 3, 3, 3]),
+        156 => (const [3, 3, 3, 3, 3, 3, 3, 3], const [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]),
         _ => (const [3, 3, 3, 3, 3, 3, 3, 2, 2], const [3, 3, 3, 3, 3, 3]),
       };
 
@@ -144,8 +145,8 @@ class ScheduleGenerator {
     // 1 カード分（両リーグ同じ日に L 試合ずつ）を入れて日付を進める。月曜は休み。7 月中旬にオールスター
     DateTime round(DateTime d, int len, void Function(DateTime) add) {
       add(d);
-      // 月曜は休み。120 試合（短期）はカードの間に 1 日休んで、9 月まで続ける
-      var nd = d.add(Duration(days: len + (games <= 120 ? 1 : 0)));
+      // 月曜は休み。118 試合（短期）はカードの間に 1 日休んで、9 月まで続ける
+      var nd = d.add(Duration(days: len + (games <= 118 ? 1 : 0)));
       while (nd.weekday == DateTime.monday) {
         nd = nd.add(const Duration(days: 1));
       }
@@ -186,22 +187,26 @@ class ScheduleGenerator {
     for (var c = 0; c < before; c++) {
       date = cycle(date, c, cycles[c]);
     }
-    // 交流戦：パの i 番目と、セの (i+k) 番目。ホームはカードごと・年ごとに入れ替え。4 回戦は前半 2 試合と後半 2 試合でホームを入れ替える
+    // 交流戦：パの i 番目と、セの (i+k%6) 番目。
+    //  118/143試合は3連戦単位で毎年ランダムにホームを決定。156試合は前半3連戦と後半3連戦でホーム・ビジターを入れ替える（計6試合）
     if (pl.length == 6 && cl.length == 6) {
+      final interRand = Random(year * 131 + 7);
+      final firstHome = List.generate(6, (_) => List.generate(6, (_) => interRand.nextBool()));
       for (var k = 0; k < inter.length; k++) {
         final len = inter[k];
+        final kk = k % 6;
+        final secondHalf = k >= 6;
         date = round(date, len, (day) {
           for (var i = 0; i < 6; i++) {
-            final p = pl[i], q = cl[(i + k) % 6];
-            final plHome = (k + year) % 2 == 0;
+            final p = pl[i], q = cl[(i + kk) % 6];
+            final plHome = secondHalf ? !firstHome[i][kk] : firstHome[i][kk];
             for (var g = 0; g < len; g++) {
-              final h = len == 4 && g >= 2 ? !plHome : plHome;
-              matches.add(Match(homeTeamId: (h ? p : q).id, awayTeamId: (h ? q : p).id, date: day.add(Duration(days: g)), matchType: 'INTERLEAGUE'));
+              matches.add(Match(homeTeamId: (plHome ? p : q).id, awayTeamId: (plHome ? q : p).id, date: day.add(Duration(days: g)), matchType: 'INTERLEAGUE'));
             }
           }
         });
       }
-      date = date.add(const Duration(days: 3)); // 交流戦明けの休み
+      date = date.add(const Duration(days: 4)); // 交流戦の雨天順延を消化するための予備期間
       if (date.weekday == DateTime.monday) date = date.add(const Duration(days: 1));
     }
     for (var c = before; c < cycles.length; c++) {

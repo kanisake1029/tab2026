@@ -224,11 +224,11 @@ class _PlayerEditorState extends State<PlayerEditor> {
       );
 
   Widget _section(String title, List<Widget> rows, {Widget? trailing}) => Container(
-        padding: const EdgeInsets.fromLTRB(10, 7, 10, 6),
+        padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
         decoration: BoxDecoration(color: Colors.white, border: Border.all(color: _line)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)), const Spacer(), if (trailing != null) trailing]),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           ...rows,
         ]),
       );
@@ -273,29 +273,27 @@ class _PlayerEditorState extends State<PlayerEditor> {
       final sections = _abilitySections();
       final side = _sideColumn();
       return SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(wide ? 16 : 8, 10, wide ? 16 : 8, 18),
+        padding: EdgeInsets.fromLTRB(wide ? 10 : 6, 6, wide ? 10 : 6, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _header(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _profile(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (wide)
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(child: _twoColumns(sections)),
-              const SizedBox(width: 12),
-              SizedBox(width: 245, child: side),
+              const SizedBox(width: 8),
+              SizedBox(width: 240, child: side),
             ])
           else ...[
-            for (final s in sections) Padding(padding: const EdgeInsets.only(bottom: 8), child: s),
+            for (final s in sections) Padding(padding: const EdgeInsets.only(bottom: 6), child: s),
             side,
           ],
-          ...[
-            const SizedBox(height: 8),
-            _pitchSection(wide),
-          ],
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          _pitchSection(wide),
+          const SizedBox(height: 6),
           _statsSection(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _careerSection(),
         ]),
       );
@@ -316,112 +314,114 @@ class _PlayerEditorState extends State<PlayerEditor> {
 
   Widget _header() {
     return Container(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _ink, width: 2))),
-      child: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.end,
-        spacing: 10,
-        runSpacing: 8,
-        children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            const Text('EDIT MODE　編集中', style: TextStyle(fontSize: 12, letterSpacing: 3, color: _sub)),
-            const SizedBox(height: 4),
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              const Text('#', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-              SizedBox(width: 64, child: _uniformBox()),
-              const SizedBox(width: 8),
-              SizedBox(width: 120, child: _textBox('last', p.lastName, (s) => p.lastName = s, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
-              const SizedBox(width: 6),
-              SizedBox(width: 120, child: _textBox('first', p.firstName, (s) => p.firstName = s, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
-            ]),
-          ]),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text('${p.isPitcher ? '投手' : p.mainPosition}　登録名「${p.registeredName}」', style: const TextStyle(fontSize: 14, color: Color(0xFF57534E))),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Expanded(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.end,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                const Text('#', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                SizedBox(width: 56, child: _uniformBox()),
+                const SizedBox(width: 6),
+                SizedBox(width: 100, child: _textBox('last', p.lastName, (s) => p.lastName = s, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
+                const SizedBox(width: 4),
+                SizedBox(width: 100, child: _textBox('first', p.firstName, (s) => p.firstName = s, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
+              ]),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.registeredName}', style: const TextStyle(fontSize: 12.5, color: Color(0xFF57534E))),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () async {
+            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BodyFormEditor(player: p, bodyEditable: false)));
+            if (mounted) setState(() {});
+            widget.onChanged();
+          },
+          style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
+          icon: const Icon(Icons.sports_baseball, size: 15),
+          label: const Text('フォーム・道具', style: TextStyle(fontSize: 12)),
+        ),
+      ]),
     );
   }
 
   Widget _profile() {
     final positions = p.isPitcher ? ['投手'] : ['捕手', '一塁手', '二塁手', '三塁手', '遊撃手', '左翼手', '中堅手', '右翼手'];
     final mainPos = p.isPitcher ? '投手' : p.mainPosition;
-    return Wrap(spacing: 10, runSpacing: 10, children: [
-      _field('表示名パターン', _dropdown<String>(p.nameType, const [('A', 'A: 姓 名'), ('B', 'B: 姓名'), ('C', 'C: 姓+名の頭文字'), ('D', 'D: 名前のみ'), ('E', 'E: オリジナル（姓＋名、または1つの名前）'), ('F', 'F: 名・姓（外国人）')], (v) => p.nameType = v), width: 170),
-      if (p.nameType == 'E') _field('オリジナルの姓（1つの名前ならここだけ。例：イチロー）', _textBox('custom', p.customName, (s) => p.customName = s.trim())),
-      if (p.nameType == 'E') _field('オリジナルの名（空欄なら1つの名前）', _textBox('customFirst', p.customFirst, (s) => p.customFirst = s.trim())),
-      _field('メインポジション', _dropdown<String>(positions.contains(mainPos) ? mainPos : positions.first, [for (final x in positions) (x, x)], (v) => p.mainPos = v), width: 130),
-      _field('投 / 打', _dropdown<String>('${p.throws}/${p.bats}', const [('R/R', '右投右打'), ('R/L', '右投左打'), ('R/S', '右投両打'), ('L/L', '左投左打'), ('L/R', '左投右打'), ('L/S', '左投両打')], (v) {
-        p.throws = v.split('/')[0];
-        p.bats = v.split('/')[1];
-      }), width: 120),
-      _field('タイプ', _dropdown<String>(
-        (p.isPitcher ? CoachEngine.pitcherTypes : CoachEngine.hitterTypes).contains(p.typeSet) ? p.typeSet : '',
-        [('', '自動（${CoachEngine.autoType(p)}）'), for (final t in (p.isPitcher ? CoachEngine.pitcherTypes : CoachEngine.hitterTypes)) (t, t)],
-        (v) => p.typeSet = v,
-      ), width: 160),
-      _field('国籍', _dropdown<String>(['日本', '海外'].contains(p.nationality) ? p.nationality : '日本', const [('日本', '日本'), ('海外', '海外')], (v) => p.nationality = v), width: 96),
-      // 出身：日本人は47都道府県、海外は出身国（8か国）
-      if (p.nationality == '海外')
-        _field('出身国', _dropdown<String>(
-          NameData2.countries.contains(p.origin) ? p.origin : '',
-          [('', '未設定'), for (final c in NameData2.countries) (c, c)],
-          (v) => p.origin = v,
-        ), width: 130)
-      else
-        _field('出身地', _dropdown<String>(
-          NameData2.prefectures.any((x) => x.$1 == p.birthplace) ? p.birthplace : '',
-          [('', '未設定'), for (final x in NameData2.prefectures) (x.$1, x.$1)],
-          (v) => p.birthplace = v,
-        ), width: 130),
-      _field('来歴', _dropdown<String>(['A', 'B', 'C'].contains(p.draftType) ? p.draftType : 'A', const [('A', '高卒'), ('B', '大卒'), ('C', '社卒・その他')], (v) {
-        p.draftType = v;
-        _syncDates(fromDraft: true);
-        _birthRev++;
-        _proRev++;
-      }), width: 120),
-      if (p.draftType == 'C') _field('1年目の年齢', _numBox('draftAge', p.draftCustomAge, (v) {
-        p.draftCustomAge = v;
-        _syncDates(fromDraft: true);
-        _birthRev++;
-        _proRev++;
-      }, width: 90, min: 15, max: 45), width: 90),
-      _field('生年月日', _textBox('birth_$_birthRev', p.birthDate, (s) {
-        p.birthDate = s;
-        _syncDates(fromBirthDate: true);
-        _proRev++;
-      }), width: 130),
-      _field('年齢', Container(height: 36, alignment: Alignment.centerLeft, child: Text('${p.age}歳', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700))), width: 60),
-      _field('プロ年数', _numBox('proYears_$_proRev', p.proYears, (v) {
-        p.proYears = v;
-        _syncDates(fromProYears: true);
-        _birthRev++;
-      }, width: 76, min: 1, max: 30), width: 76),
-      _field('身長(cm)', _numBox('height', p.height, (v) => p.height = v, width: 76, min: 140, max: 220), width: 76),
-      _field('体重(kg)', _numBox('weight', p.weight, (v) => p.bodyWeight = v, width: 76, min: 50, max: 150), width: 76),
-      _field('腕の長さ', _numBox('armLen', p.armLength, (v) => p.bodyArm = v, width: 76, min: 55, max: 105), width: 76),
-      _field('頭囲', _numBox('headG', p.headGirth, (v) => p.bodyHead = v, width: 76, min: 48, max: 66), width: 76),
-      _field('胸囲', _numBox('chestG', p.chestGirth, (v) => p.bodyChest = v, width: 76, min: 75, max: 140), width: 76),
-      _field('腹囲', _numBox('waistG', p.waistGirth, (v) => p.bodyWaist = v, width: 76, min: 60, max: 135), width: 76),
-      _field('臀囲', _numBox('hipG', p.hipGirth, (v) => p.bodyHip = v, width: 76, min: 75, max: 135), width: 76),
-      _field('フォーム・道具', SizedBox(height: 36, child: OutlinedButton.icon(
-        onPressed: () async {
-          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BodyFormEditor(player: p, bodyEditable: false)));
-          if (mounted) setState(() {});
-          widget.onChanged();
-        },
-        icon: const Icon(Icons.sports_baseball, size: 16),
-        label: const Text('フォーム・道具'),
-      )), width: 150),
-      _field('才能', _numBox('talent', p.talent, (v) => p.talent = v, width: 64), width: 64),
-      _field('向上心', _numBox('ambition', p.ambition, (v) => p.ambition = v, width: 64), width: 64),
-      // 成長曲線：全盛期が始まる年齢と、成長期・全盛期・過渡期の長さ（標準 27歳・2年・4年・2年）
-      _field('全盛期の開始(歳)', _numBox('primeStart', (GrowthCurve.starts(p))[1], (v) => p.primeStart = v, width: 76, min: 18, max: 42), width: 110),
-      _field('成長期(年)', _numBox('riseLen', p.riseLen, (v) => p.riseLen = v, width: 64, min: 1, max: 5), width: 80),
-      _field('全盛期(年)', _numBox('primeLen', p.primeLen, (v) => p.primeLen = v, width: 64, min: 1, max: 15), width: 80),
-      _field('過渡期(年)', _numBox('transLen', p.transLen, (v) => p.transLen = v, width: 64, min: 1, max: 6), width: 80),
-      _field('弾道', _dropdown<int>(p.trajectory.clamp(1, 4), const [(1, '1'), (2, '2'), (3, '3'), (4, '4')], (v) => p.trajectory = v), width: 70),
+    return _section('基本・プロフィール・体格', [
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        _field('表示名パターン', _dropdown<String>(p.nameType, const [('A', 'A: 姓 名'), ('B', 'B: 姓名'), ('C', 'C: 姓+名の頭文字'), ('D', 'D: 名前のみ'), ('E', 'E: オリジナル'), ('F', 'F: 名・姓（外国人）')], (v) => p.nameType = v), width: 150),
+        if (p.nameType == 'E') _field('オリジナルの姓', _textBox('custom', p.customName, (s) => p.customName = s.trim()), width: 120),
+        if (p.nameType == 'E') _field('オリジナルの名', _textBox('customFirst', p.customFirst, (s) => p.customFirst = s.trim()), width: 120),
+        _field('ポジション', _dropdown<String>(positions.contains(mainPos) ? mainPos : positions.first, [for (final x in positions) (x, x)], (v) => p.mainPos = v), width: 100),
+        _field('投 / 打', _dropdown<String>('${p.throws}/${p.bats}', const [('R/R', '右投右打'), ('R/L', '右投左打'), ('R/S', '右投両打'), ('L/L', '左投左打'), ('L/R', '左投右打'), ('L/S', '左投両打')], (v) {
+          p.throws = v.split('/')[0];
+          p.bats = v.split('/')[1];
+        }), width: 100),
+        _field('タイプ', _dropdown<String>(
+          (p.isPitcher ? CoachEngine.pitcherTypes : CoachEngine.hitterTypes).contains(p.typeSet) ? p.typeSet : '',
+          [('', '自動（${CoachEngine.autoType(p)}）'), for (final t in (p.isPitcher ? CoachEngine.pitcherTypes : CoachEngine.hitterTypes)) (t, t)],
+          (v) => p.typeSet = v,
+        ), width: 140),
+        _field('国籍', _dropdown<String>(['日本', '海外'].contains(p.nationality) ? p.nationality : '日本', const [('日本', '日本'), ('海外', '海外')], (v) => p.nationality = v), width: 82),
+        if (p.nationality == '海外')
+          _field('出身国', _dropdown<String>(
+            NameData2.countries.contains(p.origin) ? p.origin : '',
+            [('', '未設定'), for (final c in NameData2.countries) (c, c)],
+            (v) => p.origin = v,
+          ), width: 110)
+        else
+          _field('出身地', _dropdown<String>(
+            NameData2.prefectures.any((x) => x.$1 == p.birthplace) ? p.birthplace : '',
+            [('', '未設定'), for (final x in NameData2.prefectures) (x.$1, x.$1)],
+            (v) => p.birthplace = v,
+          ), width: 110),
+        _field('来歴', _dropdown<String>(['A', 'B', 'C'].contains(p.draftType) ? p.draftType : 'A', const [('A', '高卒'), ('B', '大卒'), ('C', '社卒・その他')], (v) {
+          p.draftType = v;
+          _syncDates(fromDraft: true);
+          _birthRev++;
+          _proRev++;
+        }), width: 105),
+        if (p.draftType == 'C') _field('1年目年齢', _numBox('draftAge', p.draftCustomAge, (v) {
+          p.draftCustomAge = v;
+          _syncDates(fromDraft: true);
+          _birthRev++;
+          _proRev++;
+        }, width: 68, min: 15, max: 45), width: 68),
+        _field('生年月日', _textBox('birth_$_birthRev', p.birthDate, (s) {
+          p.birthDate = s;
+          _syncDates(fromBirthDate: true);
+          _proRev++;
+        }), width: 110),
+        _field('年齢', Container(height: 36, alignment: Alignment.centerLeft, child: Text('${p.age}歳', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700))), width: 48),
+        _field('プロ年数', _numBox('proYears_$_proRev', p.proYears, (v) {
+          p.proYears = v;
+          _syncDates(fromProYears: true);
+          _birthRev++;
+        }, width: 64, min: 1, max: 30), width: 64),
+        _field('才能', _numBox('talent', p.talent, (v) => p.talent = v, width: 58), width: 58),
+        _field('向上心', _numBox('ambition', p.ambition, (v) => p.ambition = v, width: 58), width: 58),
+        _field('全盛期(歳)', _numBox('primeStart', (GrowthCurve.starts(p))[1], (v) => p.primeStart = v, width: 64, min: 18, max: 42), width: 68),
+        _field('身長', _numBox('height', p.height, (v) => p.height = v, width: 60, min: 140, max: 220), width: 60),
+        _field('体重', _numBox('weight', p.weight, (v) => p.bodyWeight = v, width: 60, min: 50, max: 150), width: 60),
+        _field('腕長', _numBox('armLen', p.armLength, (v) => p.bodyArm = v, width: 60, min: 55, max: 105), width: 60),
+        _field('頭囲', _numBox('headG', p.headGirth, (v) => p.bodyHead = v, width: 60, min: 48, max: 66), width: 60),
+        _field('胸囲', _numBox('chestG', p.chestGirth, (v) => p.bodyChest = v, width: 60, min: 75, max: 140), width: 60),
+        _field('腹囲', _numBox('waistG', p.waistGirth, (v) => p.bodyWaist = v, width: 60, min: 60, max: 135), width: 60),
+        _field('臀囲', _numBox('hipG', p.hipGirth, (v) => p.bodyHip = v, width: 60, min: 75, max: 135), width: 60),
+        _field('成長期(年)', _numBox('riseLen', p.riseLen, (v) => p.riseLen = v, width: 64, min: 1, max: 5), width: 68),
+        _field('全盛期(年)', _numBox('primeLen', p.primeLen, (v) => p.primeLen = v, width: 64, min: 1, max: 15), width: 68),
+        _field('過渡期(年)', _numBox('transLen', p.transLen, (v) => p.transLen = v, width: 64, min: 1, max: 6), width: 68),
+        _field('弾道', _dropdown<int>(p.trajectory.clamp(1, 4), const [(1, '1'), (2, '2'), (3, '3'), (4, '4')], (v) => p.trajectory = v), width: 64),
+      ]),
     ]);
   }
 
@@ -621,107 +621,120 @@ class _PlayerEditorState extends State<PlayerEditor> {
   Widget _pitchSection(bool wide) {
     final total = p.pitches.fold<int>(0, (s, x) => s + x.ratio);
     final totalColor = total == 100 ? Colors.green.shade700 : (total > 100 ? Colors.red : Colors.orange.shade800);
-    const head = TextStyle(fontSize: 11, color: _sub);
-    final table = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Container(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFD6D3D1)))),
-        child: const Row(children: [
-          Expanded(child: Text('球種名', style: head)),
-          SizedBox(width: 64, child: Text('球速', style: head, textAlign: TextAlign.right)),
-          SizedBox(width: 60, child: Text('割合%', style: head, textAlign: TextAlign.right)),
-          SizedBox(width: 64, child: Text('方向°', style: head, textAlign: TextAlign.right)),
-          SizedBox(width: 82, child: Text('変化量', style: head, textAlign: TextAlign.right)),
-          SizedBox(width: 82, child: Text('キレ', style: head, textAlign: TextAlign.right)),
-          SizedBox(width: 82, child: Text('重さ', style: head, textAlign: TextAlign.right)),
-          SizedBox(width: 36),
-        ]),
-      ),
+    final listWidget = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       for (int i = 0; i < p.pitches.length; i++) _pitchRow(i),
-      const SizedBox(height: 8),
+      const SizedBox(height: 6),
       Row(children: [
         _pitchMenu(
           onPicked: (s) => _set(() => p.pitches.add(PitchCatalog.fromSpec(p, s, Random()))),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(border: Border.all(color: const Color(0xFFD6D3D1))),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.add, size: 18, color: _ink), SizedBox(width: 4), Text('球種を追加（38種から）', style: TextStyle(color: _ink))]),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.add, size: 16, color: _ink), SizedBox(width: 4), Text('球種を追加（38種から）', style: TextStyle(fontSize: 12, color: _ink))]),
           ),
         ),
         const Spacer(),
-        const Text('投球割合の合計  ', style: TextStyle(fontSize: 12.5, color: _sub)),
-        Text('$total%', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: totalColor)),
+        const Text('割合計 ', style: TextStyle(fontSize: 12, color: _sub)),
+        Text('$total%', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: totalColor)),
       ]),
     ]);
     final chart = Column(children: [
-      SizedBox(width: 170, height: 170, child: CustomPaint(painter: PitchVectorPainter(p.pitches))),
-      const SizedBox(height: 4),
-      const Text('変化球図（方向と変化量）', style: TextStyle(fontSize: 11, color: _sub)),
+      SizedBox(width: 150, height: 150, child: CustomPaint(painter: PitchVectorPainter(p.pitches))),
+      const SizedBox(height: 2),
+      const Text('変化球図', style: TextStyle(fontSize: 10.5, color: _sub)),
     ]);
     return _section(p.isPitcher ? '持ち球' : '持ち球（野手登板・二刀流用）', [
       const SizedBox(height: 4),
       if (wide)
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           chart,
-          const SizedBox(width: 20),
-          Expanded(child: table),
+          const SizedBox(width: 12),
+          Expanded(child: listWidget),
         ])
       else ...[
         Center(child: chart),
-        const SizedBox(height: 8),
-        SingleChildScrollView(scrollDirection: Axis.horizontal, child: SizedBox(width: 600, child: table)),
+        const SizedBox(height: 6),
+        listWidget,
       ],
     ]);
   }
 
+  /// 1球種：左に球種名・削除、右に2行×3列（上: 球速/割合%/方向°、下: 変化/キレ/重さ）の全6変数セル
   Widget _pitchRow(int i) {
     final pitch = p.pitches[i];
-    // 同じ球種を削除して詰めたときに入力欄が残らないよう、行番号と名前を key に含める
     final k = 'pitch_${i}_${identityHashCode(pitch)}';
-    Widget graded(String key, int v, ValueChanged<int> f) => SizedBox(
-          width: 82,
-          child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [_grade(v, size: 13), const SizedBox(width: 4), _numBox('${k}_$key', v, f, width: 52)]),
+    Widget cell(String label, Widget box) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(label, style: const TextStyle(fontSize: 9.5, color: _sub)),
+            const SizedBox(height: 1),
+            box,
+          ]),
+        );
+    Widget gradedCell(String label, String key, int v, ValueChanged<int> f) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Text(label, style: const TextStyle(fontSize: 9.5, color: _sub)),
+              const SizedBox(width: 3),
+              _grade(v, size: 10.5),
+            ]),
+            const SizedBox(height: 1),
+            _numBox('${k}_$key', v, f, width: 54),
+          ]),
         );
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF5F5F4)))),
-      child: Row(children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: _pitchMenu(
-              // 別の球種に変えると、その球種の典型的な球速・変化に作り直す（割合はそのまま）
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE7E5E4)))),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 108,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _pitchMenu(
               onPicked: (s) => _set(() {
                 final np = PitchCatalog.fromSpec(p, s, Random());
                 np.ratio = pitch.ratio;
                 p.pitches[i] = np;
               }),
               child: Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
                 alignment: Alignment.centerLeft,
                 decoration: BoxDecoration(color: Colors.white, border: Border.all(color: const Color(0xFFD6D3D1))),
                 child: Row(children: [
-                  Expanded(child: Text(pitch.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5))),
-                  const Icon(Icons.arrow_drop_down, size: 18, color: _sub),
+                  Expanded(child: Text(pitch.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))),
+                  const Icon(Icons.arrow_drop_down, size: 16, color: _sub),
                 ]),
               ),
             ),
-          ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _set(() => p.pitches.removeAt(i)),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 4), foregroundColor: Colors.redAccent),
+                icon: const Icon(Icons.close, size: 14),
+                label: const Text('削除', style: TextStyle(fontSize: 11)),
+              ),
+            ),
+          ]),
         ),
-        SizedBox(width: 64, child: Align(alignment: Alignment.centerRight, child: _numBox('${k}_speed', pitch.speed, (v) => pitch.speed = v, width: 58, min: 60, max: 175))),
-        SizedBox(width: 60, child: Align(alignment: Alignment.centerRight, child: _numBox('${k}_ratio', pitch.ratio, (v) => pitch.ratio = v, width: 52, min: 0, max: 100))),
-        SizedBox(width: 64, child: Align(alignment: Alignment.centerRight, child: _numBox('${k}_angle', pitch.angle, (v) => pitch.angle = v, width: 58, min: 0, max: 360))),
-        graded('break', pitch.breakLevel, (v) => pitch.breakLevel = v),
-        graded('sharp', pitch.sharpness, (v) => pitch.sharpness = v),
-        graded('heavy', pitch.heaviness, (v) => pitch.heaviness = v),
-        SizedBox(
-          width: 36,
-          child: IconButton(
-            tooltip: '削除',
-            icon: const Icon(Icons.close, size: 18, color: _sub),
-            onPressed: () => _set(() => p.pitches.removeAt(i)),
-          ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(children: [
+            Row(children: [
+              cell('球速', _numBox('${k}_speed', pitch.speed, (v) => pitch.speed = v, width: 54, min: 60, max: 175)),
+              const SizedBox(width: 6),
+              cell('割合%', _numBox('${k}_ratio', pitch.ratio, (v) => pitch.ratio = v, width: 54, min: 0, max: 100)),
+              const SizedBox(width: 6),
+              cell('方向°', _numBox('${k}_angle', pitch.angle, (v) => pitch.angle = v, width: 54, min: 0, max: 360)),
+            ]),
+            const SizedBox(height: 4),
+            Row(children: [
+              gradedCell('変化', 'break', pitch.breakLevel, (v) => pitch.breakLevel = v),
+              const SizedBox(width: 6),
+              gradedCell('キレ', 'sharp', pitch.sharpness, (v) => pitch.sharpness = v),
+              const SizedBox(width: 6),
+              gradedCell('重さ', 'heavy', pitch.heaviness, (v) => pitch.heaviness = v),
+            ]),
+          ]),
         ),
       ]),
     );

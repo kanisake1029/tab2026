@@ -289,12 +289,6 @@ class _TeamEditorScreenState extends State<TeamEditorScreen> {
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _leave),
         title: Text('${team.name}　初期選手編集', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
         actions: [
-          if (_selected != null)
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              tooltip: 'この選手を削除',
-              onPressed: _deleteSelected,
-            ),
           TextButton.icon(
             icon: const Icon(Icons.restore, size: 17),
             label: const Text('初期化', style: TextStyle(fontSize: 12)),
@@ -399,6 +393,39 @@ class _TeamEditorScreenState extends State<TeamEditorScreen> {
             icon: const Icon(Icons.person_add_alt_1, size: 16),
             label: const Text('追加', style: TextStyle(fontSize: 12)),
             style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: '一覧から選手を削除',
+            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+            onPressed: team.players.length <= 1 ? null : () async {
+              final target = await showDialog<Player>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: const Text('削除する選手を選ぶ'),
+                  content: SizedBox(
+                    width: 340,
+                    height: 360,
+                    child: ListView(children: [
+                      for (final x in team.players)
+                        ListTile(
+                          dense: true,
+                          leading: Text(x.uniformText, style: const TextStyle(fontSize: 12, color: _sub)),
+                          title: Text(x.registeredName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          subtitle: Text(x.isPitcher ? '投手' : x.mainPosition, style: const TextStyle(fontSize: 11)),
+                          trailing: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          onTap: () => Navigator.pop(c, x),
+                        ),
+                    ]),
+                  ),
+                  actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('閉じる'))],
+                ),
+              );
+              if (target == null || !mounted) return;
+              _selected = target;
+              await _deleteSelected();
+              refresh?.call();
+            },
           ),
         ]),
       ),
@@ -511,7 +538,15 @@ class _TeamEditorScreenState extends State<TeamEditorScreen> {
             const SizedBox(height: 10),
             Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
               const Text('ユニフォームの色', style: TextStyle(fontSize: 13)),
-              for (final c in const [0, 0xFFF97316, 0xFFF2A900, 0xFFEAB308, 0xFFDC2626, 0xFFB91C1C, 0xFF2563EB, 0xFF1E3A8A, 0xFF0EA5E9, 0xFF16A34A, 0xFF0E7490, 0xFF9333EA, 0xFF111827, 0xFF64748B])
+              for (final c in const [
+                0,
+                0xFF111827, 0xFF374151, 0xFF64748B, 0xFF94A3B8,
+                0xFF991B1B, 0xFFDC2626, 0xFFEF4444, 0xFFE11D48, 0xFFEC4899,
+                0xFFEA580C, 0xFFF97316, 0xFFF59E0B, 0xFFF2A900, 0xFFEAB308,
+                0xFF65A30D, 0xFF16A34A, 0xFF15803D, 0xFF059669, 0xFF0D9488,
+                0xFF0E7490, 0xFF0284C7, 0xFF0EA5E9, 0xFF2563EB, 0xFF1D4ED8,
+                0xFF1E3A8A, 0xFF4F46E5, 0xFF7C3AED, 0xFF9333EA, 0xFF78350F,
+              ])
                 InkWell(
                   onTap: () => setState(() {
                     team.uniformColor = c;

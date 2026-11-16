@@ -181,6 +181,129 @@ extension RecordOps on AppState {
     _monthlyMvp(d.month == 5 ? '3・4月' : '${d.month - 1}月');
   }
 
+  /// 交流戦全試合終了時：交流戦優勝・交流戦MVP・主要タイトル（首位打者・本塁打王・最優秀防御率・最多勝）を確定して記録
+  void _interleagueAwardsCheck(DateTime d) {
+    if (seasonFinished || d.year != startYear) return;
+    final inter = matches.where((m) => m.matchType == 'INTERLEAGUE').toList();
+    if (inter.isEmpty || !inter.every((m) => m.done)) return;
+    if ((newsLog[startYear] ?? const <String>[]).any((e) => e.contains('交流戦優勝'))) return;
+    if (teams.any((t) => t.players.any((p) => p.honors.any((h) => h.startsWith('${startYear}年') && h.contains('交流戦MVP'))))) return;
+
+    final st = computeStandings(teams, matches, 'ALL', StandingsKind.interleague);
+    if (st.isEmpty) return;
+    final champ = st.first;
+
+    // 交流戦の個人成績を boxScore から集計
+    final bat = <String, ({Player p, Team t, int ab, int h, int hr, int rbi, int bb})>{};
+    final pit = <String, ({Player p, Team t, int outs, int er, int w, int k, int sv})>{};
+    final pMap = <String, (Player, Team)>{
+      for (final t in teams)
+        for (final p in t.players) p.id: (p, t),
+    };
+    final nameMap = <String, (Player, Team)>{
+      for (final t in teams)
+        for (final p in t.players) p.registeredName: (p, t),
+    };
+
+    for (final m in inter) {
+      final bs = m.boxScore;
+      if (bs == null) continue;
+      for (final side in const ['awayBatters', 'homeBatters']) {
+        final map = bs[side];
+        if (map is! Map) continue;
+        for (final e in map.entries) {
+          final found = nameMap['${e.key}'] ?? pMap['${e.key}'];
+          if (found == null || e.value is! Map) continue;
+          final v = e.value as Map;
+          final cur = bat[found.$1.id];
+          bat[found.$1.id] = (
+            p: found.$1,
+            t: found.$2,
+            ab: (cur?.ab ?? 0) + ((v['ab'] as num?)?.toInt() ?? 0),
+            h: (cur?.h ?? 0) + ((v['h'] as num?)?.toInt() ?? 0),
+            hr: (cur?.hr ?? 0) + ((v['hr'] as num?)?.toInt() ?? 0),
+            rbi: (cur?.rbi ?? 0) + ((v['rbi'] as num?)?.toInt() ?? 0),
+            bb: (cur?.bb ?? 0) + ((v['bb'] as num?)?.toInt() ?? 0),
+          );
+        }
+      }
+      for (final side in const ['awayPitcher', 'homePitcher']) {
+        final map = bs[side];
+        if (map is! Map) continue;
+        for (final e in map.entries) {
+          final found = nameMap['${e.key}'] ?? pMap['${e.key}'];
+          if (found == null || e.value is! Map) continue;
+          final v = e.value as Map;
+          final cur = pit[found.$1.id];
+          pit[found.$1.id] = (
+            p: found.$1,
+            t: found.$2,
+            outs: (cur?.outs ?? 0) + ((v['outs'] as num?)?.toInt() ?? 0),
+            er: (cur?.er ?? 0) + ((v['er'] as num?)?.toInt() ?? 0),
+            w: (cur?.w ?? 0) + ((v['w'] as num?)?.toInt() ?? 0),
+            k: (cur?.k ?? 0) + ((v['k'] as num?)?.toInt() ?? 0),
+            sv: (cur?.sv ?? 0) + ((v['sv'] as num?)?.toInt() ?? 0),
+          );
+        }
+      }
+    }
+
+    final interGames = (inter.length / 6).round().clamp(18, 36);
+    final qPa = (interGames * 2.5).round();
+    final qOuts = (interGames * 2.4).round();
+    final dateStr = '${startYear}年${d.month}月${d.day}日';
+
+    // 交流戦MVP（優勝チームから最優秀選手を優先選出）
+    (Player, Team, double)? mvp;
+    for (final b in bat.values) {
+      if (b.t.id != champ.team.id || b.ab + b.bb < qPa ~/ 2) continue;
+      final avg = b.ab == 0 ? 0.0 : b.h / b.ab;
+      final sc = avg * 100 + b.hr * 3.5 + b.rbi * 0.8 + b.bb * 0.5;
+      if (mvp == null || sc > mvp.$3) mvp = (b.p, b.t, sc);
+    }
+    for (final x in pit.values) {
+      if (x.t.id != champ.team.id || x.outs < qOuts ~/ 2) continue;
+      final era = x.outs == 0 ? 9.99 : x.er * 27 / x.outs;
+      final sc = x.w * 12 + x.sv * 6 + x.outs / 3.0 * 1.2 + x.k * 0.4 - era * 5;
+      if (mvp == null || sc > mvp.$3) mvp = (x.p, x.t, sc);
+    }
+    if (mvp != null) {
+      mvp.$1.honors.add('$dateStr 交流戦MVP');
+    }
+
+    final avgCand = bat.values.where((b) => b.ab + b.bb >= qPa && b.ab > 0).toList()
+      ..sort((a, b) => (b.h / b.ab).compareTo(a.h / a.ab));
+    final hrCand = bat.values.where((b) => b.hr > 0).toList()..sort((a, b) => b.hr.compareTo(a.hr));
+    final eraCand = pit.values.where((x) => x.outs >= qOuts).toList()
+      ..sort((a, b) => (a.er * 27 / a.outs).compareTo(b.er * 27 / b.outs));
+    final winCand = pit.values.where((x) => x.w > 0).toList()..sort((a, b) => b.w.compareTo(a.w));
+
+    final notes = <String>[
+      '交流戦優勝：${champ.team.name}（${champ.w}勝${champ.l}敗${champ.d > 0 ? '${champ.d}分' : ''}）${mvp == null ? '' : '　交流戦MVP：${mvp.$1.registeredName}（${teamShort(mvp.$2)}）'}',
+    ];
+    if (avgCand.isNotEmpty) {
+      final b = avgCand.first;
+      b.p.honors.add('$dateStr 交流戦首位打者');
+      notes.add('交流戦 首位打者：${b.p.registeredName}（${teamShort(b.t)}・${(b.h / b.ab).toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '')}）');
+    }
+    if (hrCand.isNotEmpty) {
+      final b = hrCand.first;
+      b.p.honors.add('$dateStr 交流戦本塁打王');
+      notes.add('交流戦 本塁打王：${b.p.registeredName}（${teamShort(b.t)}・${b.hr}本）');
+    }
+    if (eraCand.isNotEmpty) {
+      final x = eraCand.first;
+      x.p.honors.add('$dateStr 交流戦最優秀防御率');
+      notes.add('交流戦 最優秀防御率：${x.p.registeredName}（${teamShort(x.t)}・${(x.er * 27 / x.outs).toStringAsFixed(2)}）');
+    }
+    if (winCand.isNotEmpty) {
+      final x = winCand.first;
+      x.p.honors.add('$dateStr 交流戦最多勝');
+      notes.add('交流戦 最多勝：${x.p.registeredName}（${teamShort(x.t)}・${x.w}勝）');
+    }
+    _addNews(notes);
+  }
+
   // ───────── 表彰の記録 ─────────
 
   /// シーズンの表彰を、選手ごとの表彰の記録に書き込む

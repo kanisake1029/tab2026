@@ -262,6 +262,7 @@ class _StartScreenState extends State<StartScreen> {
             style: FilledButton.styleFrom(backgroundColor: _green, minimumSize: const Size(220, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             onPressed: ok
                 ? () => setState(() {
+                      _league = 'CL';
                       _step = 1;
                       if (_selectedTeam == null || (_selectedTeam!.league != 'CL' && _selectedTeam!.league != 'PL')) _selectedTeamId = null;
                     })
@@ -453,7 +454,7 @@ class _StartScreenState extends State<StartScreen> {
             const Divider(height: 1),
             sec(
               '公式戦の試合数',
-              ChipGrid<int>(items: const [(120, '120試合 短期'), (143, '143試合 標準'), (156, '156試合 タフ')], selected: _games, minWidth: 90, padding: EdgeInsets.zero, selectedColor: _green, onSelect: (g) => setState(() => _games = g)),
+              ChipGrid<int>(items: const [(118, '118試合 短期'), (143, '143試合 標準'), (156, '156試合 タフ')], selected: _games, minWidth: 90, padding: EdgeInsets.zero, selectedColor: _green, onSelect: (g) => setState(() => _games = g)),
             ),
             const Divider(height: 1),
             sec(
