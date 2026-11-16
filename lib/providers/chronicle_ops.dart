@@ -376,7 +376,7 @@ extension ChronicleOps on AppState {
       if (mm == null) continue;
       final dt = DateTime(int.parse(mm.group(1)!), int.parse(mm.group(2)!), int.parse(mm.group(3)!));
       final desc = mm.group(4)!;
-      final sameDayMove = out.any((x) => x.$1 == dt && (x.$2.contains('移籍') || x.$2.contains('入団') || x.$2.contains('契約') || x.$2.contains('復帰')));
+      final sameDayMove = out.any((x) => (x.$1.difference(dt).inDays).abs() <= 14 && (x.$2.contains('移籍') || x.$2.contains('入団') || x.$2.contains('契約') || x.$2.contains('復帰')));
       if (!dt.isBefore(start) && sameDayMove) continue;
       out.add((dt, '$desc。'));
     }

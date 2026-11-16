@@ -1314,6 +1314,7 @@ extension OffseasonOps on AppState {
         _resolveCompAuto(comp, offseasonYear);
       }
     }
+    _diffRosters();
     _trimTransactions();
   }
 
@@ -1532,6 +1533,7 @@ extension OffseasonOps on AppState {
         _removeFromOther(p.id);
         ForeignEngine.applyAdapt(p);
         p.offJoin = offseasonYear;
+        if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
         RosterEngine.addPlayer(t, p);
         transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}（外国人・${p.mainPosition}）と契約（${formatSalary(p.salary)}）');
         signed++;
@@ -1569,6 +1571,7 @@ extension OffseasonOps on AppState {
     _removeFromOther(p.id);
     if (!p.ikusei) ForeignEngine.applyAdapt(p); // 環境への適応：入団前の能力に倍率がかかる
     p.offJoin = offseasonYear;
+    if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
     RosterEngine.addPlayer(my, p);
     transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（外国人・${p.ikusei ? '育成・' : ''}${p.mainPosition}）と契約（${formatSalary(p.salary)}）');
     _addNews(['${p.registeredName}と契約しました（${formatSalary(p.salary)}）']);
@@ -1796,6 +1799,7 @@ extension OffseasonOps on AppState {
         RosterEngine.cpuReassign(t, skill: skill, youth: youth, devBonus: (p) => firstDevBonus(t, p));
       }
     }
+    _diffRosters();
     _trimTransactions();
   }
 

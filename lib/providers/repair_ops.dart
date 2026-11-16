@@ -54,6 +54,21 @@ extension RepairOps on AppState {
       final f = firstTeam[r.refId];
       if (f == null || r.season < f.$1) firstTeam[r.refId] = (r.season, team);
     }
+    final validTeamIds = {for (final t in teams) t.id};
+    final preTeamFromChron = <String, String>{};
+    final fromY = chronFirstYear == 0 ? gameStart : chronFirstYear;
+    final cutoff = DateTime(gameStart, 4, 1);
+    for (var y = fromY; y <= gameStart; y++) {
+      for (final e in await chronicleOf(y)) {
+        if (e['k'] != 'leave') continue;
+        final pid = e['pid'] as String?;
+        final tid = e['team'] as String?;
+        final ds = e['d'] as String?;
+        if (pid == null || tid == null || ds == null || !validTeamIds.contains(tid)) continue;
+        final dt = DateTime.tryParse(ds);
+        if (dt != null && !dt.isAfter(cutoff)) preTeamFromChron.putIfAbsent(pid, () => tid);
+      }
+    }
     final players = <(Player, String)>[
       for (final t in teams) for (final p in t.players) (p, t.id),
       for (final fa in freeAgents) (fa.player, fa.fromTeamId),
@@ -67,7 +82,7 @@ extension RepairOps on AppState {
       final entry = startYear - p.proYears + 1;
       final years = gameStart - entry;
       if (years <= 0 || p.joinedInGame) continue; // ゲーム開始後に入団した選手には、開始前の年度は無い（ありもしない年を推定しない）
-      final team = firstTeam[p.id]?.$2 ?? tid;
+      final team = preTeamFromChron[p.id] ?? firstTeam[p.id]?.$2 ?? tid;
       final ys = PreCareer.split(p, rest, gameStart - years, years, team);
       if (ys.isNotEmpty) out[p.id] = ys;
     }
@@ -111,6 +126,24 @@ extension RepairOps on AppState {
       debugPrint('CAREER FIX: ${bad.length} players joined in game');
     }
     await db.setKv('joinFixV1', '1');
+    if (await db.getKv('foreignProYearsV1') != '1') {
+      final re = RegExp(r'^外国人選手（(\d{4})年');
+      var fixed = 0;
+      for (final t in teams) {
+        for (final p in t.players) {
+          if (!p.joinedInGame) continue;
+          final m = re.firstMatch(p.draftInfo);
+          if (m == null) continue;
+          final y = int.parse(m.group(1)!);
+          if (p.proYears == startYear - y + 1) {
+            p.proYears = startYear - y;
+            fixed++;
+          }
+        }
+      }
+      if (fixed > 0) debugPrint('FOREIGN PRO YEARS FIX: $fixed players');
+      await db.setKv('foreignProYearsV1', '1');
+    }
   }
 
   /// a − b（0未満は0。守備位置ごとの値も）
