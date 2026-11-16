@@ -2,6 +2,9 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:npb_pennant_app/db/app_database.dart';
+import 'package:npb_pennant_app/engine/batting_splits.dart';
+import 'package:npb_pennant_app/engine/career_path.dart';
+import 'package:npb_pennant_app/engine/other_league_engine.dart';
 import 'package:npb_pennant_app/engine/roster_engine.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
@@ -46,10 +49,10 @@ void main() {
     // 寸評欄に「海外での成績」は出ない
     expect(find.textContaining('海外での成績'), findsNothing);
 
-    // 経歴タブの成績表に 3A の成績が出る
+    // 経歴タブの成績表に 3A* の成績が出る（2025以前は憶測のため * とグレー）
     await tester.tap(find.text('経歴').first);
     await tester.pumpAndSettle();
-    expect(find.text('3A'), findsOneWidget);
+    expect(find.text('3A*'), findsOneWidget);
     expect(find.text('.295'), findsOneWidget);
 
     // 年表タブに「移籍の歩み」は別枠で出ず、年表内に現役ドラフトが出る
@@ -181,5 +184,27 @@ void main() {
 
     expect(ik.ikusei, isFalse);
     expect(ik.uniformNumber, lessThan(100));
+  });
+
+  test('海外球団3文字略称・外国人経歴の時系列整理・コース得手不得手', () {
+    expect(OtherLeagueEngine.abbr3('ロサンゼルス・ドジャース'), 'LAD');
+    expect(OtherLeagueEngine.abbr3('ソウル'), 'SEO');
+
+    final f = Player(id: 'foreign_test', lastName: 'テスト', isPitcher: false, nationality: '海外', origin: 'アメリカ', mainPos: '外野手', age: 27, abroad: [
+      '2024　3A・OKC　100試合 打率.290 15本 50打点 OPS.850',
+      '2023　MLB・LAD　30試合 打率.210 2本 10打点 OPS.620',
+      '2023　3A・OKC　80試合 打率.305 14本 48打点 OPS.900',
+      '2022　3A・OKC　115試合 打率.280 18本 65打点 OPS.830',
+    ]);
+    final cp = CareerPath.of(f);
+    expect(cp, ['出身　アメリカ', '3A・OKC（2022）*', 'MLB・LAD／3A・OKC（2023）*', '3A・OKC（2024）*']);
+
+    // コース相性は -1.0〜1.0 に収まり、内外角/高低で符号が反転する
+    final b = Player(id: 'batter_course_1', lastName: '打者', isPitcher: false, bats: 'R', mainPos: '一塁手');
+    final a1 = BattingSplits.courseAffinity(b, -0.8, 0.8, 'R');
+    final a2 = BattingSplits.courseAffinity(b, 0.8, -0.8, 'R');
+    expect(a1, inInclusiveRange(-1.0, 1.0));
+    expect(a2, inInclusiveRange(-1.0, 1.0));
+    expect(a1, closeTo(-a2, 1e-9));
   });
 }

@@ -15,6 +15,33 @@ class BattingSplits {
   static const speedNames = ['〜129', '130〜139', '140〜144', '145〜149', '150〜154', '155〜'];
   static const zoneCells = {7, 8, 9, 12, 13, 14, 17, 18, 19};
 
+  /// 打者ごとのコースの得手不得手（hPref: +1=内角得意/-1=外角得意, vPref: +1=高め得意/-1=低め得意）
+  static (int, int) coursePref(Player b) {
+    final r = Random(b.id.hashCode ^ 0x4b7);
+    const vals = [-1, 0, 1];
+    final h = vals[r.nextInt(3)];
+    final v = vals[r.nextInt(3)];
+    return (h, v);
+  }
+
+  /// コース相性（-1.0=苦手 〜 +1.0=得意）。zoneX: 投手から見て右が+、bats: 'L'/'R'
+  static double courseAffinity(Player b, double zoneX, double zoneZ, String bats) {
+    final (h, v) = coursePref(b);
+    if (h == 0 && v == 0) return 0.0;
+    final inside = bats == 'L' ? zoneX : -zoneX;
+    final norm = (h != 0 && v != 0) ? 0.5 : 1.0;
+    return ((inside.clamp(-1.0, 1.0) * h + zoneZ.clamp(-1.0, 1.0) * v) * norm).clamp(-1.0, 1.0);
+  }
+
+  /// コース傾向の短い表示（例: '得意: 内角・高め / 苦手: 外角・低め'、標準なら null）
+  static String? courseSummary(Player b) {
+    final (h, v) = coursePref(b);
+    if (h == 0 && v == 0) return null;
+    final good = [if (h > 0) '内角' else if (h < 0) '外角', if (v > 0) '高め' else if (v < 0) '低め'].join('・');
+    final bad = [if (h > 0) '外角' else if (h < 0) '内角', if (v > 0) '低め' else if (v < 0) '高め'].join('・');
+    return '得意:$good / 苦手:$bad';
+  }
+
   /// コースのマス（1〜25）。x は投球のゾーン座標（±1 がゾーン端）。右打者は +x が内角（シミュレーターと同じ向き）
   static int cell(double x, double z, String bats) {
     final u = x * (bats == 'L' ? -1 : 1);

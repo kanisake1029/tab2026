@@ -74,6 +74,47 @@ class OtherLeagueEngine {
   }
 
   // ───────── 名前（架空） ─────────
+  static const _cityAbbr = <String, String>{
+    'ボストン': 'BOS', 'ニューヨーク': 'NYY', 'フィラデルフィア': 'PHI', 'ボルチモア': 'BAL', 'ピッツバーグ': 'PIT',
+    'クリーブランド': 'CLE', 'デトロイト': 'DET', 'シカゴ': 'CHC', 'ミルウォーキー': 'MIL', 'ミネアポリス': 'MIN',
+    'セントルイス': 'STL', 'カンザスシティ': 'KC', 'シンシナティ': 'CIN', 'アトランタ': 'ATL', 'マイアミ': 'MIA',
+    'タンパ': 'TB', 'ヒューストン': 'HOU', 'ダラス': 'TEX', 'デンバー': 'COL', 'フェニックス': 'ARI',
+    'ソルトレイク': 'SLC', 'シアトル': 'SEA', 'ポートランド': 'POR', 'サンフランシスコ': 'SF', 'オークランド': 'OAK',
+    'ロサンゼルス': 'LAD', 'サンディエゴ': 'SD', 'ラスベガス': 'LV', 'ナッシュビル': 'NAS', 'シャーロット': 'CLT',
+    'インディアナポリス': 'IND', 'コロンバス': 'COL', 'バッファロー': 'BUF', 'ロチェスター': 'ROC', 'シラキュース': 'SYR',
+    'スクラントン': 'SWB', 'リーハイバレー': 'LHV', 'ノーフォーク': 'NOR', 'リッチモンド': 'RIC', 'ダーラム': 'DUR',
+    'メンフィス': 'MEM', 'ルイビル': 'LOU', 'トレド': 'TOL', 'アイオワ': 'IOW', 'オマハ': 'OMA',
+    'オクラホマシティ': 'OKC', 'アルバカーキ': 'ABQ', 'エルパソ': 'ELP', 'リノ': 'RNO', 'サクラメント': 'SAC',
+    'タコマ': 'TAC', 'フレズノ': 'FRE', 'スポケーン': 'SPO', 'ボイシ': 'BOI', 'ビロクシ': 'BLX',
+    'モンゴメリー': 'MGM', 'チャタヌーガ': 'CHA', 'ジャクソンビル': 'JAX', 'ペンサコーラ': 'PNS', 'アマリロ': 'AMA',
+    'ハリスバーグ': 'HBG', 'エリー': 'ERI', 'アルトゥーナ': 'ALT', 'ポートランドME': 'PME', 'ハートフォード': 'HFD',
+    'ニューハンプシャー': 'NH', 'トレントン': 'TRN', 'レディング': 'REA', 'アクロン': 'AKR', 'ボウイ': 'BOW',
+    'タルサ': 'TUL', 'ウィチタ': 'WCH', 'スプリングフィールド': 'SPR', 'ノースウェストアーカンソー': 'NWA',
+    'コーパスクリスティ': 'CC', 'サンアントニオ': 'SA', 'ミッドランド': 'MID', 'フリスコ': 'FRI', 'ヒルズボロ': 'HIL',
+    'ユージーン': 'EUG', 'エバレット': 'EVE', 'モデスト': 'MOD', 'ストックトン': 'STK', 'ランカスター': 'LAN',
+    'インランドエンパイア': 'IE', 'レイクエルシノア': 'LE', 'バイセイリア': 'VIS', 'デイトン': 'DAY', 'グリーンビル': 'GVL',
+    'アッシュビル': 'ASH',
+    'ソウル': 'SEO', '仁川': 'INC', '水原': 'SUW', '大田': 'DAE', '大邱': 'DGU', '光州': 'GWJ', '釜山': 'PUS', '昌原': 'CWN', '蔚山': 'ULS', '清州': 'CJU',
+    '台北': 'TPE', '桃園': 'TYN', '新竹': 'HSZ', '台中': 'TCH', '台南': 'TNN', '高雄': 'KHH',
+    'モンテレイ': 'MTY', 'ティフアナ': 'TIJ', 'モンクローバ': 'MVA', 'サルティーヨ': 'SLT', 'チワワ': 'CUU',
+    'メキシコシティ': 'MEX', 'プエブラ': 'PUE', 'オアハカ': 'OAX', 'ユカタン': 'YUC', 'ベラクルス': 'VER',
+    'ドバイ': 'DXB', 'アブダビ': 'AUH', 'ドーハ': 'DOH', 'リヤド': 'RUH',
+    'シドニー': 'SYD', 'メルボルン': 'MEL', 'ブリスベン': 'BRI', 'パース': 'PER',
+  };
+
+  /// 海外・他リーグ球団の3文字略称（例：ロサンゼルス → LAD）
+  static String abbr3(String cityOrName) {
+    final city = cityOrName.split('・').first;
+    final hit = _cityAbbr[city];
+    if (hit != null) return hit;
+    if (city.length <= 3) return city;
+    final h = city.hashCode.abs();
+    const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    return '${c[h % c.length]}${c[(h ~/ 24) % c.length]}${c[(h ~/ 576) % c.length]}';
+  }
+
+  static String teamCode(OTeam t) => abbr3(t.short.isNotEmpty ? t.short : t.name);
+
   static const _usCities = ['ボストン', 'ニューヨーク', 'フィラデルフィア', 'ボルチモア', 'ピッツバーグ', 'クリーブランド', 'デトロイト', 'シカゴ', 'ミルウォーキー', 'ミネアポリス', 'セントルイス', 'カンザスシティ', 'シンシナティ', 'アトランタ', 'マイアミ', 'タンパ', 'ヒューストン', 'ダラス', 'デンバー', 'フェニックス', 'ソルトレイク', 'シアトル', 'ポートランド', 'サンフランシスコ', 'オークランド', 'ロサンゼルス', 'サンディエゴ', 'ラスベガス', 'ナッシュビル', 'シャーロット',
     'インディアナポリス', 'コロンバス', 'バッファロー', 'ロチェスター', 'シラキュース', 'スクラントン', 'リーハイバレー', 'ノーフォーク', 'リッチモンド', 'ダーラム', 'メンフィス', 'ルイビル', 'トレド', 'アイオワ', 'オマハ', 'オクラホマシティ', 'アルバカーキ', 'エルパソ', 'リノ', 'サクラメント', 'タコマ', 'フレズノ', 'スポケーン', 'ボイシ', 'ビロクシ', 'モンゴメリー', 'チャタヌーガ', 'ジャクソンビル', 'ペンサコーラ', 'アマリロ',
     'ハリスバーグ', 'エリー', 'アルトゥーナ', 'ポートランドME', 'ハートフォード', 'ニューハンプシャー', 'トレントン', 'レディング', 'アクロン', 'ボウイ', 'タルサ', 'ウィチタ', 'スプリングフィールド', 'ノースウェストアーカンソー', 'コーパスクリスティ', 'サンアントニオ', 'ミッドランド', 'フリスコ', 'ヒルズボロ', 'ユージーン', 'エバレット', 'モデスト', 'ストックトン', 'ランカスター', 'インランドエンパイア', 'レイクエルシノア', 'バイセイリア', 'デイトン', 'グリーンビル', 'アッシュビル'];
@@ -415,18 +456,19 @@ class OtherLeagueEngine {
 
   static String _f3(double v) => v.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '');
 
-  /// 来歴の1行（ForeignEngine と同じ形「2026　3A　120試合 打率.280 15本 60打点 OPS.800」）。球団名を足す
+  /// 来歴の1行（ForeignEngine と同じ形「2026　MLB・LAD　120試合 打率.280 15本 60打点 OPS.800」）。3文字略称を使う
   static String recordLine(Player p, OLeague lg, OTeam t, int year) {
     final s = p.seasonStats;
+    final code = teamCode(t);
     if (p.isPitcher) {
       final ip = s.inningsPitched;
       final era = ip == 0 ? 0.0 : s.earnedRuns * 27 / ip;
-      return '$year　${lg.name}・${t.short}　${s.pitchApps}試合 ${s.wins}勝${s.losses}敗${s.saves > 0 ? '${s.saves} S' : ''} 防御率${era.toStringAsFixed(2)} ${ip ~/ 3}${ip % 3 == 0 ? '' : '.${ip % 3}'}回 ${s.pitcherStrikeouts}奪三振';
+      return '$year　${lg.name}・$code　${s.pitchApps}試合 ${s.wins}勝${s.losses}敗${s.saves > 0 ? '${s.saves} S' : ''} 防御率${era.toStringAsFixed(2)} ${ip ~/ 3}${ip % 3 == 0 ? '' : '.${ip % 3}'}回 ${s.pitcherStrikeouts}奪三振';
     }
     final pa = s.atBats + s.walks + s.sacFlies;
     final obp = pa == 0 ? 0.0 : (s.hits + s.walks) / pa;
     final slg = s.atBats == 0 ? 0.0 : s.totalBases / s.atBats;
-    return '$year　${lg.name}・${t.short}　${s.games}試合 打率${s.atBats == 0 ? '-' : _f3(s.battingAverage)} ${s.homeRuns}本 ${s.rbi}打点 OPS${_f3(obp + slg)}';
+    return '$year　${lg.name}・$code　${s.games}試合 打率${s.atBats == 0 ? '-' : _f3(s.battingAverage)} ${s.homeRuns}本 ${s.rbi}打点 OPS${_f3(obp + slg)}';
   }
 
   /// 1月1日：年を取り、力が変わり（若手は伸び、ベテランは落ちる）、引退・昇格と降格・新しい選手の補充

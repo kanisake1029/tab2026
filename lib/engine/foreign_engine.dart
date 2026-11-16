@@ -91,13 +91,59 @@ class ForeignEngine {
     return q >= 50 ? '1A' : '米独立';
   }
 
+  static const _usOrgs = [
+    ('LAD', 'OKC', 'TUL', 'RC'),
+    ('NYY', 'SWB', 'SOM', 'HV'),
+    ('BOS', 'WOR', 'POR', 'GVL'),
+    ('CHC', 'IOW', 'TNS', 'SB'),
+    ('HOU', 'SUG', 'CC', 'ASH'),
+    ('ATL', 'GWN', 'MIS', 'ROM'),
+    ('SD', 'ELP', 'SA', 'LE'),
+    ('SF', 'SAC', 'RIC', 'SJ'),
+    ('SEA', 'TAC', 'ARK', 'MOD'),
+    ('TEX', 'RR', 'FRI', 'HIC'),
+    ('PHI', 'LHV', 'REA', 'JS'),
+    ('NYM', 'SYR', 'BNG', 'BRK'),
+    ('BAL', 'NOR', 'BOW', 'ABD'),
+    ('TOR', 'BUF', 'NH', 'VAN'),
+    ('CLE', 'COL', 'AKR', 'LC'),
+    ('MIN', 'STP', 'WCH', 'CR'),
+    ('STL', 'MEM', 'SPR', 'PEO'),
+    ('MIL', 'NAS', 'BLX', 'WIS'),
+    ('ARI', 'RNO', 'AMA', 'HIL'),
+    ('COL', 'ABQ', 'HFD', 'SPO'),
+  ];
+  static const _leagueCodes = {
+    'KBO': ['SEO', 'INC', 'SUW', 'DAE', 'DGU', 'GWJ', 'PUS', 'CWN'],
+    'CPBL': ['TPE', 'TYN', 'HSZ', 'TCH', 'TNN', 'KHH'],
+    'メキシカンリーグ': ['MTY', 'TIJ', 'MEX', 'PUE', 'YUC', 'JAL'],
+    '豪州リーグ': ['SYD', 'MEL', 'BRI', 'PER'],
+    'ドミニカンリーグ': ['DOM', 'SDQ', 'STI', 'LCE'],
+    '米独立': ['LI', 'YRK', 'SOM', 'WPG', 'SF', 'KAN'],
+  };
+
+  static String _teamLabel(String lg, (String, String, String, String) org, Random r) => switch (lg) {
+        'MLB' => 'MLB・${org.$1}',
+        '3A' => '3A・${org.$2}',
+        '2A' => '2A・${org.$3}',
+        '1A' => '1A・${org.$4}',
+        _ => () {
+            final xs = _leagueCodes[lg];
+            if (xs == null || xs.isEmpty) return lg;
+            final shortLg = lg == 'メキシカンリーグ' ? 'MEX' : (lg == '豪州リーグ' ? 'AUS' : (lg == 'ドミニカンリーグ' ? 'DWL' : lg));
+            return '$shortLg・${xs[r.nextInt(xs.length)]}';
+          }(),
+      };
+
   /// 来日前の成績（新しい順）。lastYear は来日前の最後のシーズン
   static List<String> abroadRecord(Player p, String origin, int lastYear, Random r, {bool young = false, double? quality}) {
     final q = quality ?? p.ovr.toDouble();
     final maxSeasons = young ? (p.age - 17).clamp(1, 3) : 3 + r.nextInt(3);
     final out = <String>[];
     final stats = <PlayerStats>[];
+    var org = _usOrgs[r.nextInt(_usOrgs.length)];
     for (var k = 0; k < maxSeasons; k++) {
+      if (k > 0 && r.nextDouble() < 0.25) org = _usOrgs[r.nextInt(_usOrgs.length)];
       final lgs = _leagues(origin, q, k, young, r);
       // 2つのレベルを行き来した年は、試合数を分け合う（冬のリーグは別）
       final main = lgs.where((l) => l != 'ドミニカンリーグ' && l != '豪州リーグ').toList();
@@ -114,7 +160,9 @@ class ForeignEngine {
           eraAdj: _eraAdj[lg] ?? 0,
           hrMul: _hrMul[lg] ?? 1,
         );
-        out.add(res.$1);
+        final label = _teamLabel(lg, org, r);
+        final line = res.$1.replaceFirst('　$lg　', '　$label　');
+        out.add(line);
         stats.add(res.$2);
       }
     }

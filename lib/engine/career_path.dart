@@ -52,19 +52,42 @@ class CareerPath {
     return out;
   }
 
-  /// 海外（他リーグ）の所属：来歴の行「2024　KBO・ソウル　…」から、リーグ・球団ごとに年の幅で
+  /// 海外（他リーグ）の所属：来歴の行「2024　MLB・LAD　…」から年ごとの所属を整理し、連続する同球団・同リーグをまとめる
+  ///  2025年以前（ゲーム開始前の推定経歴）には末尾に * を付ける
   static List<String> _abroad(Player p) {
-    final seen = <String, (int, int)>{};
-    final order = <String>[];
+    final byYear = <int, List<String>>{};
     for (final l in p.abroad.reversed) {
       final m = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)').firstMatch(l);
       if (m == null) continue;
       final y = int.parse(m.group(1)!);
       final key = m.group(2)!;
-      if (!seen.containsKey(key)) order.add(key);
-      final cur = seen[key];
-      seen[key] = cur == null ? (y, y) : (min(cur.$1, y), max(cur.$2, y));
+      final list = byYear.putIfAbsent(y, () => []);
+      if (!list.contains(key)) list.add(key);
     }
-    return [for (final k in order) '$k（${seen[k]!.$1 == seen[k]!.$2 ? '${seen[k]!.$1}' : '${seen[k]!.$1}〜${seen[k]!.$2}'}）'];
+    if (byYear.isEmpty) return const [];
+    final years = byYear.keys.toList()..sort();
+    // 同じ年に複数リーグ（例: 3A と MLB）があれば両方「MLB・LAD／3A・OKC」として1年にまとめる
+    final stints = <(String, int, int, bool)>[]; // (label, fromYear, toYear, estimated)
+    for (final y in years) {
+      final list = byYear[y]!;
+      list.sort((a, b) => _rank(b).compareTo(_rank(a)));
+      final label = list.join('／');
+      final est = y < 2026;
+      if (stints.isNotEmpty && stints.last.$1 == label && stints.last.$4 == est && stints.last.$3 == y - 1) {
+        final prev = stints.removeLast();
+        stints.add((label, prev.$2, y, est));
+      } else {
+        stints.add((label, y, y, est));
+      }
+    }
+    return [for (final s in stints) '${s.$1}（${s.$2 == s.$3 ? '${s.$2}' : '${s.$2}〜${s.$3}'}）${s.$4 ? '*' : ''}'];
+  }
+
+  static int _rank(String k) {
+    if (k.startsWith('MLB')) return 5;
+    if (k.startsWith('3A')) return 4;
+    if (k.startsWith('2A')) return 3;
+    if (k.startsWith('1A')) return 2;
+    return 1;
   }
 }

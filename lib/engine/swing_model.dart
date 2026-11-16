@@ -92,7 +92,7 @@ class SwingModel {
   static double _g(m.Random r) => m.sqrt(-2 * m.log(1 - r.nextDouble())) * m.cos(2 * m.pi * r.nextDouble());
 
   static SwingOutcome swing(BatterSkill b, SwingRead read, IncomingPitch p,
-      {required m.Random rnd, double corScale = 1, double launchBias = 0, double betaBias = 0, double speedMul = 1, bool twoStrikes = false, double edge = 0}) {
+      {required m.Random rnd, double corScale = 1, double launchBias = 0, double betaBias = 0, double speedMul = 1, bool twoStrikes = false, double edge = 0, double courseBias = 0}) {
     // ── 球種の見極め：待っていない方の球が来ると見誤りやすい（キレがあるほど、選球眼が低いほど）──
     final vMul = p.perceivedKmh > 0 ? Velo.timingMul(p.perceivedKmh, adapt: Velo.adapt(b.meet, b.eye, b.power)) : 1.0; // 速い投手ほど指数関数的に差し込まれる
     final vLin = p.perceivedKmh > 0 ? ((p.perceivedKmh - Velo.pivot) * 0.012).clamp(-0.25, 0.3) : 0.0;
@@ -114,10 +114,10 @@ class SwingModel {
       }
     }
     final dtRaw = p.time - p.time * p.speedKmh / vExp; // ＋＝球が予想より遅い → 打者は早い
-    final sigT = (0.007 + (100 - b.meet) * 0.0001) * noiseScale * timingScale * (twoStrikes ? 0.9 : 1.0) * vMul;
+    final sigT = (0.007 + (100 - b.meet) * 0.0001) * noiseScale * timingScale * (twoStrikes ? 0.9 : 1.0) * vMul * (1.0 - courseBias * 0.12);
     final dt = dtRaw * recog + _g(rnd) * sigT + b.pull * 0.004;
     // ── スイング ──
-    var vBat = batSpeed(b) * speedMul * (twoStrikes ? 0.97 : 1.0);
+    var vBat = batSpeed(b) * speedMul * (twoStrikes ? 0.97 : 1.0) * (1.0 + courseBias * 0.025);
     if (dt.abs() > 0.06) vBat *= 0.85; // 大きく崩されると当てにいくだけ
     final zPlate = 0.75 + p.zoneZ * 0.28;
     final attack = (Spec.bat ? Spec.attack(b.trajectory) : 3.0 + (b.trajectory - 1) * 3.0) + (0.75 - zPlate) * 14 + launchBias * 0.5;
@@ -155,7 +155,7 @@ class SwingModel {
     // 変化量：小〜中くらいの変化は当たるが芯を外す（山形。大きい変化は空振りで効き、当たれば芯ずれは小さめ）。キレも芯を外す
     final bs = p.brk / brkPeak;
     final brkMul = guessed ? (1 + brkConK * bs * m.exp(1 - bs)) * (1 + (p.sharp - 60) * sharpConK).clamp(0.85, 1.2) : 1.0;
-    final sigY = (Spec.bat ? Spec.sigEy(b.meet) : (0.016 + (100 - b.meet) * 0.00025) * noiseScale * contactScale) * (1 + edge * 0.9) * stuffMul * brkMul * m.pow(vMul, veloContact);
+    final sigY = (Spec.bat ? Spec.sigEy(b.meet) : (0.016 + (100 - b.meet) * 0.00025) * noiseScale * contactScale) * (1 + edge * 0.9).clamp(0.65, 2.0) * (1.0 - courseBias * 0.18) * stuffMul * brkMul * m.pow(vMul, veloContact);
     final ey = aim + eyLate + eyTiming + _g(rnd) * sigY;
     // ── 長さ方向（＋＝先）── 投手から見て右（x の＋）は右打者の外角
     final outside = b.lefty ? -p.zoneX : p.zoneX;

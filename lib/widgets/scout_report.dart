@@ -280,7 +280,15 @@ class _ScoutReportState extends State<ScoutReport> {
       ('成長', Text(GrowthEngine.phaseOf(p).label)),
       ('全盛期', Text(grow.replaceFirst('全盛期', '').trim())),
       ('練習', Text(GrowthEngine.practiceOptions(p).contains(p.practiceInstruction) && p.practiceInstruction != 'おまかせ' ? p.practiceInstruction : 'おまかせ（${GrowthEngine.autoPractice(p)}）')),
-      ('経歴', Text(CareerPath.of(p).join(' → '))),
+      ('経歴', Text.rich(TextSpan(children: [
+        for (var i = 0; i < CareerPath.of(p).length; i++) ...[
+          if (i > 0) const TextSpan(text: ' → '),
+          TextSpan(
+            text: CareerPath.of(p)[i],
+            style: TextStyle(color: CareerPath.of(p)[i].endsWith('*') ? _sub : null),
+          ),
+        ],
+      ]))),
     ];
     return _infoGrid(items, wide: const {'経歴', '練習', '元NPB'});
   }
@@ -421,6 +429,11 @@ class _ScoutReportState extends State<ScoutReport> {
         _abilityLine('パワー', p.power),
         _abilityLine('選球眼', p.eye),
         _abilityLine('チャンス', p.clutch),
+        if (BattingSplits.courseSummary(p) != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text('コース　${BattingSplits.courseSummary(p)}', style: const TextStyle(fontSize: 10.5, color: _sub)),
+          ),
       ];
 
   List<Widget> _pitchingLines() => [
@@ -536,7 +549,9 @@ class _ScoutReportState extends State<ScoutReport> {
       final year = lm.group(1)!, lg = lm.group(2)!, body = lm.group(3)!;
       if (_tblPitch ? !body.contains('防御率') : !body.contains('打率')) continue;
       final s = i < p.abroadStats.length ? p.abroadStats[i] : AbroadStats.fromLine(p, line, isPitcher: _tblPitch);
-      out.add(_cells(year, lg, s));
+      final yNum = int.tryParse(year);
+      final label = (yNum != null && yNum < 2026 && !lg.endsWith('*')) ? '$lg*' : lg;
+      out.add(_cells(year, label, s));
     }
     return out;
   }
@@ -657,7 +672,7 @@ class _ScoutReportState extends State<ScoutReport> {
           final boldAll = [for (var i = 2; i < cols.length; i++) const TextStyle(fontWeight: FontWeight.w800)];
           return FrozenTable(
             leadHeader: '年度・団',
-            leadWidth: 84,
+            leadWidth: 98,
             rowHeight: 22,
             compact: true,
             headers: cols.sublist(2),
@@ -1065,7 +1080,7 @@ class _ScoutReportState extends State<ScoutReport> {
             l.sort((a, b) => a.$1.compareTo(b.$1));
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               _title(p.nationality == '海外' ? '来日までの経歴' : 'プロに入るまでの経歴'),
-              for (final x in CareerPath.of(p)) Text('・$x', style: const TextStyle(fontSize: 11.5, height: 1.4)),
+              for (final x in CareerPath.of(p)) Text('・$x', style: TextStyle(fontSize: 11.5, height: 1.4, color: x.endsWith('*') ? _sub : _ink)),
               const SizedBox(height: 6),
               _title('年表（入団・移籍・記録）'),
               if (l.isEmpty) const Text('年表の記録はまだありません', style: TextStyle(fontSize: 11, color: _sub)),

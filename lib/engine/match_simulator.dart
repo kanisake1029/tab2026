@@ -1,4 +1,5 @@
 ﻿import 'dart:math';
+import 'batting_splits.dart';
 import 'pitch_catalog.dart';
 import 'condition_engine.dart';
 import 'velo.dart';
@@ -1548,7 +1549,8 @@ class MatchSimulator {
             betaBias: batT == BatTactic.pullRight ? 12.0 : (batT == BatTactic.oppositeField ? (effHand == 'L' ? -10.0 : 10.0) : (batT == BatTactic.pullHit ? (effHand == 'L' ? 6.0 : -6.0) : 0.0)),
             speedMul: batT == BatTactic.powerSwing ? 1.03 : (batT == BatTactic.contactSwing ? 0.96 : 1.0),
             twoStrikes: state.strikes == 2,
-            edge: hanging ? -0.3 : max(0.0, zoneDist - 0.8), // 失投は芯でとらえやすい
+            edge: hanging ? -0.35 : (zoneDist < 0.35 ? -0.25 * (1.0 - zoneDist / 0.35) : (zoneDist <= 0.65 ? 0.0 : ((zoneDist - 0.65) * 1.15).clamp(0.0, 0.85))), // 真ん中は打たれやすくコーナーは打たれにくい
+            courseBias: BattingSplits.courseAffinity(batter, actualX, actualZ, effHand),
           );
         }
 
