@@ -594,12 +594,25 @@ extension OffseasonOps on AppState {
     _addNews(['ドラフト候補が志望届を出しました（${pending.length}人）。自球団を1希望にした候補は$mine人。希望球団以外に入団した選手は、国内FA が最大2年早くなります']);
   }
 
-  /// まだ1人も調べていなければ、それまでの調査の分をまとめて済ませる（ゲーム開始時。自球団が決まってから）
+  /// まだ1人も調べていなければ、現在のスカウト陣で1年間調べた分をまとめて済ませる（ゲーム開始時。自球団が決まってから）
   void preScoutIfNeeded() {
-    if (myTeam == null || prospects.isEmpty || prospects.any((p) => p.reports > 0)) return;
+    final my = myTeam;
+    if (my == null || prospects.isEmpty || prospects.any((p) => p.reports > 0)) return;
     final weeksLeft = DateTime(prospects.first.year, 10, 31).difference(currentDate).inDays ~/ 7;
-    for (var i = 0; i < max(0, 50 - weeksLeft); i++) {
+    final weeks = max(1, 50 - max(0, weeksLeft));
+    for (var i = 0; i < weeks; i++) {
       _scoutWeek(null);
+    }
+    // 1年間調べた体：現在のスカウト陣（チーフ・地区・海外＋施設）で、まだ未調査の候補にも基礎調査を入れておく
+    final eye = scoutEye(my);
+    final staff = coaches.where((c) => c.teamId == my.id && (c.role == 'チーフスカウト' || c.role == 'スカウト' || (c.role?.startsWith('地区') ?? false) || (c.role?.startsWith(CoachEngine.overseasScoutPrefix) ?? false))).length;
+    final r = Random(prospects.first.year * 733 ^ eye ^ my.id.hashCode);
+    for (final p in prospects) {
+      if (!p.knownTo(my.id) || p.reports > 0) continue;
+      DraftEngine.scout(p, eye, r);
+      if (staff >= 5 || eye >= 70) {
+        DraftEngine.scout(p, eye, r);
+      }
     }
   }
 
@@ -627,7 +640,8 @@ extension OffseasonOps on AppState {
         return fame(b).compareTo(fame(a));
       });
     final chiefs = coaches.where((c) => c.teamId == my.id && c.role == 'チーフスカウト').length;
-    final picked = cands.take(4 + 2 * max(1, chiefs)).toList();
+    final scouts = coaches.where((c) => c.teamId == my.id && (c.role == 'スカウト' || (c.role?.startsWith('地区') ?? false))).length;
+    final picked = cands.take(4 + 2 * max<int>(1, chiefs) + scouts).toList();
     for (final p in picked) {
       DraftEngine.scout(p, eye, r);
     }

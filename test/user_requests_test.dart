@@ -239,4 +239,18 @@ void main() {
       }
     }
   });
+
+  test('1年目のドラフトは現在のスカウト陣で1年間調べた状態で全候補が調査済みになる', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+    app.myTeamId = app.teams.first.id;
+    app.startYear = 2026;
+    app.resetSeason();
+    app.createDraftSession();
+    expect(app.prospects, isNotEmpty);
+    expect(app.prospects.every((p) => p.reports > 0 && p.talentLo != null), isTrue);
+  });
 }
