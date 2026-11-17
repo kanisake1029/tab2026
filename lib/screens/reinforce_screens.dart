@@ -1139,6 +1139,24 @@ class _ForeignScreenState extends State<ForeignScreen> {
       body: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [
         _note('一覧に出るのは、自球団の海外担当スカウトが発掘した選手だけです（チーム→コーチで、リーグごとに2人まで雇えます。一度見つけた選手は追い続けます）。毎年12月1日に、契約に前向きな選手の一覧が届きます。支配下はシーズン中も7月31日まで契約できます。1軍に登録できる外国人は5人まで、ベンチ入りは4人までです。年俸は希望額です。'
             '支配下の今の能力は±5の幅、環境適応力はスカウトの眼力（$eye）に応じた幅で分かります。適応力は入団時に打撃・投球の能力へ倍率としてかかります（D50×0.8・C60×0.9・B70×1.0）。育成はドラフトと同じく才能・向上心の見立てです。タップで詳しい見立てと海外での成績。'),
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('優先調査ポジション（最大3つ・現在 ${app.foreignWantPos.length}/3）', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              for (final pos in const ['投手', '捕手', '一塁手', '二塁手', '三塁手', '遊撃手', '左翼手', '中堅手', '右翼手'])
+                FilterChip(
+                  label: Text(pos.replaceAll('手', ''), style: const TextStyle(fontSize: 11.5)),
+                  selected: app.foreignWantPos.contains(pos),
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => setState(() => app.toggleForeignWantPos(pos)),
+                ),
+            ]),
+          ]),
+        ),
         Wrap(spacing: 8, runSpacing: 6, children: [
           SegmentedButton<bool>(
             segments: const [ButtonSegment(value: false, label: Text('支配下候補')), ButtonSegment(value: true, label: Text('育成候補'))],

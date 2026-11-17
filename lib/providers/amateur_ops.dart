@@ -176,6 +176,17 @@ extension AmateurOps on AppState {
     if (ev.isNotEmpty) _amForceSave = true;
   }
 
+  /// 海外担当が優先調査する希望ポジション（最大3つ）を切り替える
+  void toggleForeignWantPos(String pos) {
+    if (foreignWantPos.contains(pos)) {
+      foreignWantPos.remove(pos);
+    } else {
+      if (foreignWantPos.length >= 3) foreignWantPos.removeAt(0);
+      foreignWantPos.add(pos);
+    }
+    updateAndSave();
+  }
+
   /// 毎週月曜：海外担当が受け持ちのリーグの球団を回る。海外の選手は自球団の「追い続ける一覧」に、日本の独立リーグの選手は（4〜10月）ドラフト候補に
   void _overseasScoutWeek(DateTime d) {
     final ow = otherWorld, aw = amWorld;
@@ -197,10 +208,25 @@ extension AmateurOps on AppState {
         final eyes = e.value..sort((a, b) => b.compareTo(a));
         var n = 0.0;
         for (var i = 0; i < eyes.length; i++) {
-          n += (1 + eyes[i] / 40) * (i == 0 ? 1.0 : 0.7);
+          n += (2.5 + eyes[i] / 25) * (i == 0 ? 1.0 : 0.75);
         }
-        final q = 0.22 * (0.5 + eyes.first / 100);
-        final lts = ow.teamsOf(e.key)..shuffle(r);
+        final q = (0.38 * (0.55 + eyes.first / 100)).clamp(0.15, 0.85);
+        final allLgTeams = ow.teamsOf(e.key);
+        // 自球団：希望ポジション（最大3つ）が設定されていれば、リーグ全体から該当ポジションを優先して調査
+        if (!indie && t.id == myTeamId && foreignWantPos.isNotEmpty) {
+          final wantCands = <(OTeam, Player)>[
+            for (final ot in allLgTeams)
+              for (final p in ot.players)
+                if (!ow.fromNpb.containsKey(p.id) && p.nationality == '海外' && !foreignWatch.contains(p.id) && foreignWantPos.contains(p.mainPosition))
+                  (ot, p),
+          ]..shuffle(r);
+          for (final (ot, p) in wantCands.take(max(2, (n * 1.2).round()))) {
+            if (r.nextDouble() < min(0.9, q * 1.8) && foreignWatch.add(p.id)) {
+              mineNew.add('${p.registeredName}（${lg.name}・${ot.short}）');
+            }
+          }
+        }
+        final lts = [...allLgTeams]..shuffle(r);
         for (final ot in lts.take(n.round())) {
           for (final p in ot.players) {
             if (ow.fromNpb.containsKey(p.id) || r.nextDouble() >= q) continue;

@@ -351,6 +351,7 @@ extension SaveOps on AppState {
     faCases = [for (final e in (j('faCases') as List? ?? [])) FaCase.fromJson(Map<String, dynamic>.from(e as Map))];
     foreignPool = [for (final e in (j('foreignPool') as List? ?? [])) Player.fromJson(Map<String, dynamic>.from(e as Map))];
     foreignWatch = Set<String>.from(j('foreignWatch') as List? ?? const []);
+    foreignWantPos = List<String>.from(j('foreignWantPos') as List? ?? const []);
     final rn = j('renewals') as Map?;
     renewSigned = Set<String>.from(rn?['s'] ?? const []);
     renewTries = {for (final e in ((rn?['t'] as Map?) ?? const {}).entries) '${e.key}': (e.value as num).toInt()};

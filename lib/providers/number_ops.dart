@@ -124,7 +124,7 @@ extension NumberOps on AppState {
         p.nextNumber = null;
       }
     }
-    if (mine.isNotEmpty) _addNews(['背番号の変更（2月1日から）：${mine.join('、')}']);
+    if (mine.isNotEmpty) _addNews(['背番号の変更（開幕前日）：${mine.join('、')}']);
   }
 
   /// 入団・移籍した選手（自球団）：しばらくは背番号をすぐ変えられる

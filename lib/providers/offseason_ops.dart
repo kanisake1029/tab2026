@@ -458,7 +458,7 @@ extension OffseasonOps on AppState {
     var d = from;
     while (d.isBefore(to)) {
       d = d.add(const Duration(days: 1));
-      if (d.month == 2 && d.day == 1) applyNextNumbers(d); // 2月1日：予約した背番号に変える
+      if (firstReg != null && DateUtils.isSameDay(d, firstReg.subtract(const Duration(days: 1)))) applyNextNumbers(d); // 開幕前日：予約した背番号に変える
       if (d.month == 1 && d.day == 1) _newYearDay(); // 1月1日：月初めのお金の処理より先に（来季からのスポンサー契約の支払いを始める）
       final inSeason = !seasonFinished && firstReg != null && lastReg != null && !d.isBefore(firstReg) && !d.isAfter(lastReg);
       if (inSeason) {

@@ -233,50 +233,59 @@ class _HomeScreenState extends State<HomeScreen> {
       final p = id == null ? null : t.players.where((x) => x.id == id).firstOrNull;
       final g = p == null ? '' : GradeUtils.getGrade(p.ovr);
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(color: _navy2, borderRadius: BorderRadius.circular(12)),
         child: Row(children: [
           SizedBox(
-            width: 64,
+            width: 56,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(teamShort(t), maxLines: 1, style: const TextStyle(fontSize: 12, color: _muted)),
+              child: Text(teamShort(t), maxLines: 1, style: const TextStyle(fontSize: 10.5, color: _muted)),
             ),
           ),
           const SizedBox(width: 4),
-          const SizedBox(width: 26, child: Text('先発', maxLines: 1, style: TextStyle(fontSize: 12, color: _muted))),
-          const SizedBox(width: 6),
-          SizedBox(width: 16, child: p != null ? ConditionFace(level: p.conditionAt(app.currentDate), size: 16) : null),
-          const SizedBox(width: 6),
-          Expanded(child: Text(p == null ? '未定' : p.listName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 24, child: Text('先発', maxLines: 1, style: TextStyle(fontSize: 10.5, color: _muted))),
+          const SizedBox(width: 4),
+          SizedBox(width: 14, child: p != null ? ConditionFace(level: p.conditionAt(app.currentDate), size: 14) : null),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(p == null ? '未定' : p.listName, maxLines: 1, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ),
           if (p != null) ...[
             const SizedBox(width: 6),
             SizedBox(
-              width: 36,
+              width: 32,
               child: Row(children: [
-                Text(g, style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.getGradeColor(g))),
-                Text(' ${p.ovr}', style: const TextStyle(color: Colors.white, fontFeatures: [FontFeature.tabularFigures()])),
+                Text(g, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: AppTheme.getGradeColor(g))),
+                Text(' ${p.ovr}', style: const TextStyle(fontSize: 11, color: Colors.white, fontFeatures: [FontFeature.tabularFigures()])),
               ]),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             SizedBox(
-              width: 48,
+              width: 42,
               child: Text(
                 '${p.seasonStats.wins}勝${p.seasonStats.losses}敗',
                 maxLines: 1,
                 softWrap: false,
-                style: const TextStyle(fontSize: 11.5, color: _muted, fontFeatures: [FontFeature.tabularFigures()]),
+                style: const TextStyle(fontSize: 10.5, color: _muted, fontFeatures: [FontFeature.tabularFigures()]),
               ),
             ),
             const SizedBox(width: 4),
             SizedBox(
-              width: 34,
+              width: 30,
               child: Text(
                 p.seasonStats.era.toStringAsFixed(2),
                 maxLines: 1,
                 softWrap: false,
-                style: const TextStyle(fontSize: 11.5, color: _muted, fontFeatures: [FontFeature.tabularFigures()]),
+                style: const TextStyle(fontSize: 10.5, color: _muted, fontFeatures: [FontFeature.tabularFigures()]),
               ),
             ),
           ],

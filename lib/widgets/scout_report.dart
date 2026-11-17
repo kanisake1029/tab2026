@@ -176,7 +176,7 @@ class _ScoutReportState extends State<ScoutReport> {
               ]),
               if (p.registeredName != p.listName || p.nextNumber != null)
                 Text(
-                  [if (p.registeredName != p.listName) '登録名：${p.registeredName}', if (p.nextNumber != null) '来季（2/1〜）#${uniformLabel(p.nextNumber!)}'].join('　'),
+                  [if (p.registeredName != p.listName) '登録名：${p.registeredName}', if (p.nextNumber != null) '来季（開幕前日〜）#${uniformLabel(p.nextNumber!)}'].join('　'),
                   style: const TextStyle(fontSize: 10.5, color: _sub),
                 ),
             ]),

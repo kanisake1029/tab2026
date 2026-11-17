@@ -127,6 +127,7 @@ class AppState extends ChangeNotifier {
   List<FaCase> faCases = [];          // FA 宣言した選手と各球団の条件
   List<Player> foreignPool = [];      // 海外の選手の一覧
   Set<String> foreignWatch = {};      // 自球団の海外担当が発掘した海外の選手（他リーグの選手 id。追い続ける）
+  List<String> foreignWantPos = [];   // 海外担当が優先調査する希望ポジション（最大3つ）
   Set<String> renewSigned = {};       // 今年の契約更改が済んだ自球団の選手
   Map<String, int> renewTries = {};   // 契約更改で提示した回数
   List<CompCase> pendingComp = [];    // 自球団が選ぶ FA の補償
@@ -660,6 +661,7 @@ class AppState extends ChangeNotifier {
         'faCases': jsonEncode(faCases.map((f) => f.toJson()).toList()),
         'foreignPool': jsonEncode(foreignPool.map((p) => p.toJson()).toList()),
         'foreignWatch': jsonEncode(foreignWatch.toList()),
+        'foreignWantPos': jsonEncode(foreignWantPos),
         'renewals': jsonEncode({'s': renewSigned.toList(), 't': renewTries}),
         'pendingComp': jsonEncode(pendingComp.map((c) => c.toJson()).toList()),
         'compPicks': jsonEncode(compPicks),
@@ -1867,6 +1869,7 @@ class AppState extends ChangeNotifier {
       tenders = [];
       foreignPool = [];
       foreignWatch = {};
+      foreignWantPos = [];
       scoutLog = [];
       tradeTips = [];
       finances = {};
