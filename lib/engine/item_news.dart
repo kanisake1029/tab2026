@@ -45,11 +45,11 @@ class ItemNews {
     bool has(List<String> ws) => ws.any(t.contains);
     if (has(['リーグ規定', 'ポストシーズン', '雨天', '提案', 'キャンプ', 'スポンサー', 'グッズ', '施設'])) return null;
     if (has(['負傷', '悪化', '全治', '故障', '離脱'])) return NewsTopic.injury;
-    if (has(['ポスティング', '海外FA', 'FA宣言', 'FA 宣言', 'FA：', 'トレード', '新外国人', '補償', '支配下登録', '育成再契約', '再契約', 'と契約', 'と育成契約'])) return NewsTopic.transfer;
+    if (has(['ポスティング', '海外FA', 'FA宣言', 'FA 宣言', 'FA：', 'トレード', '新外国人', '補償', '支配下登録', '育成再契約', '再契約', 'と契約', 'と育成契約', '背番号の変更'])) return NewsTopic.transfer;
     if (has(['戦力外', '自由契約', '退団', '引退', '育成契約満了'])) return NewsTopic.release;
     if (has(['ドラフト'])) return NewsTopic.draft;
     if (has(['FA', '入団', '獲得', '移籍', '加入', '育成選手'])) return NewsTopic.transfer;
-    if (has(['勝目', '本塁打', '記録', '達成', '猛打', '完封', 'MVP', 'タイトル', '連続', '号'])) return NewsTopic.record;
+    if (has(['勝目', '本塁打', '記録', '達成', '猛打', '完封', 'MVP', 'タイトル', '連続']) || RegExp(r'\d+号').hasMatch(t)) return NewsTopic.record;
     return null;
   }
 
@@ -154,6 +154,11 @@ class ItemNews {
                 ? [if (name.isNotEmpty) ...['$nameようこそ！', '$nameの活躍に期待', '$nameは補強ポイントにぴったり', '$nameのユニフォーム買う'], 'いい補強や', 'フロントよう動いた']
                 : [if (name.isNotEmpty) ...['$nameいい選手取られたな', '$nameは脅威になりそう'], if (t.isNotEmpty) '$tの補強が本気やな', 'うちも負けてられん'];
           }
+          if (text.contains('背番号の変更')) {
+            return mine
+                ? [if (name.isNotEmpty) '$nameの新背番号かっこいいな', '新しいユニフォーム買い直さなきゃ', '新背番号に恥じない活躍を期待してるぞ！', '心機一転、今季も頼む！']
+                : ['${t.isEmpty ? '' : '$tの'}背番号シャッフルええな', if (name.isNotEmpty) '$nameの番号変更は期待の表れやな'];
+          }
           return mine
               ? [if (name.isNotEmpty) ...['$nameの移籍は驚いた', '$nameがどう使われるか楽しみ'], 'このトレードは吉と出るか', 'フロントの狙いが気になる']
               : ['大きな動きやな', 'このトレードはどっちが得したんやろ', if (name.isNotEmpty) '$nameは新天地で化けそう'];
@@ -233,6 +238,17 @@ class ItemNews {
       if (text.contains('獲得') || text.contains('移籍') || text.contains('入団') || text.contains('合意') || text.contains('契約')) {
         return '$k$nameのFA獲得が決定！　大型補強で戦力大幅アップ';
       }
+    }
+
+    // 背番号の変更（開幕前日）
+    if (text.contains('背番号の変更') && name.isNotEmpty) {
+      final bodyPart = text.contains('：') ? text.split('：').last : text;
+      final items = bodyPart.split('、').where((s) => s.trim().isNotEmpty).toList();
+      final arrow = RegExp(r'→([^\s、。]+)').firstMatch(bodyPart)?.group(1);
+      if (items.length <= 1 && arrow != null) {
+        return '$k$nameの新背番号が決定！　今季から「$arrow」で心機一転';
+      }
+      return '$k新シーズンの背番号変更を発表！　$nameら${items.length}選手が新番号に';
     }
 
     // 育成から支配下昇格

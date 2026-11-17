@@ -316,6 +316,12 @@ void main() {
     expect(rel.headline, startsWith('【東新】'));
     expect(rel.headline, contains('戦力外通告で退団へ'));
 
+    final numText = '背番号の変更（開幕前日）：田中 太郎 25→7';
+    final numTopic = ItemNews.topicOf(numText);
+    expect(numTopic, NewsTopic.transfer);
+    final numNews = ItemNews.of('3/27', numText, numTopic!, player: p, team: team);
+    expect(numNews.headline, '【東新】田中 太郎の新背番号が決定！　今季から「7」で心機一転');
+
     final rumor = ItemNews(NewsTopic.rumor, '11/12', '予想', '【東新】獲得調査へ', ['予想'], p, team, const [], const []);
     expect(rumor.isConfirmed, isFalse);
   });
