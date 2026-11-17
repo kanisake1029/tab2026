@@ -845,19 +845,35 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final dated = <(DateTime, ItemNews)>[];
+    final seenEvents = <String>{};
+    String eventTagOf(String text, NewsTopic topic) {
+      if (text.contains('トレード')) return 'trade';
+      if (text.contains('FA宣言') || text.contains('FA 宣言')) return 'fa_dec';
+      if (text.contains('ポスティング')) return 'posting';
+      if (text.contains('海外FA')) return 'overseas_fa';
+      if (text.contains('外国人') && (text.contains('契約') || text.contains('獲得'))) return 'foreign_sign';
+      if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得'))) return 'free_sign';
+      if (text.contains('FA') && (text.contains('獲得') || text.contains('移籍') || text.contains('残留') || text.contains('契約'))) return 'fa_sign';
+      if (text.contains('支配下登録')) return 'promote';
+      if (text.contains('再契約')) return 're_sign';
+      return topic.name;
+    }
+
     // 過去3年分：newsLog[selYear]（今年分は app.news も重複なくマージ）
     final rawNews = <String>[
       ...?app.newsLog[selYear],
       if (selYear == today.year) ...app.news,
     ].toSet().toList();
-    // お知らせから（まとめ行・戦力外個別行は下のまとめ記事生成で綺麗に束ねる）
+    // お知らせから（まとめ行・戦力外個別行・FA宣言まとめ行は下の生成で綺麗に束ねる）
     for (final n in rawNews) {
       final (date, text) = NewsKind.split(n);
-      if (text.startsWith('ドラフト1位：') || text.startsWith('自球団の指名：') || text.endsWith('に戦力外を通告しました')) continue;
+      if (text.startsWith('ドラフト1位：') || text.startsWith('自球団の指名：') || text.startsWith('FA 宣言：') || text.startsWith('FA宣言：') || text.endsWith('に戦力外を通告しました')) continue;
       final topic = ItemNews.topicOf(text);
       if (topic == null) continue;
       final p = playerInText(text, everyone);
       if (p == null) continue;
+      final tag = eventTagOf(text, topic);
+      if (!seenEvents.add('${p.id}|$date|$tag')) continue;
       final involved = <(Player, Team?)>[];
       if (text.contains('トレード成立')) {
         final seen = <String>{};
@@ -921,16 +937,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // FA宣言（進行中の faCases および transactions の履歴から）
-    final faDeclaredIds = <String>{};
     if (selYear == today.year && app.faCases.isNotEmpty) {
       final dFa = app.faDeclareDate(selYear);
+      final md = '${dFa.month}/${dFa.day}';
       for (final f in app.faCases) {
         final p = everyone.where((x) => x.id == f.playerId).firstOrNull;
         final from = teamById(f.fromTeamId);
         if (p == null || from == null) continue;
-        faDeclaredIds.add('${p.id}|${dFa.month}/${dFa.day}');
+        if (!seenEvents.add('${p.id}|$md|fa_dec')) continue;
         final text = '${teamShort(from)}の${p.registeredName}がFA宣言（${f.rank}ランク）';
-        dated.add((dFa, ItemNews.of('${dFa.month}/${dFa.day}', text, NewsTopic.transfer, player: p, team: from, myTeamId: app.myTeamId, stars: stars)));
+        dated.add((dFa, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: from, myTeamId: app.myTeamId, stars: stars)));
       }
     }
     final faDecRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)\s+FA宣言（([^）]+)）');
@@ -940,12 +956,13 @@ class _HomeScreenState extends State<HomeScreen> {
       final y = int.parse(m.group(1)!);
       if (y != selYear) continue;
       final d = DateTime(y, int.parse(m.group(2)!), int.parse(m.group(3)!));
+      final md = '${d.month}/${d.day}';
       final name = m.group(5)!;
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
-      if (p == null || !faDeclaredIds.add('${p.id}|${d.month}/${d.day}')) continue;
+      if (p == null || !seenEvents.add('${p.id}|$md|fa_dec')) continue;
       final t = app.teams.where((x) => teamShort(x) == m.group(4)).firstOrNull ?? teamOf(p);
       final text = '${m.group(4)}の$nameがFA宣言（${m.group(6)}）';
-      dated.add((d, ItemNews.of('${d.month}/${d.day}', text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
+      dated.add((d, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
     }
 
     // 戦力外・自由契約からの獲得（入団の記録から）
@@ -956,14 +973,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final y = int.parse(m.group(1)!);
       if (y != selYear) continue;
       final d = DateTime(y, int.parse(m.group(2)!), int.parse(m.group(3)!));
+      final md = '${d.month}/${d.day}';
       final name = m.group(5)!;
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
-      if (p == null) continue;
+      if (p == null || !seenEvents.add('${p.id}|$md|free_sign')) continue;
       final ik = m.group(6) != null;
       final t = app.teams.where((x) => teamShort(x) == m.group(4)).firstOrNull ?? teamOf(p);
       final text = '${m.group(4)}が自由契約の$nameと${ik ? '育成' : ''}契約（${m.group(7)}）';
-      if (dated.any((e) => e.$2.player?.id == p.id && e.$2.date == '${d.month}/${d.day}' && e.$2.text.contains('自由契約'))) continue;
-      dated.add((d, ItemNews.of('${d.month}/${d.day}', text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
+      dated.add((d, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
     }
 
     // 新外国人の入団（入団の記録から）
@@ -974,13 +991,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final y = int.parse(m.group(1)!);
       if (y != selYear) continue;
       final d = DateTime(y, int.parse(m.group(2)!), int.parse(m.group(3)!));
+      final md = '${d.month}/${d.day}';
       final name = m.group(5)!;
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
-      if (p == null) continue;
+      if (p == null || !seenEvents.add('${p.id}|$md|foreign_sign')) continue;
       final ik = m.group(6) != null;
       final t = teamOf(p);
       final text = '${m.group(4)}が${ik ? '育成選手として' : ''}新外国人の$name（${p.origin.isEmpty ? '' : '${p.origin}出身・'}${m.group(7)}）と契約した';
-      dated.add((d, ItemNews.of('${d.month}/${d.day}', text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
+      dated.add((d, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
       if (dated.length >= 220) break;
     }
 

@@ -102,49 +102,108 @@ class GameNews {
     return best;
   }
 
-  /// 見出し（約6割）：「東新 河野 玲央が劇的満塁弾でサヨナラ勝ち　ソフトクリームは痛恨の5連敗」の形。MVP が勝った球団の選手のとき
+  /// 見出し：「【東新】河野 玲央が劇的サヨナラ弾！　ソフトクリームは痛恨の5連敗」のように選手活躍＋チーム状態を多様に表現
   static String _mvpHeadline(Match m, Team home, Team away, String base, GameMvp? mvp, GameNewsContext? c, Random r) {
+    String pick(List<String> xs) => xs[r.nextInt(xs.length)];
     final hs = m.homeScore ?? 0, as = m.awayScore ?? 0;
-    if (mvp == null || hs == as || mvp.home != (hs > as) || r.nextDouble() >= 0.6) return base;
-    final win = mvp.home ? home : away, lose = mvp.home ? away : home;
-    final walkOff = (m.playByPlay ?? const []).any((l) => l.contains('サヨナラ'));
-    // 勝ち方（自動作文の見出しの「、」と「（」の間）
-    var kind = '勝利';
-    final i = base.indexOf('、'), j = base.lastIndexOf('（');
-    if (i > 0 && j > i) kind = base.substring(i + 1, j).replaceAll('延長', '延長戦の末').trim();
-    if (kind.endsWith('を制す')) kind = kind.replaceAll('を制す', 'を制した');
-    String feat;
-    if (mvp.pitcher) {
-      final inn = mvp.outs ~/ 3;
-      feat = mvp.er == 0 && mvp.outs >= 27 ? '完封' : (inn >= 7 ? '$inn回${mvp.er}失点の快投' : '好投');
-    } else {
-      final hrs = GameSummary.homeRuns(m, home, away).where((h) => h.$2 == mvp.name).toList();
-      final grand = hrs.any((h) => h.$3.contains('満塁'));
-      if (mvp.hr >= 2) {
-        feat = '${mvp.hr}発';
-      } else if (mvp.hr == 1) {
-        feat = '${walkOff ? '劇的' : '決勝'}${grand ? '満塁弾' : (hrs.isNotEmpty && hrs.first.$3.contains('ソロ') ? 'ソロ' : 'アーチ')}';
-      } else if (mvp.rbi >= 3) {
-        feat = '${mvp.rbi}打点の活躍';
-      } else if (mvp.h >= 3) {
-        feat = '猛打賞';
-      } else {
-        feat = walkOff ? 'サヨナラ打' : '勝負強い打撃';
-      }
+    final draw = hs == as;
+    final homeWin = hs > as;
+    final win = homeWin ? home : away, lose = homeWin ? away : home;
+    final wt = _short(win), lt = _short(lose);
+    if (draw) {
+      final sub = mvp != null && mvp.line.isNotEmpty ? '${mvp.name}が${mvp.line}の奮闘も決着つかず' : '両軍一歩も譲らぬ熱戦';
+      return '【${_short(home)}】${_short(away)}と$as−$hsの痛み分け　$sub';
     }
-    // 負けた側の状況
-    String tail = '';
-    final ls = c?.streak[mvp.home ? false : true] ?? 0, lp = c?.prevStreak[mvp.home ? false : true] ?? 0;
-    final lr = c?.rankAfter[mvp.home ? false : true], lb = c?.rankBefore[mvp.home ? false : true];
-    if (ls <= -3) {
-      tail = '${_short(lose)}は痛恨の${-ls}連敗';
+
+    // 勝った側・負けた側のチーム状態（連勝・連敗・首位・最下位・開幕）
+    final ws = c?.streak[homeWin] ?? 0, wp = c?.prevStreak[homeWin] ?? 0;
+    final wr = c?.rankAfter[homeWin], wb = c?.rankBefore[homeWin];
+    final ls = c?.streak[!homeWin] ?? 0, lp = c?.prevStreak[!homeWin] ?? 0;
+    final lr = c?.rankAfter[!homeWin], lb = c?.rankBefore[!homeWin];
+
+    String winTag = '';
+    if (c?.opening[homeWin] == true) {
+      winTag = '開幕戦を白星発進';
+    } else if (wr == 1 && wb != 1) {
+      winTag = '単独首位に浮上';
+    } else if (ws >= 5) {
+      winTag = '怒涛の$ws連勝';
+    } else if (ws >= 3) {
+      winTag = '$ws連勝を飾る';
+    } else if (wp <= -3) {
+      winTag = '連敗を${-wp}でストップ';
+    }
+
+    String loseTag = '';
+    if (ls <= -4) {
+      loseTag = '$ltは泥沼の${-ls}連敗';
+    } else if (ls == -3) {
+      loseTag = '$ltは痛恨の3連敗';
     } else if (lr != null && lr == c?.leagueSize && lb != lr) {
-      tail = '${_short(lose)}は最下位転落';
+      loseTag = '$ltは最下位転落';
     } else if (lp >= 3) {
-      tail = '${_short(lose)}は連勝が$lpでストップ';
+      loseTag = '$ltの連勝は$lpでストップ';
     }
-    final head = feat == '完封' ? '${_short(win)} ${mvp.name}が完封勝利' : '${_short(win)} ${mvp.name}が$featで$kind';
-    return tail.isEmpty ? head : '$head　$tail';
+
+    final hi = max(hs, as), lo = min(hs, as), diff = hi - lo, total = hs + as;
+    final walkOff = (m.playByPlay ?? const []).any((l) => l.contains('サヨナラ'));
+    final fallbackSub = diff <= 1
+        ? '$hi−$loの緊迫した接戦をモノに'
+        : (total >= 13 ? '計$total得点の打撃戦を制す' : '$ltに$hi−$loで快勝');
+    final sub = winTag.isNotEmpty && loseTag.isNotEmpty
+        ? '$winTag、$loseTag'
+        : (winTag.isNotEmpty ? winTag : (loseTag.isNotEmpty ? loseTag : fallbackSub));
+
+    // MVP が勝利側なら約80%を選手フォーカス見出し、残り20%またはMVP不在時はチーム状態フォーカス見出し
+    if (mvp != null && mvp.home == homeWin && r.nextDouble() < 0.8) {
+      String main;
+      if (mvp.pitcher) {
+        final inn = mvp.outs ~/ 3;
+        if (mvp.er == 0 && mvp.outs >= 27) {
+          main = pick(['${mvp.name}、圧巻の完封ショー！', '${mvp.name}が零封劇！　$lt打線を封殺']);
+        } else if (inn >= 7) {
+          main = pick(['${mvp.name}が$inn回${mvp.er}失点の快投！', 'エースの貫禄！${mvp.name}が$inn回${mvp.er}失点']);
+        } else {
+          main = pick(['${mvp.name}が気迫の好救援！', '${mvp.name}の好投光る！　$ltの反撃断つ']);
+        }
+      } else {
+        final hrs = GameSummary.homeRuns(m, home, away).where((h) => h.$2 == mvp.name).toList();
+        final grand = hrs.any((h) => h.$3.contains('満塁'));
+        if (walkOff) {
+          main = mvp.hr >= 1
+              ? '${mvp.name}が劇的サヨナラ${grand ? '満塁弾' : 'アーチ'}！'
+              : pick(['${mvp.name}が劇的サヨナラ打！', '${mvp.name}のサヨナラ打で本拠地歓喜！']);
+        } else if (mvp.hr >= 2) {
+          main = pick(['${mvp.name}が${mvp.hr}発の大暴れ！', '主砲・${mvp.name}が${mvp.hr}本塁打${mvp.rbi}打点！']);
+        } else if (mvp.hr == 1 && mvp.rbi >= 3) {
+          main = '${mvp.name}、価値ある${grand ? '満塁弾' : '一発'}含む${mvp.rbi}打点！';
+        } else if (mvp.hr == 1) {
+          main = pick(['${mvp.name}が決勝アーチ！　一振りで勝負決める', '${mvp.name}の一発が効いた！']);
+        } else if (mvp.rbi >= 3) {
+          main = pick(['${mvp.name}が${mvp.rbi}打点の固め打ち！', '打線の核・${mvp.name}が${mvp.rbi}打点の大活躍']);
+        } else if (mvp.h >= 3) {
+          main = pick(['${mvp.name}が猛打賞の躍動！', '安打製造機・${mvp.name}が${mvp.h}安打の固め打ち']);
+        } else {
+          main = pick(['${mvp.name}が値千金の活躍！', '${mvp.name}が勝負強さ発揮！']);
+        }
+      }
+      if (main.contains('　')) return '【$wt】$main';
+      return '【$wt】$main　$sub';
+    }
+
+    // チーム状態にフォーカスした見出し
+    final teamMain = c?.opening[homeWin] == true
+        ? '開幕戦白星発進！$ltを撃破'
+        : (wr == 1 && wb != 1
+            ? '$ltを下し単独首位浮上！'
+            : (ws >= 4
+                ? '勢い止まらず$ws連勝！$ltを撃破'
+                : (wp <= -3
+                    ? '連敗を${-wp}で止める価値ある1勝！'
+                    : (diff <= 1
+                        ? '緊迫の投手戦を制し$hi−$loで勝利！'
+                        : (total >= 13 ? '打線爆発で$hi得点！$ltを圧倒' : '投打が噛み合い$ltに快勝！')))));
+    return '【$wt】$teamMain　${loseTag.isNotEmpty ? loseTag : (mvp != null && mvp.line.isNotEmpty ? '${mvp.name}が${mvp.line}' : '$hi−$lo')}';
   }
 
   /// リードに足すチーム状況（首位・最下位・連勝・連敗・開幕戦）

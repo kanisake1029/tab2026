@@ -169,20 +169,111 @@ class ItemNews {
       return fanList(r, lines, names, positive: positive || !mine);
     }
 
-    // 見出し：故障は「〇〇・名前が肉離れで離脱　全治約14日」の形に
-    var head = _headline(text);
+    final head = _buildHeadline(text, topic, p, t, stay, r);
     final released = topic == NewsTopic.release && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay && !['契約', 'FA宣言', 'FA 宣言', '育成選手として'].any(text.contains);
     if (released) {
-      head = '${p.registeredName}、新天地でチャンスをつかみ取れるか${t.isEmpty ? '' : '　$tを離れる'}';
       body.add(p.age <= 28
           ? 'まだ${p.age}歳と若く、伸びしろは十分。'
           : (p.age >= 34 ? 'ベテランの経験は、若手の多い球団にとって貴重な戦力になりうる。' : '働き盛りの年齢で、出番さえあれば力を発揮できる。'));
       body.add('$critic氏は「${NewsTalk.strength(p)}は魅力。${pick(['環境が変われば化ける可能性はある', '獲得に動く球団が出てもおかしくない', '独立リーグや海外も含めて、どこで再出発するか注目したい'])}」とも話す。');
     }
-    if (topic == NewsTopic.injury && p != null && p.injuryName.isNotEmpty) {
-      head = '${t.isEmpty ? '' : '$t・'}${p.registeredName}が${p.injuryName}で離脱${p.injuryDays > 0 ? '　全治約${p.injuryDays}日' : ''}';
-    }
     return ItemNews(topic, date, text, head, body, p, team, fans(true), fans(false));
+  }
+
+  /// ニュース種別・内容に応じたスポーツ紙風の見出し（「【球団】主見出し　副見出し」）を生成
+  static String _buildHeadline(String text, NewsTopic topic, Player? p, String t, bool stay, Random r) {
+    final name = p?.registeredName ?? '';
+    final k = t.isEmpty ? '' : '【$t】';
+    String pick(List<String> xs) => xs[r.nextInt(xs.length)];
+
+    // 戦力外・自由契約（退団）
+    final released = topic == NewsTopic.release && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay && !['契約', 'FA宣言', 'FA 宣言', '育成選手として'].any(text.contains);
+    if (released) {
+      return '$k$name、戦力外通告で退団へ　新天地でチャンスをつかみ取れるか';
+    }
+
+    // 故障
+    if (topic == NewsTopic.injury && p != null && p.injuryName.isNotEmpty) {
+      return '$k$nameが${p.injuryName}で痛恨の離脱${p.injuryDays > 0 ? '　全治約${p.injuryDays}日の見込み' : ''}';
+    }
+
+    // ポスティング
+    if (text.contains('ポスティング') && name.isNotEmpty) {
+      if (text.contains('決定') || text.contains('入団') || text.contains('契約') || text.contains('移籍した')) {
+        final mlb = RegExp(r'MLB[の・]?([^\s、。]+)').firstMatch(text)?.group(1);
+        return '$k$name、ポスティングで${mlb ?? 'MLB'}へ電撃移籍！　夢の舞台で新たな挑戦';
+      }
+      if (text.contains('容認')) return '$k$nameのポスティング挑戦を球団が容認　今オフMLB移籍へ';
+      if (text.contains('見送') || stay) return '$k$name、ポスティング見送りで残留　来季もチームの柱に';
+      return '$k$nameがポスティングでのMLB挑戦を希望　球団の判断に注目';
+    }
+
+    // 海外FA
+    if (text.contains('海外FA') && name.isNotEmpty) {
+      if (text.contains('決定') || text.contains('移籍') || text.contains('入団') || text.contains('契約')) {
+        return '$k$nameが海外FAでMLB移籍決定！　海を渡り新たなステージへ';
+      }
+      if (stay) return '$k$name、海外FA権行使せず残留　「このチームで優勝したい」';
+      return '$k$nameが海外FA権の行使を表明　メジャー挑戦も視野に動向注目';
+    }
+
+    // 国内FA（宣言・移籍・残留・補償）
+    if ((text.contains('FA宣言') || text.contains('FA 宣言')) && name.isNotEmpty) {
+      final rank = RegExp(r'([A-C]ランク)').firstMatch(text)?.group(1);
+      return '$k$nameが国内FA権行使を表明　${rank != null ? '$rank、' : ''}複数球団の争奪戦必至か';
+    }
+    if (text.contains('人的補償') && name.isNotEmpty) {
+      return '${k}FA人的補償で$nameを獲得！　新天地で飛躍を期す';
+    }
+    if (text.contains('金銭補償')) {
+      return '${k}FA補償は金銭を選択　資金面の補強へ';
+    }
+    if (text.contains('FA') && name.isNotEmpty) {
+      if (stay) return '$k$name、FA宣言の末に残留決定！　ファン歓喜の一報';
+      if (text.contains('獲得') || text.contains('移籍') || text.contains('入団') || text.contains('合意') || text.contains('契約')) {
+        return '$k$nameのFA獲得が決定！　大型補強で戦力大幅アップ';
+      }
+    }
+
+    // 育成から支配下昇格
+    if (text.contains('支配下登録') && name.isNotEmpty) {
+      final num = RegExp(r'(?:背番号|「)(\d+)').firstMatch(text)?.group(1);
+      return '$k育成の$nameが支配下登録！　${num != null ? '背番号「$num」を背負い1軍へ' : '念願の2桁背番号を掴み取る'}';
+    }
+
+    // 新外国人獲得
+    if (text.contains('外国人') && (text.contains('契約') || text.contains('獲得') || text.contains('入団')) && name.isNotEmpty) {
+      final ik = text.contains('育成') || (p?.ikusei ?? false);
+      final origin = (p != null && p.origin.isNotEmpty) ? '${p.origin}出身の' : '';
+      if (ik) {
+        return '$k育成外国人・$nameと契約合意　$origin原石の覚醒に期待';
+      }
+      final role = p?.isPitcher == true
+          ? '${p!.throws == 'L' ? '左腕' : '剛腕'}、先発・救援での活躍に期待'
+          : '長打力に期待がかかる助っ人スラッガー';
+      return '$k新外国人$nameを獲得！　$origin$role';
+    }
+
+    // 育成再契約・再契約・自由契約からの獲得
+    if ((text.contains('育成再契約') || (text.contains('育成') && text.contains('再契約'))) && name.isNotEmpty) {
+      return '$k$nameと育成選手として再契約　支配下復帰へ再スタート';
+    }
+    if (text.contains('再契約') && name.isNotEmpty) {
+      return '$k$nameが再契約で残留決定　慣れ親しんだ球団で再起を誓う';
+    }
+    if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得')) && name.isNotEmpty) {
+      return '$k自由契約の$nameを獲得！　新天地で再起を期す';
+    }
+
+    // 記録・表彰
+    if (topic == NewsTopic.record && name.isNotEmpty) {
+      if (text.contains('月間MVP')) return '$k$nameが月間MVPを受賞！　圧巻の活躍が高く評価';
+      if (text.contains('交流戦')) return '$k$nameが交流戦で大暴れ！　${_headline(text)}';
+      return '$k$nameが節目の記録達成！　${pick(['偉業にスタンドが沸く', 'チームメートからも祝福', 'さらなる記録更新へ'])}';
+    }
+
+    final raw = _headline(text);
+    return k.isEmpty ? raw : '$k$raw';
   }
 
   /// トレード成立の記事：行き先の球団ごとに全員を取り上げ、評論家がどちらが得をしたかを話す

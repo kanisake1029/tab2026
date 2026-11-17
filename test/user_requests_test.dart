@@ -5,9 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:npb_pennant_app/db/app_database.dart';
 import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
+import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
 import 'package:npb_pennant_app/engine/roster_engine.dart';
 import 'package:npb_pennant_app/engine/transfer_engine.dart';
+import 'package:npb_pennant_app/models/team.dart';
 import 'package:npb_pennant_app/utils/schedule_generator.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
@@ -280,5 +282,41 @@ void main() {
     expect(b70, inInclusiveRange(6000, 11000));
     expect(a80, inInclusiveRange(35000, 56000));
     expect(s90, inInclusiveRange(65000, 96000));
+  });
+
+  test('ニュース見出し: FA・海外FA・ポスティング・支配下登録・新外国人・戦力外がスポーツ紙風になり確定/憶測が区別される', () {
+    final team = Team(id: 'T1', name: '東新', shortName: '東新', league: 'CL', players: []);
+    final p = Player(id: 'p_news', lastName: '田中', firstName: '太郎', isPitcher: false, mainPos: '遊撃手', age: 27, proYears: 6, origin: 'ドミニカ共和国');
+
+    final faDec = ItemNews.of('11/10', '東新の田中 太郎がFA宣言（Aランク）', NewsTopic.transfer, player: p, team: team);
+    expect(faDec.headline, startsWith('【東新】'));
+    expect(faDec.headline, contains('国内FA権行使を表明'));
+    expect(faDec.headline, contains('Aランク'));
+    expect(faDec.isConfirmed, isTrue);
+
+    final overseas = ItemNews.of('12/2', '海外FA権を行使した田中 太郎のMLB移籍が決定', NewsTopic.transfer, player: p, team: team);
+    expect(overseas.headline, startsWith('【東新】'));
+    expect(overseas.headline, contains('海外FAでMLB移籍決定'));
+
+    final posting = ItemNews.of('11/18', '田中 太郎のポスティング移籍を球団が容認', NewsTopic.transfer, player: p, team: team);
+    expect(posting.headline, startsWith('【東新】'));
+    expect(posting.headline, contains('ポスティング挑戦を球団が容認'));
+
+    final promote = ItemNews.of('6/12', '田中 太郎を支配下登録（背番号「68」）', NewsTopic.transfer, player: p, team: team);
+    expect(promote.headline, startsWith('【東新】'));
+    expect(promote.headline, contains('支配下登録'));
+    expect(promote.headline, contains('68'));
+
+    final foreign = ItemNews.of('1/15', '東新が新外国人の田中 太郎（右投右打）と契約した', NewsTopic.transfer, player: p, team: team);
+    expect(foreign.headline, startsWith('【東新】'));
+    expect(foreign.headline, contains('新外国人'));
+    expect(foreign.headline, contains('ドミニカ共和国'));
+
+    final rel = ItemNews.of('10/12', '東新が田中 太郎に戦力外通告', NewsTopic.release, player: p, team: team);
+    expect(rel.headline, startsWith('【東新】'));
+    expect(rel.headline, contains('戦力外通告で退団へ'));
+
+    final rumor = ItemNews(NewsTopic.rumor, '11/12', '予想', '【東新】獲得調査へ', ['予想'], p, team, const [], const []);
+    expect(rumor.isConfirmed, isFalse);
   });
 }
