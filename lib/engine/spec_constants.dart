@@ -10,7 +10,7 @@ class Spec {
   static double batA = 103.8, batB = 0.12; // 仕様書 100 + 0.38×パワー km/h。本塁打王 約50本に合わせ、パワー60 の速さはそのままで傾きを 0.21 → 0.12（2026-11-11）
   static double attA = 2, attK = 1.8; // 仕様書 2° + (弾道−1)×5°。高い弾道が本塁打に偏りすぎるので 3 → 1.8（2026-11-11）
   static double eyA = 0.0055, eyK = 0.002; // 仕様書 2mm + (弾道−1)×3mm
-  static double sigEyBase = 0.0355, sigExBase = 0.045; // 仕様書 22mm・45mm
+  static double sigEyBase = 0.033, sigExBase = 0.045; // 仕様書 22mm・45mm
   static double ctrlBase = 0.65; // 仕様書 1.8°
   static double thrBase = 2.4; // 仕様書 3.5°
   static double ofDepth = 1.0; // 外野の定位置の深さの倍率（仕様書 1.0）

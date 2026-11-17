@@ -68,10 +68,10 @@ class SwingOutcome {
 class SwingModel {
   static double vBatScale = 0.94; // バランス調整（第3段階で守備と合わせて合わせた値）
   static double noiseScale = 0.83; // ミートのばらつき（守備の判断を入れた後に、打球の種類の割合と合わせた値）
-  static double timingScale = 1.0; // タイミングのばらつき（早い・遅い → 引っ張り・流しのファウル、空振り）
+  static double timingScale = 0.85; // タイミングのばらつき（早い・遅い → 引っ張り・流しのファウル、空振り）
   static double contactScale = 0.85; // 当たる高さのばらつき（芯の上下 → ゴロ・ポップ・空振り）
   static double aimBase = 0.0085; // 狙う高さ（ボールの中心より少し下）
-  static double misScale = 1.0;
+  static double misScale = 0.78;
   static double veloContact = 0.3; // 速い球ほど芯を外す（タイミングの倍率の何乗）
   static double stuffK = 0.008; // 球威1あたりの芯ずれの増え方
   static double stuffCor = 0.002;
