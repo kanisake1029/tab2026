@@ -4,7 +4,7 @@ import '../models/player.dart';
 import '../models/team.dart';
 import '../providers/app_state.dart';
 
-/// 背番号の一括変更：選手ごとに「来季（2月1日から）の背番号」を入れる
+/// 背番号の一括変更：選手ごとに「来季（開幕前日から）の背番号」を入れる
 ///  入団・移籍したばかりの選手は、重ならなければすぐ変わる。支配下は 00・0〜99、育成は 100〜999
 class NumberBoardScreen extends StatefulWidget {
   final AppState app;
@@ -56,7 +56,7 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
     }
     final e = widget.app.setNumbersBulk(widget.team, next);
     if (e != null) return setState(() => _err = e);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.isOpeningNumberDay || widget.app.isOffseasonNumberFree ? '背番号を変えました' : '背番号を決めました（2月1日から。入団・移籍したばかりの選手はすぐ）')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.isOpeningNumberDay || widget.app.isOffseasonNumberFree ? '背番号を変えました' : '背番号を決めました（開幕前日から。入団・移籍したばかりの選手はすぐ）')));
     Navigator.of(context).pop(true);
   }
 
@@ -113,7 +113,7 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
           child: Text(
               app.isOpeningNumberDay
                   ? '今年だけ特別に、今日（開幕日）は全員の背番号をすぐ変えられます（初期の背番号の扱い。背番号の変遷には変更として残りません）。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。'
-                  : '右の欄が来季の背番号です。変更は毎年2月1日に行われます（入団・移籍したばかりの選手は、すぐ変わります）。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。',
+                  : '右の欄が来季の背番号です。変更は毎年開幕前日に行われます（入団・移籍したばかりの選手は、すぐ変わります）。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。',
               style: const TextStyle(fontSize: 12, color: Color(0xFF334155))),
         ),
         Expanded(child: ListView(children: [for (final p in list) row(p)])),
