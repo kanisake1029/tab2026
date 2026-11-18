@@ -332,26 +332,32 @@ void main() {
 
   test('シーズン途中から開幕戦へ巻き戻すと今季成績・試合結果がリセットされ日付が開幕戦に戻る', () async {
     SharedPreferences.setMockInitialValues({});
-    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    final db = AppDatabase(NativeDatabase.memory());
+    final app = AppState(db);
     while (!app.loaded) {
       await Future.delayed(const Duration(milliseconds: 10));
     }
-    app.myTeamId = app.teams.first.id;
-    app.autoMode = true;
-    while (app.currentDate.isBefore(DateTime(2026, 4, 15))) {
-      app.playNextDay();
-    }
-    final playedBefore = app.matches.where((m) => m.isPlayed && (m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE')).length;
-    expect(playedBefore, greaterThan(0));
+    final firstReg = app.matches.where((m) => m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE').map((m) => m.date).reduce((a, b) => a.isBefore(b) ? a : b);
+    final firstMatch = app.matches.firstWhere((m) => m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE');
+    firstMatch.isPlayed = true;
+    firstMatch.homeScore = 4;
+    firstMatch.awayScore = 2;
+    app.currentDate = firstReg.add(const Duration(days: 5));
     final injured = app.teams.first.players.first;
+    injured.seasonStats.atBats = 12;
+    injured.seasonStats.hits = 4;
     injured.injuryName = '肉離れ';
     injured.injuryDays = 14;
     injured.injurySeverity = 2;
+    await app.saveData();
+
     expect(app.rewindToOpeningDay(), isTrue);
+    await app.saveData();
     final playedAfter = app.matches.where((m) => m.isPlayed && (m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE')).length;
     expect(playedAfter, 0);
-    final firstReg = app.matches.where((m) => m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE').map((m) => m.date).reduce((a, b) => a.isBefore(b) ? a : b);
     expect(app.currentDate, firstReg);
     expect(app.teams.first.players.every((p) => p.seasonStats.atBats == 0 && p.seasonStats.hits == 0 && p.injuryDays == 0 && p.injuryName.isEmpty), isTrue);
+    final rows = await db.select(db.matchRows).get();
+    expect(rows.any((r) => r.played), isFalse);
   });
 }

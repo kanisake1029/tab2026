@@ -294,25 +294,9 @@ extension SaveOps on AppState {
       dirtyKv['scoutNetV1'] = '1';
       needSave = true;
     }
-    if (kv['rewindOpeningV1'] != '1') {
+    if (kv['rewindOpeningV2'] != '1') {
       if (rewindToOpeningDay()) needSave = true;
-      dirtyKv['rewindOpeningV1'] = '1';
-    }
-    if (kv['rewindInjuryV1'] != '1') {
-      final hasPlayedOfficial = matches.any((m) => m.isPlayed && (m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE'));
-      if (!seasonFinished && !hasPlayedOfficial) {
-        for (final t in teams) {
-          for (final p in t.players) {
-            if (p.injuryDays > 0 || p.injurySeverity > 0 || p.injuryName.isNotEmpty) {
-              p.injuryName = '';
-              p.injuryDays = 0;
-              p.injurySeverity = 0;
-              needSave = true;
-            }
-          }
-        }
-      }
-      dirtyKv['rewindInjuryV1'] = '1';
+      dirtyKv['rewindOpeningV2'] = '1';
     }
     if (needSaveWorld) {
       await _saveAmateur();
@@ -404,7 +388,10 @@ extension SaveOps on AppState {
       }
     }
     rainoutCount = 0;
+    monthlyMvps.clear();
+    monthSnap.clear();
     currentDate = openingDay;
+    _matchesReplaceAll = true;
     final cutYmd = ChronicleOps.ymd(openingDay);
     chronYears[startYear]?.removeWhere((c) => '${c['d'] ?? ''}'.compareTo(cutYmd) >= 0);
     bool keepNews(String n) {
@@ -589,6 +576,7 @@ extension SaveOps on AppState {
         'eyeV1': '1',
         'fieldGenV3': '1',
         'scoutNetV1': '1',
+        'rewindOpeningV2': '1',
       },
       'chronFirst': '$chronFirstYear',
       'openingNumbers': openingNumberDay,
