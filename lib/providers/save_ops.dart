@@ -298,6 +298,22 @@ extension SaveOps on AppState {
       if (rewindToOpeningDay()) needSave = true;
       dirtyKv['rewindOpeningV1'] = '1';
     }
+    if (kv['rewindInjuryV1'] != '1') {
+      final hasPlayedOfficial = matches.any((m) => m.isPlayed && (m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE'));
+      if (!seasonFinished && !hasPlayedOfficial) {
+        for (final t in teams) {
+          for (final p in t.players) {
+            if (p.injuryDays > 0 || p.injurySeverity > 0 || p.injuryName.isNotEmpty) {
+              p.injuryName = '';
+              p.injuryDays = 0;
+              p.injurySeverity = 0;
+              needSave = true;
+            }
+          }
+        }
+      }
+      dirtyKv['rewindInjuryV1'] = '1';
+    }
     if (needSaveWorld) {
       await _saveAmateur();
       await _saveOther();
@@ -382,6 +398,9 @@ extension SaveOps on AppState {
         p.lastPitched = '';
         p.consecDays = 0;
         p.regDays = 0;
+        p.injuryName = '';
+        p.injuryDays = 0;
+        p.injurySeverity = 0;
       }
     }
     rainoutCount = 0;

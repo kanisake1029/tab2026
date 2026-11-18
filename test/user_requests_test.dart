@@ -321,6 +321,10 @@ void main() {
     expect(numTopic, NewsTopic.transfer);
     final numNews = ItemNews.of('3/27', numText, numTopic!, player: p, team: team);
     expect(numNews.headline, '【東新】田中 太郎の新背番号が決定！　今季から「7」で心機一転');
+    expect(numNews.player, isNull);
+    expect(numNews.body.any((b) => b.contains('■背番号変更一覧')), isTrue);
+    expect(numNews.body.any((b) => b.contains('・田中 太郎　25 → 7')), isTrue);
+    expect(numNews.teamFans.every((f) => !f.text.contains('トレード') && !f.text.contains('背番号何番')), isTrue);
 
     final rumor = ItemNews(NewsTopic.rumor, '11/12', '予想', '【東新】獲得調査へ', ['予想'], p, team, const [], const []);
     expect(rumor.isConfirmed, isFalse);
@@ -339,11 +343,15 @@ void main() {
     }
     final playedBefore = app.matches.where((m) => m.isPlayed && (m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE')).length;
     expect(playedBefore, greaterThan(0));
+    final injured = app.teams.first.players.first;
+    injured.injuryName = '肉離れ';
+    injured.injuryDays = 14;
+    injured.injurySeverity = 2;
     expect(app.rewindToOpeningDay(), isTrue);
     final playedAfter = app.matches.where((m) => m.isPlayed && (m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE')).length;
     expect(playedAfter, 0);
     final firstReg = app.matches.where((m) => m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE').map((m) => m.date).reduce((a, b) => a.isBefore(b) ? a : b);
     expect(app.currentDate, firstReg);
-    expect(app.teams.first.players.every((p) => p.seasonStats.atBats == 0 && p.seasonStats.hits == 0), isTrue);
+    expect(app.teams.first.players.every((p) => p.seasonStats.atBats == 0 && p.seasonStats.hits == 0 && p.injuryDays == 0 && p.injuryName.isEmpty), isTrue);
   });
 }

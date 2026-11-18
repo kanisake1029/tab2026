@@ -81,16 +81,19 @@ class ItemNews {
     final critic = NewsTalk.critics[r.nextInt(NewsTalk.critics.length)];
     // トレード：関わった全員を、行き先の球団ごとに取り上げる
     if (text.contains('トレード成立') && involved.length >= 2) return _trade(date, text, involved, myTeamId, r, critic);
+    // 背番号変更：1人だけをピックアップせず一覧で見やすく整理する
+    if (text.contains('背番号の変更')) return _numberChanges(date, text, team, r, critic);
     final p = player;
-    final body = <String>[text.endsWith('。') ? text : '$text。'];
+    final name = p?.registeredName ?? '';
+    final t = team == null ? '' : _short(team);
+    final leadText = _leadBody(text, topic, name, t);
+    final body = <String>[leadText.endsWith('。') ? leadText : '$leadText。'];
     if (p != null) {
       body.add('${NewsTalk.prof(p)}${team != null ? '（${_short(team)}）' : ''}。${NewsTalk.stats(p)}');
       if (topic == NewsTopic.injury && p.injuryDays > 0) body.add('復帰までは約${p.injuryDays}日かかる見込みで、${pick(['チームにとっては痛い離脱となった', '首脳陣は戦力の穴埋めを迫られる', '早期の復帰が待たれる'])}。');
       if (topic == NewsTopic.record) body.add(pick(['チームメートからも祝福を受けた。', '節目の数字に、スタンドからは大きな拍手が送られた。', 'さらなる記録の更新に期待がかかる。']));
       if (topic == NewsTopic.transfer || topic == NewsTopic.record) body.add('野球評論家の$critic氏は「${NewsTalk.insight(p, r)}」と見る。');
     }
-    final name = p?.registeredName ?? '';
-    final t = team == null ? '' : _short(team);
     final stay = text.contains('残留') || text.contains('再契約');
     final out = topic == NewsTopic.release && !stay && !['契約', 'FA宣言', 'FA 宣言'].any(text.contains);
     final inn = ['獲得', '入団', '加入', '新外国人', 'ドラフト', '指名', '契約'].any(text.contains);
@@ -139,6 +142,37 @@ class ItemNews {
                 ? ['育成外国人は化けると怖い', '$nameええ素材らしいな', 'こういう育成外国人が数年後に大化けする', if (compare != null) compare]
                 : ['$nameは嫌な助っ人になりそう', '${t.isEmpty ? '' : '$tの'}外国人補強は当たりが多いからな', '外国人は蓋を開けるまで分からん', if (compare != null) compare];
           }
+          if (text.contains('ポスティング') || text.contains('海外FA')) {
+            final mlbMove = text.contains('決定') || text.contains('移籍') || text.contains('入団') || text.contains('契約');
+            if (stay || text.contains('見送')) {
+              return mine
+                  ? [if (name.isNotEmpty) ...['$name残ってくれてありがとう！', '$nameが残留してくれるのはデカい'], '来季も全力で応援するぞ']
+                  : [if (name.isNotEmpty) '$name残留か、メジャーで見たい気もしたけどな', 'NPBが盛り上がるから嬉しい'];
+            }
+            if (mlbMove) {
+              return mine
+                  ? [if (name.isNotEmpty) ...['$nameメジャーでも頑張って！', '$nameの穴は痛いが応援するしかない'], '寂しくなるな…日本から応援してるぞ', '若手はこのチャンスを掴んでくれ']
+                  : [if (name.isNotEmpty) '$nameがMLBでどこまで通用するか楽しみ', '流石に日本を代表する選手やな'];
+            }
+            return mine
+                ? [if (name.isNotEmpty) ...['$nameついにメジャー挑戦か', '$nameの夢を応援したい'], '容認するなら見返りも大事やな', '引き留めは難しいやろな']
+                : [if (name.isNotEmpty) '$nameポスティングか、いくらの契約になるんやろ', 'チームとしては痛い流出になりそうやな'];
+          }
+          if (text.contains('FA宣言') || text.contains('FA 宣言')) {
+            return mine
+                ? [if (name.isNotEmpty) ...['$name宣言か…残ってほしいな', '$nameの決断を待ちたい'], '宣言残留もあるからまだ分からん', '全力で引き留めてくれフロント！']
+                : [if (name.isNotEmpty) ...['$nameうちが獲りに行かんかな', '$nameは人気銘柄になりそうやな'], 'FA市場が動き出したな'];
+          }
+          if (text.contains('支配下登録')) {
+            return mine
+                ? [if (name.isNotEmpty) ...['$nameおめでとう！やっと支配下だ！', '${name}1軍で見るの楽しみにしてるぞ'], '育成からの這い上がり最高やな', '2桁背番号がかっこいい']
+                : [if (name.isNotEmpty) '$nameって育成やったんや、いい選手やな', '育成が育つチームは強いな'];
+          }
+          if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得'))) {
+            return mine
+                ? [if (name.isNotEmpty) ...['$nameまだやれるはず、期待してるぞ！', '$name環境が変われば一花咲かせられる'], '良い補強になったな', 'こういう選手の復活劇を見たい']
+                : [if (name.isNotEmpty) '$name拾われたか、頑張ってほしいな', '戦力外からの逆襲なるか注目や'];
+          }
           if (stay) {
             return mine
                 ? [if (name.isNotEmpty) ...['$name残ってくれてありがとう！', '$nameの残留は一番の補強', '$nameこれからもよろしく', '$name、生涯${t.isEmpty ? '' : t}でいてくれ'], 'ほっとした…', 'フロントよく引き止めた']
@@ -153,11 +187,6 @@ class ItemNews {
             return mine
                 ? [if (name.isNotEmpty) ...['$nameようこそ！', '$nameの活躍に期待', '$nameは補強ポイントにぴったり', '$nameのユニフォーム買う'], 'いい補強や', 'フロントよう動いた']
                 : [if (name.isNotEmpty) ...['$nameいい選手取られたな', '$nameは脅威になりそう'], if (t.isNotEmpty) '$tの補強が本気やな', 'うちも負けてられん'];
-          }
-          if (text.contains('背番号の変更')) {
-            return mine
-                ? [if (name.isNotEmpty) '$nameの新背番号かっこいいな', '新しいユニフォーム買い直さなきゃ', '新背番号に恥じない活躍を期待してるぞ！', '心機一転、今季も頼む！']
-                : ['${t.isEmpty ? '' : '$tの'}背番号シャッフルええな', if (name.isNotEmpty) '$nameの番号変更は期待の表れやな'];
           }
           return mine
               ? [if (name.isNotEmpty) ...['$nameの移籍は驚いた', '$nameがどう使われるか楽しみ'], 'このトレードは吉と出るか', 'フロントの狙いが気になる']
@@ -183,6 +212,81 @@ class ItemNews {
       body.add('$critic氏は「${NewsTalk.strength(p)}は魅力。${pick(['環境が変われば化ける可能性はある', '獲得に動く球団が出てもおかしくない', '独立リーグや海外も含めて、どこで再出発するか注目したい'])}」とも話す。');
     }
     return ItemNews(topic, date, text, head, body, p, team, fans(true), fans(false));
+  }
+
+  /// 記事本文の1段落目（生のログ文言ではなくニュースらしいリード文に整形）
+  static String _leadBody(String text, NewsTopic topic, String name, String t) {
+    final teamLabel = t.isEmpty ? '' : '$tは';
+    if (name.isNotEmpty) {
+      if (text.contains('支配下登録')) {
+        final num = RegExp(r'(?:背番号|「)(\d+)').firstMatch(text)?.group(1);
+        return '$teamLabel育成選手の$nameを支配下選手として登録すると発表した${num != null ? '（新背番号は「$num」）' : ''}。';
+      }
+      if (text.contains('FA宣言') || text.contains('FA 宣言')) {
+        final rank = RegExp(r'([A-C]ランク)').firstMatch(text)?.group(1);
+        return '${t.isEmpty ? '' : '$tの'}$nameが今季取得した国内FA権の行使を表明した${rank != null ? '（$rank）' : ''}。';
+      }
+      if (text.contains('ポスティング') && text.contains('容認')) {
+        return '$teamLabel$nameのポスティングシステムを利用したMLB移籍を容認すると発表した。';
+      }
+      if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得'))) {
+        return '$teamLabel自由契約となっていた$nameの獲得を発表した。';
+      }
+    }
+    return text;
+  }
+
+  /// 開幕前日の背番号変更まとめ記事（1人だけを抜き出さず、全変更選手を箇条書きで見やすく整理）
+  static ItemNews _numberChanges(String date, String text, Team? team, Random r, String critic) {
+    final t = team == null ? '' : _short(team);
+    final k = t.isEmpty ? '' : '【$t】';
+    final bodyPart = text.contains('：') ? text.split('：').last.trim() : text;
+    final items = bodyPart.split('、').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final formatted = <String>[];
+    String? firstPlayerName;
+    String? firstNewNum;
+    for (final item in items) {
+      final m = RegExp(r'^(.+?)\s+(\S+)→(\S+)$').firstMatch(item);
+      if (m != null) {
+        firstPlayerName ??= m.group(1)!.trim();
+        firstNewNum ??= m.group(3)!.trim();
+        formatted.add('・${m.group(1)!.trim()}　${m.group(2)} → ${m.group(3)}');
+      } else {
+        formatted.add('・$item');
+      }
+    }
+    final head = items.length <= 1 && firstPlayerName != null && firstNewNum != null
+        ? '$k$firstPlayerNameの新背番号が決定！　今季から「$firstNewNum」で心機一転'
+        : '$k新シーズンの背番号変更を発表！　${firstPlayerName != null ? '$firstPlayerNameら${items.length}選手が新番号に' : '計${items.length}選手が新番号で始動'}';
+    final body = <String>[
+      '${t.isEmpty ? '' : '$tは'}新シーズンの開幕を控え、背番号の変更を発表した。',
+      '■背番号変更一覧（${items.length}名）',
+      ...formatted,
+      '野球評論家の$critic氏は「背番号の変更は球団の期待の表れ。新しい番号を背負う選手たちが今季どれだけチームを牽引できるか注目だ」と語る。',
+    ];
+    final mineLines = [
+      if (firstPlayerName != null && firstNewNum != null) '$firstPlayerNameの「$firstNewNum」似合いそうやな',
+      '新しい背番号のユニフォーム買い直さなきゃ！',
+      '開幕直前に背番号が変わると気が引き締まるな',
+      '主力番号を継ぐ選手たちの活躍に期待してるぞ',
+      '心機一転、新背番号でキャリアハイ目指してほしい',
+    ];
+    final otherLines = [
+      '${t.isEmpty ? '' : '$tの'}背番号シャッフルええな、期待の表れや',
+      '新しい背番号を見ると開幕が近いと感じる',
+      'こういう番号変更のニュース結構好き',
+    ];
+    return ItemNews(
+      NewsTopic.transfer,
+      date,
+      body.first,
+      head,
+      body,
+      null,
+      team,
+      fanList(r, mineLines, ['名無しの${t.isEmpty ? '' : t}ファン', '${t.isEmpty ? '' : t}党', 'ライトスタンドの民'], positive: true),
+      fanList(r, otherLines, ['他球団ファン', '野球好きの会社員'], positive: true),
+    );
   }
 
   /// ニュース種別・内容に応じたスポーツ紙風の見出し（「【球団】主見出し　副見出し」）を生成
