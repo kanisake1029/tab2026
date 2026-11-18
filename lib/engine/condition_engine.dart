@@ -9,9 +9,9 @@ import 'match_simulator.dart';
 class ConditionEngine {
   // ---- 体力の消費（最大値 1〜1000 に対して）----
   static const int pitchCost = 4;      // 1球あたり（先発・中継ぎで差なし）: 100球で −400
-  static const int fielderCost = 60;   // 野手 1試合
-  static const int catcherCost = 85;   // 捕手 1試合
-  static const int dhCost = 40;        // DH 1試合
+  static const int fielderCost = 48;   // 野手 1試合
+  static const int catcherCost = 68;   // 捕手 1試合
+  static const int dhCost = 32;        // DH 1試合
   static const int benchCost = 30;     // 途中出場（代打・代走・守備固め）
 
   /// 1日あたりの回復量: 30 + 回復力 × 0.6（回復力50で60）

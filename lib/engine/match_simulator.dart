@@ -1105,7 +1105,7 @@ class MatchSimulator {
         if (levelCenter) {
           final bl = (bMeet + bPower + bEye) / 3;
           final pl = (Velo.norm(pitcher.velocity + pForm ~/ 3, slot: pitcher.armSlot) + pitcher.pitchPower + pForm + pitcher.control + pForm) / 3;
-          lvC = (bl + pl) / 2;
+          lvC = (60 + ((bl + pl) / 2 - 60) * 0.5).clamp(55.0, 67.5);
         } else {
           bMeet = soften(bMeet); bPower = soften(bPower); bEye = soften(bEye);
         }
@@ -1113,7 +1113,7 @@ class MatchSimulator {
         double plv = 0, blv = 0; // 投手・打者の水準（差の向きで効きの強さを変える）
         if (levelCenter) { blv = (bMeet + bPower + bEye) / 3; plv = 2 * lvC - blv; }
         final double gain = !levelCenter ? 1.0 : (plv > blv ? levelGainP : levelGain);
-        int bE(num x) => (60 + (x - lvC) * gain + bClutchBonus).round().clamp(1, 100);
+        int bE(num x) => (60 + (x - lvC) * (x >= lvC ? levelGain : gain) + bClutchBonus).round().clamp(1, 100);
         int pE(num x) => (60 + (x - lvC) * gain + pClutchBonus).round().clamp(1, 100);
         bMeet = bE(bMeet); bPower = bE(bPower); bEye = bE(bEye);
         _lvShift = pitcher.control - pE(pitcher.control);

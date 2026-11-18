@@ -9,8 +9,8 @@ class Spec {
   // ── 係数（式の形は仕様書。大きさは NPB に合わせ直した値。仕様書の原値はコメント）──
   static double batA = 103.8, batB = 0.12; // 仕様書 100 + 0.38×パワー km/h。本塁打王 約50本に合わせ、パワー60 の速さはそのままで傾きを 0.21 → 0.12（2026-11-11）
   static double attA = 2, attK = 1.8; // 仕様書 2° + (弾道−1)×5°。高い弾道が本塁打に偏りすぎるので 3 → 1.8（2026-11-11）
-  static double eyA = 0.0055, eyK = 0.002; // 仕様書 2mm + (弾道−1)×3mm
-  static double sigEyBase = 0.033, sigExBase = 0.045; // 仕様書 22mm・45mm
+  static double eyA = 0.0062, eyK = 0.002; // 仕様書 2mm + (弾道−1)×3mm
+  static double sigEyBase = 0.034, sigExBase = 0.044; // 仕様書 22mm・45mm
   static double ctrlBase = 0.65; // 仕様書 1.8°
   static double thrBase = 2.4; // 仕様書 3.5°
   static double ofDepth = 1.0; // 外野の定位置の深さの倍率（仕様書 1.0）
@@ -77,8 +77,8 @@ class Spec {
   static double eyTarget(int traj) => eyA + (traj - 1) * eyK;
 
   /// 芯ずれの標準偏差（m）：上下・長さ方向
-  static double sigEy(int meet) => sigEyBase * (1 - 0.0075 * meet);
-  static double sigEx(int meet) => sigExBase * (1 - 0.0075 * meet);
+  static double sigEy(int meet) => sigEyBase * (1 - 0.0095 * meet).clamp(0.06, 1.15);
+  static double sigEx(int meet) => sigExBase * (1 - 0.0095 * meet).clamp(0.06, 1.15);
 
   // ── 第6章 6.2 投手 ──
   /// 直球の有効なバックスピン（rpm）

@@ -68,10 +68,10 @@ class SwingOutcome {
 class SwingModel {
   static double vBatScale = 0.94; // バランス調整（第3段階で守備と合わせて合わせた値）
   static double noiseScale = 0.83; // ミートのばらつき（守備の判断を入れた後に、打球の種類の割合と合わせた値）
-  static double timingScale = 0.85; // タイミングのばらつき（早い・遅い → 引っ張り・流しのファウル、空振り）
+  static double timingScale = 0.80; // タイミングのばらつき（早い・遅い → 引っ張り・流しのファウル、空振り）
   static double contactScale = 0.85; // 当たる高さのばらつき（芯の上下 → ゴロ・ポップ・空振り）
   static double aimBase = 0.0085; // 狙う高さ（ボールの中心より少し下）
-  static double misScale = 0.78;
+  static double misScale = 0.74;
   static double veloContact = 0.3; // 速い球ほど芯を外す（タイミングの倍率の何乗）
   static double stuffK = 0.008; // 球威1あたりの芯ずれの増え方
   static double stuffCor = 0.002;
@@ -97,8 +97,8 @@ class SwingModel {
     final vMul = p.perceivedKmh > 0 ? Velo.timingMul(p.perceivedKmh, adapt: Velo.adapt(b.meet, b.eye, b.power)) : 1.0; // 速い投手ほど指数関数的に差し込まれる
     final vLin = p.perceivedKmh > 0 ? ((p.perceivedKmh - Velo.pivot) * 0.012).clamp(-0.25, 0.3) : 0.0;
     final bool guessed = p.guessKmh > 0;
-    final double notId = (notIdBase * (1 + vLin) * (1 - (b.eye - 60) * 0.005 - (b.meet - 60) * 0.005) * (1 + (p.sharp - 60) * 0.015) * misScale * (twoStrikes ? 0.75 : 1.0) * (p.hanging ? 0.6 : 1.0)).clamp(0.02, 0.9);
-    final misP = guessed ? (p.guessSame ? 0.0 : notId) : ((1 + vLin) * (p.fastLike ? (1 - read.pFast) * 0.55 : read.pFast * 0.75) * (1 - (b.eye - 60) * 0.005 - (b.meet - 60) * 0.005) * (1 + (p.sharp - 60) * 0.015) * misScale * (twoStrikes ? 0.75 : 1.0) * (p.hanging ? 0.6 : 1.0)).clamp(0.02, 0.9); // 追い込まれると当てにいく
+    final double notId = (notIdBase * (1 + vLin) * (1 - (b.eye - 60) * 0.005 - (b.meet - 60) * 0.009) * (1 + (p.sharp - 60) * 0.015) * misScale * (twoStrikes ? 0.75 : 1.0) * (p.hanging ? 0.6 : 1.0)).clamp(0.02, 0.9);
+    final misP = guessed ? (p.guessSame ? 0.0 : notId) : ((1 + vLin) * (p.fastLike ? (1 - read.pFast) * 0.55 : read.pFast * 0.75) * (1 - (b.eye - 60) * 0.005 - (b.meet - 60) * 0.009) * (1 + (p.sharp - 60) * 0.015) * misScale * (twoStrikes ? 0.75 : 1.0) * (p.hanging ? 0.6 : 1.0)).clamp(0.02, 0.9); // 追い込まれると当てにいく
     final misread = rnd.nextDouble() < misP;
     // ── タイミング：待っていた球の速さで振り出し、見極めた分だけ直す ──
     var vExp = misread ? (p.fastLike ? read.vSlow : read.vFast) : (p.fastLike ? read.vFast : read.vSlow);
@@ -116,7 +116,7 @@ class SwingModel {
     // 苦手コースは攻め続けるだけで抑えきれないよう、マイナス補正を穏やかに抑える
     final cbEff = courseBias < 0 ? (courseBias * 0.45).clamp(-0.5, 0.0) : (courseBias * 0.75).clamp(0.0, 0.85);
     final dtRaw = p.time - p.time * p.speedKmh / vExp; // ＋＝球が予想より遅い → 打者は早い
-    final sigT = (0.007 + (100 - b.meet) * 0.0001) * noiseScale * timingScale * (twoStrikes ? 0.9 : 1.0) * vMul * (1.0 - cbEff * 0.12);
+    final sigT = (0.0120 - (b.meet - 60) * 0.00020).clamp(0.0025, 0.022) * noiseScale * timingScale * (twoStrikes ? 0.9 : 1.0) * vMul * (1.0 - cbEff * 0.12);
     final dt = dtRaw * recog + _g(rnd) * sigT + b.pull * 0.004;
     // ── スイング ──
     var vBat = batSpeed(b) * speedMul * (twoStrikes ? 0.97 : 1.0) * (1.0 + cbEff * 0.025);
@@ -180,7 +180,8 @@ class SwingModel {
     // タイミングが大きくずれると、バットが打つ場所を通り過ぎている（早すぎ）／まだ来ていない（遅すぎ）
     final missT = ((dt.abs() - 0.025) / 0.03).clamp(0.0, 1.0);
     if (ey.abs() >= BatPhysics.reach || exFull > 0.17 || exFull < -0.42 || rnd.nextDouble() < missT || (big > 0 && rnd.nextDouble() < bigWhiff * big)) return SwingOutcome(true, im, null, dt);
-    final ball = BatPhysics.collide(im, p.vel, p.omega, corBase: BatPhysics.cor0 * corScale * (1 - (p.stuff - 74) * stuffCor).clamp(0.9, 1.06)); // 球威：押し込まれて打球が弱い
+    final meetCor = 1.0 + ((b.meet - 68) * 0.0018).clamp(-0.04, 0.06);
+    final ball = BatPhysics.collide(im, p.vel, p.omega, corBase: BatPhysics.cor0 * corScale * meetCor * (1 - (p.stuff - 74) * stuffCor).clamp(0.9, 1.06)); // 球威：押し込まれて打球が弱い
     return SwingOutcome(false, im, ball, dt);
   }
 }
