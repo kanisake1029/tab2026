@@ -43,6 +43,13 @@ class ConditionEngine {
     return injuryBase * eMult * (1.5 - p.durability / 100.0) * (1 - 0.06 * _med(team));
   }
 
+  /// 軽い怪我（severity == 1）での強行出場が悪化する1試合あたり確率。怪我しにくさ（durability）が高いほど悪化しにくい
+  static double aggravationProb(Player p, Team team) {
+    final durFactor = ((110 - p.durability) / 60.0).clamp(0.15, 2.0);
+    final eMult = p.energyRatio >= 0.3 ? 1.0 : 1.4;
+    return (0.03 * durFactor * eMult * (1 - 0.06 * _med(team))).clamp(0.002, 0.12);
+  }
+
   /// 怪我をさせる（重さ・名前・全治の日数を決める）。お知らせの文を返す
   static String inflict(Player p, Team team, Random r) {
     final x = r.nextDouble();
@@ -129,10 +136,10 @@ class ConditionEngine {
       final played = <Player>{...appeared, ...pitchers};
       for (final p in played) {
         if (s.injuredNow.contains(p.id)) continue;
-        if (p.injuryDays > 0 && p.injurySeverity == 1 && _r.nextDouble() < 0.15) {
+        if (p.injuryDays > 0 && p.injurySeverity == 1 && _r.nextDouble() < aggravationProb(p, team)) {
           p.injurySeverity = 2;
           p.injuryName = _moderate[_r.nextInt(_moderate.length)];
-          p.injuryDays += 14 + _r.nextInt(21);
+          p.injuryDays += ((7 + _r.nextInt(15)) * healMul(team)).round();
           p.motivation = (p.motivation - 5).clamp(0, 100);
           news.add('${team.name}の${p.registeredName}が強行出場で悪化（${p.injuryName}・全治${p.injuryDays}日）');
         }

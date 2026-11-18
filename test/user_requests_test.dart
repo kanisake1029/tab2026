@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:npb_pennant_app/db/app_database.dart';
 import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
+import 'package:npb_pennant_app/engine/condition_engine.dart';
 import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/match_simulator.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
@@ -402,5 +403,19 @@ void main() {
     session.gamePitchCounts[session.homePitcher.id] = 130;
     sim.autoPitching(session, true);
     expect(rotIds.contains(session.homePitcher.id), isTrue);
+  });
+
+  test('強行出場の悪化率は抑えられており、怪我しにくさ(durability)が高いほど悪化しにくい', () {
+    final t = Team(id: 'T1', name: '東新', shortName: '東新', league: 'CL', players: []);
+    final iron = Player(id: 'p_iron', lastName: '鉄人', isPitcher: false, mainPos: '一塁手', durability: 90);
+    final avg = Player(id: 'p_avg', lastName: '標準', isPitcher: false, mainPos: '一塁手', durability: 50);
+    final glass = Player(id: 'p_glass', lastName: 'スペ', isPitcher: false, mainPos: '一塁手', durability: 20);
+    final pIron = ConditionEngine.aggravationProb(iron, t);
+    final pAvg = ConditionEngine.aggravationProb(avg, t);
+    final pGlass = ConditionEngine.aggravationProb(glass, t);
+    expect(pIron, lessThan(0.012));
+    expect(pAvg, lessThan(0.04));
+    expect(pIron, lessThan(pAvg));
+    expect(pAvg, lessThan(pGlass));
   });
 }
