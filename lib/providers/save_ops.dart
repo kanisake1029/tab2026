@@ -294,6 +294,10 @@ extension SaveOps on AppState {
       dirtyKv['scoutNetV1'] = '1';
       needSave = true;
     }
+    if (kv['rewindOpeningV1'] != '1') {
+      if (rewindToOpeningDay()) needSave = true;
+      dirtyKv['rewindOpeningV1'] = '1';
+    }
     if (needSaveWorld) {
       await _saveAmateur();
       await _saveOther();
@@ -332,6 +336,69 @@ extension SaveOps on AppState {
     loadMatchups();
     _fixCareerEstimates();
     AiWriter.instance.load();
+  }
+
+  /// シーズン途中のセーブデータを今季開幕戦の日付まで巻き戻す（ロスター・通算・オープン戦成績は保持）
+  bool rewindToOpeningDay() {
+    if (seasonFinished || currentDate.year != startYear) return false;
+    DateTime? openingDay;
+    var hasPlayed = false;
+    for (final m in matches) {
+      if (m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE') {
+        if (openingDay == null || m.date.isBefore(openingDay)) openingDay = m.date;
+        if (m.isPlayed) hasPlayed = true;
+      }
+    }
+    if (openingDay == null || currentDate.isBefore(openingDay) || (!hasPlayed && DateUtils.isSameDay(currentDate, openingDay))) return false;
+    void resetMatch(Match m) {
+      m.isPlayed = false;
+      m.cancelled = false;
+      m.homeScore = null;
+      m.awayScore = null;
+      m.homeInningScores = null;
+      m.awayInningScores = null;
+      m.homeHits = null;
+      m.awayHits = null;
+      m.playByPlay = null;
+      m.pitchByPitch = null;
+      m.boxScore = null;
+      m.note = '';
+    }
+    for (final m in matches) {
+      if (m.matchType != 'OPEN' || !m.date.isBefore(openingDay)) resetMatch(m);
+    }
+    for (final m in farmMatches) {
+      if (!m.date.isBefore(openingDay)) resetMatch(m);
+    }
+    for (final m in thirdMatches) {
+      if (!m.date.isBefore(openingDay)) resetMatch(m);
+    }
+    for (final t in teams) {
+      for (final p in t.players) {
+        p.seasonStats = PlayerStats();
+        p.farmStats = PlayerStats();
+        p.thirdStats = PlayerStats();
+        p.energy = p.maxEnergy;
+        p.lastPitched = '';
+        p.consecDays = 0;
+        p.regDays = 0;
+      }
+    }
+    rainoutCount = 0;
+    currentDate = openingDay;
+    final cutYmd = ChronicleOps.ymd(openingDay);
+    chronYears[startYear]?.removeWhere((c) => '${c['d'] ?? ''}'.compareTo(cutYmd) >= 0);
+    bool keepNews(String n) {
+      final m = RegExp(r'^(\d+)/(\d+)\s').firstMatch(n);
+      if (m == null) return true;
+      final mo = int.parse(m.group(1)!), da = int.parse(m.group(2)!);
+      if (mo > openingDay!.month || (mo == openingDay.month && da >= openingDay.day)) return false;
+      return true;
+    }
+    news = news.where(keepNews).toList();
+    newsLog[startYear]?.removeWhere((n) => !keepNews(n));
+    _addNews(['${openingDay.month}/${openingDay.day} 開幕戦へ日程を巻き戻しました（今季成績・試合結果をリセット）']);
+    return true;
   }
 
   /// ドラフト・移籍のデータを読む（kv にもバックアップにも同じ形で入れる）
