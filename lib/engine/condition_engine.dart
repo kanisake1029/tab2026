@@ -26,7 +26,7 @@ class ConditionEngine {
   static double healMul(Team t) => 1 - 0.05 * _med(t);
 
   // ---- 怪我 ----
-  static const double injuryBase = 0.005; // 1試合・1人あたりの基本確率
+  static const double injuryBase = 0.0018; // 1打席・1人あたりの基本確率（1チーム年4〜6件程度のNPB水準）
   static const _mild = ['軽度の肩痛', '打撲', '軽い腰痛', '指のマメ', '軽い張り'];
   static const _moderate = ['肉離れ', '捻挫', '肘の炎症', '脇腹痛', '腰痛'];
   static const _severe = ['骨折', '靭帯損傷', '半月板損傷', '疲労骨折'];

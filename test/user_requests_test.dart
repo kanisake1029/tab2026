@@ -417,5 +417,7 @@ void main() {
     expect(pAvg, lessThan(0.04));
     expect(pIron, lessThan(pAvg));
     expect(pAvg, lessThan(pGlass));
+    expect(ConditionEngine.injuryProb(avg, t), lessThanOrEqualTo(0.0025));
+    expect(ConditionEngine.injuryProb(iron, t), lessThan(ConditionEngine.injuryProb(glass, t)));
   });
 }
