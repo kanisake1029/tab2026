@@ -349,7 +349,11 @@ class MatchSimulator {
     final lineup = home ? s.homeLineup : s.awayLineup;
     final slot = order.indexWhere((x) => identical(x, p));
     if (identical(p, home ? s.homePitcher : s.awayPitcher)) {
+      final team = home ? s.homeTeam : s.awayTeam;
+      final rotation = {for (final id in team.rotation.take(team.rotationCount)) if (id.isNotEmpty) id};
       var pool = availablePitchers(s, home);
+      final rel = pool.where((x) => !rotation.contains(x.id)).toList();
+      if (rel.isNotEmpty) pool = rel;
       final fresh = pool.where((x) => x.energyRatio >= 0.3).toList();
       if (fresh.isNotEmpty) pool = fresh;
       if (pool.isEmpty) return;

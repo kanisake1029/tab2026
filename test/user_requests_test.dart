@@ -6,6 +6,7 @@ import 'package:npb_pennant_app/db/app_database.dart';
 import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
 import 'package:npb_pennant_app/engine/item_news.dart';
+import 'package:npb_pennant_app/engine/match_simulator.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
 import 'package:npb_pennant_app/engine/roster_engine.dart';
 import 'package:npb_pennant_app/engine/transfer_engine.dart';
@@ -359,5 +360,47 @@ void main() {
     expect(app.teams.first.players.every((p) => p.seasonStats.atBats == 0 && p.seasonStats.hits == 0 && p.injuryDays == 0 && p.injuryName.isEmpty), isTrue);
     final rows = await db.select(db.matchRows).get();
     expect(rows.any((r) => r.played), isFalse);
+  });
+
+  test('自動継投では延長戦や中継ぎ疲労時でも中継ぎを優先し、先発ローテ投手は中継ぎ不在時のみ登板する', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final home = app.teams[0], away = app.teams[1];
+    final sim = MatchSimulator();
+    final session = sim.startGame(Match(homeTeamId: home.id, awayTeamId: away.id, date: DateTime(2026, 4, 10), matchType: 'LEAGUE'), home, away);
+    session.state.inning = 12;
+    session.state.isTop = true;
+    final cur = session.homePitcher;
+    session.gamePitchCounts[cur.id] = 130;
+
+    final rotIds = home.rotation.take(home.rotationCount).toSet();
+    final extraStarterId = rotIds.firstWhere((id) => id != cur.id);
+    if (!home.active26.contains(extraStarterId)) home.active26.add(extraStarterId);
+    final avail = sim.availablePitchers(session, true);
+    final relievers = avail.where((p) => !rotIds.contains(p.id)).toList();
+    final starters = avail.where((p) => rotIds.contains(p.id)).toList();
+    expect(relievers, isNotEmpty);
+    expect(starters, isNotEmpty);
+
+    // 1) 中継ぎの体力が低くても先発ローテではなく中継ぎを選ぶ
+    for (final r in relievers) {
+      r.energy = (r.maxEnergy * 0.2).round();
+    }
+    for (final st in starters) {
+      st.energy = st.maxEnergy;
+    }
+    sim.autoPitching(session, true);
+    expect(rotIds.contains(session.homePitcher.id), isFalse);
+
+    // 2) 中継ぎが全員登板済みで残っていないときだけ先発ローテ投手が登板する
+    for (final r in relievers) {
+      session.usedIds.add(r.id);
+    }
+    session.gamePitchCounts[session.homePitcher.id] = 130;
+    sim.autoPitching(session, true);
+    expect(rotIds.contains(session.homePitcher.id), isTrue);
   });
 }

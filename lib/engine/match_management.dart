@@ -99,19 +99,18 @@ extension MatchManagement on MatchSimulator {
   void autoPitching(GameSession s, bool home) {
     final st = s.state;
     var pool = availablePitchers(s, home);
-    // 体力が3割を切った投手は起用しない（全員そうなら仕方なく使う）
-    if (applyForm) {
-      final fresh = pool.where((p) => p.energyRatio >= 0.3).toList();
-      if (fresh.isNotEmpty) pool = fresh;
-    }
     if (pool.isEmpty) return;
     final team = home ? s.homeTeam : s.awayTeam;
     final cur = home ? s.homePitcher : s.awayPitcher;
     final isStarter = identical(cur, home ? s.starterHome : s.starterAway);
     final rotation = {for (final id in team.rotation.take(team.rotationCount)) if (id.isNotEmpty) id};
-    if (st.inning < 12) {
-      final rel = pool.where((p) => !rotation.contains(p.id)).toList();
-      if (rel.isNotEmpty) pool = rel;
+    // 中継ぎを最優先し、先発ローテ投手は中継ぎがいなくなったときだけ登板させる（延長含め全イニング）
+    final rel = pool.where((p) => !rotation.contains(p.id)).toList();
+    if (rel.isNotEmpty) pool = rel;
+    // 体力が3割を切った投手は起用しない（全員そうなら仕方なく使う）
+    if (applyForm) {
+      final fresh = pool.where((p) => p.energyRatio >= 0.3).toList();
+      if (fresh.isNotEmpty) pool = fresh;
     }
     final pitches = s.staminaUsed[cur.id] ?? 0; // スタミナ消費量（打たれたイニングは1.5倍）
     final er = ((s.boxScore[home ? 'homePitcher' : 'awayPitcher'] as Map<String, dynamic>)[cur.registeredName]?['er'] ?? 0) as int;
