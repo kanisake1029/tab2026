@@ -357,8 +357,8 @@ extension OtherOps on AppState {
     return max(450, round50(estimateSalary(p) * k));
   }
 
-  /// 自球団が他リーグの選手に声をかける（支配下は7月31日まで。育成はいつでも）
-  String? offerOtherPlayer(Player p, {bool ikusei = false}) {
+  /// 自球団が他リーグの選手に声をかける（支配下は7月31日まで、1〜3年・年俸提示可。育成はいつでも1年）
+  String? offerOtherPlayer(Player p, {bool ikusei = false, int? salary, int years = 1}) {
     final my = myTeam, w = otherWorld;
     if (my == null || w == null) return '球団が選ばれていません';
     final block = otherOfferBlock(p);
@@ -367,12 +367,17 @@ extension OtherOps on AppState {
     if (!ikusei && RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
     if (!ikusei && !tradeOpen) return '支配下での契約は7月31日までです';
     if (ikusei && RosterEngine.ikuseiCount(my) >= ikuseiCap(my)) return '育成選手の上限（${ikuseiCap(my)}人）に達しています';
-    final salary = ikusei ? min(otherSalary(p), 600) : otherSalary(p);
-    final fe = _fundsCheck(my, salary);
+    final baseSal = otherSalary(p);
+    final offerSal = ikusei ? min(baseSal, 600) : (((salary ?? baseSal) / 50).round() * 50).clamp(450, 999950);
+    final offerY = ikusei ? 1 : years.clamp(1, 3);
+    final fe = _fundsCheck(my, offerSal);
     if (fe != null) return fe;
-    final chance = otherAcceptChance(p) * (ikusei ? 0.7 : 1.0);
-    final roll = Random(Object.hash(p.id, ikusei, currentDate.difference(DateTime(2000)).inDays ~/ 7)).nextDouble();
-    if (roll >= chance) return '${p.registeredName}に断られました（受ける確率${(chance * 100).round()}%。週が変われば考え直すこともあります）';
+    final need = TrustEngine.askForYears(p, baseSal, offerY, isInitialForeign: p.nationality == '海外');
+    final ratio = (offerSal / max(1, need)).clamp(0.4, 1.5);
+    final baseChance = otherAcceptChance(p) * (ikusei ? 0.7 : 1.0);
+    final chance = (ratio < 0.85 ? baseChance * (ratio * 0.6) : min(0.95, baseChance * (1.0 + max(0.0, ratio - 1.0) * 0.5))).clamp(0.05, 0.95);
+    final roll = Random(Object.hash(p.id, ikusei, offerSal, offerY, currentDate.difference(DateTime(2000)).inDays ~/ 7)).nextDouble();
+    if (roll >= chance) return '${p.registeredName}に断られました（受ける確率${(chance * 100).round()}%・希望目安${formatSalary(need)}。週が変われば考え直すこともあります）';
     final lg = OtherLeagueEngine.leagues[t.leagueId]!;
     final back = w.fromNpb.containsKey(p.id);
     // 今季ここまでの他リーグの成績を来歴に残してから NPB へ
@@ -385,8 +390,8 @@ extension OtherOps on AppState {
     w.fromNpb.remove(p.id);
     p.seasonStats = PlayerStats();
     p.ikusei = ikusei;
-    p.salary = salary;
-    p.contractYears = 1;
+    p.salary = offerSal;
+    p.contractYears = offerY;
     p.offJoin = offseasonYear;
     if (!back) {
       p.proYears = max(1, p.proYears);
@@ -397,8 +402,8 @@ extension OtherOps on AppState {
     p.uniformNumber = RosterEngine.freeNumber(my, ikusei: ikusei);
     RosterEngine.addPlayer(my, p);
     logMove(p, back ? '日本球界復帰（${lg.name}の${t.name}から）' : '${lg.name}の${t.name}から入団', null, my);
-    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（${back ? '日本球界復帰・' : ''}${lg.name}の${t.name}から${ikusei ? '・育成' : ''}）と契約（${formatSalary(salary)}）');
-    _addNews(['${p.registeredName}（${lg.name}の${t.name}）と契約しました${back ? '。日本球界に復帰します' : ''}（${formatSalary(salary)}）']);
+    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（${back ? '日本球界復帰・' : ''}${lg.name}の${t.name}から${ikusei ? '・育成' : ''}）と契約（${formatSalary(offerSal)}${offerY > 1 ? '・$offerY年' : ''}）');
+    _addNews(['${p.registeredName}（${back ? '日本球界復帰・' : ''}${lg.name}の${t.name}）と${ikusei ? '育成' : ''}契約しました（${formatSalary(offerSal)}・$offerY年）']);
     _otherForceSave = true;
     updateAndSave();
     return null;

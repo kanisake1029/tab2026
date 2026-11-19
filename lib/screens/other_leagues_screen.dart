@@ -1,6 +1,7 @@
 import '../widgets/chip_grid.dart';
 import 'package:flutter/material.dart';
 import '../engine/other_league_engine.dart';
+import '../engine/trust_engine.dart';
 import '../models/other_league.dart';
 import '../models/player.dart';
 import '../providers/app_state.dart';
@@ -58,8 +59,54 @@ Future<void> openOtherPlayer(BuildContext context, AppState app, Player p, VoidC
     await showPlayerDetail(context, app, p, allowActions: false);
     return;
   }
-  final err = app.offerOtherPlayer(p, ikusei: act == 'ikusei');
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err ?? '${p.registeredName}と契約しました')));
+  if (act == 'ikusei') {
+    final err = app.offerOtherPlayer(p, ikusei: true);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err ?? '${p.registeredName}と育成契約しました')));
+    changed();
+    return;
+  }
+  final baseSal = app.otherSalary(p);
+  final prefY = TrustEngine.preferredYears(p, isInitialForeign: p.nationality == '海外');
+  var years = prefY;
+  var salary = TrustEngine.askForYears(p, baseSal, years, isInitialForeign: p.nationality == '海外');
+  final res = await showDialog<(int, int)?>(
+    context: context,
+    builder: (d) => StatefulBuilder(builder: (d, set) {
+      final need = TrustEngine.askForYears(p, baseSal, years, isInitialForeign: p.nationality == '海外');
+      Widget step(String label, int delta) => OutlinedButton(
+            onPressed: () => set(() => salary = (salary + delta).clamp(450, 999950)),
+            style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
+            child: Text(label, style: const TextStyle(fontSize: 11.5)),
+          );
+      return AlertDialog(
+        title: Text('${p.registeredName}と契約交渉'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('希望：${formatSalary(need)}（推奨 $prefY年・基本受諾率 ${(app.otherAcceptChance(p) * 100).round()}%）', style: const TextStyle(fontSize: 12, color: _sub)),
+          const SizedBox(height: 8),
+          Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
+          const SizedBox(height: 8),
+          Row(children: [
+            const Text('契約年数：'),
+            DropdownButton<int>(
+              value: years,
+              items: [for (var y = 1; y <= 3; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
+              onChanged: (v) => set(() => years = v ?? 1),
+            ),
+          ]),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),
+          FilledButton(onPressed: () => Navigator.pop(d, (salary, years)), child: const Text('提示する')),
+        ],
+      );
+    }),
+  );
+  if (res == null || !context.mounted) return;
+  final err = app.offerOtherPlayer(p, salary: res.$1, years: res.$2);
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err ?? '${p.registeredName}と契約しました（${formatSalary(res.$1)}・${res.$2}年）')));
   changed();
 }
 

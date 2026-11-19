@@ -6,6 +6,7 @@ import 'package:npb_pennant_app/db/app_database.dart';
 import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
 import 'package:npb_pennant_app/engine/condition_engine.dart';
+import 'package:npb_pennant_app/engine/game_news.dart';
 import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/match_simulator.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
@@ -419,5 +420,44 @@ void main() {
     expect(pAvg, lessThan(pGlass));
     expect(ConditionEngine.injuryProb(avg, t), lessThanOrEqualTo(0.0025));
     expect(ConditionEngine.injuryProb(iron, t), lessThan(ConditionEngine.injuryProb(glass, t)));
+  });
+
+  test('MVP査定はサヨナラ・逆転・勝ち越し・同点に加点し、サヨナラ打者以外をサヨナラ見出しにしない', () {
+    final home = Team(id: 'H', name: '東新', shortName: '東新', league: 'CL', players: []);
+    final away = Team(id: 'A', name: '神戸', shortName: '神戸', league: 'CL', players: []);
+    final m = Match(homeTeamId: 'H', awayTeamId: 'A', date: DateTime(2026, 5, 1), matchType: 'LEAGUE')
+      ..isPlayed = true
+      ..homeScore = 2
+      ..awayScore = 1
+      ..homeInningScores = [1, 0, 0, 0, 0, 0, 0, 0, 1]
+      ..awayInningScores = [1, 0, 0, 0, 0, 0, 0, 0, 0]
+      ..playByPlay = [
+        '1回表 神戸 攻撃',
+        '1回表 高橋がタイムリー 1点',
+        '1回裏 東新 攻撃',
+        '1回裏 佐藤がソロホームラン！ 1点',
+        '9回裏 東新 攻撃',
+        '9回裏 鈴木がサヨナラタイムリー！ 1点',
+      ]
+      ..boxScore = {
+        'homeBatters': {
+          '佐藤': {'ab': 4, 'h': 2, 'hr': 1, 'rbi': 1, 'bb': 0},
+          '鈴木': {'ab': 4, 'h': 1, 'hr': 0, 'rbi': 1, 'bb': 0},
+        },
+        'awayBatters': {
+          '高橋': {'ab': 4, 'h': 2, 'hr': 0, 'rbi': 1, 'bb': 0},
+        },
+        'homePitcher': {
+          '山本': {'ip': '6.0', 'er': 1, 'so': 5, 'dec': ''},
+        },
+        'awayPitcher': {
+          '中村': {'ip': '8.1', 'er': 2, 'so': 4, 'dec': '敗'},
+        },
+      };
+    final mvp = GameNews.mvpOf(m);
+    expect(mvp?.name, '鈴木');
+    final g = GameNews.of(m, home, away);
+    expect(g.headline, contains('鈴木'));
+    expect(g.headline, isNot(contains('佐藤が劇的サヨナラ')));
   });
 }

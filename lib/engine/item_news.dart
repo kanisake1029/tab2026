@@ -232,6 +232,18 @@ class ItemNews {
       if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得'))) {
         return '$teamLabel自由契約となっていた$nameの獲得を発表した。';
       }
+      if (text.contains('日本球界復帰')) {
+        final from = RegExp(r'（(?:日本球界復帰・)?([^）]+)）').firstMatch(text)?.group(1);
+        return '$teamLabel${from != null ? '$fromでプレーしていた' : ''}$nameと契約を結び、日本球界復帰が決定した。';
+      }
+      if (text.contains('外国人') && text.contains('契約')) {
+        final ik = text.contains('育成');
+        return '$teamLabel${ik ? '育成' : '新'}外国人選手として$nameと契約を結んだと発表した。';
+      }
+      final otherM = RegExp(r'（([^）]+の[^）]+)）と(育成)?契約').firstMatch(text);
+      if (otherM != null) {
+        return '$teamLabel${otherM.group(1)}でプレーしていた$nameと${otherM.group(2) ?? ''}契約を結んだと発表した。';
+      }
     }
     return text;
   }
@@ -359,6 +371,18 @@ class ItemNews {
     if (text.contains('支配下登録') && name.isNotEmpty) {
       final num = RegExp(r'(?:背番号|「)(\d+)').firstMatch(text)?.group(1);
       return '$k育成の$nameが支配下登録！　${num != null ? '背番号「$num」を背負い1軍へ' : '念願の2桁背番号を掴み取る'}';
+    }
+
+    // 他リーグからの獲得・日本球界復帰（リーグ調査）
+    final otherClub = RegExp(r'（(?:日本球界復帰・)?([^）]+の[^）]+)）と(育成)?契約').firstMatch(text);
+    if ((text.contains('日本球界復帰') || otherClub != null) && name.isNotEmpty) {
+      final ik = text.contains('育成') || (p?.ikusei ?? false);
+      final club = otherClub?.group(1) ?? '海外球団';
+      if (text.contains('日本球界復帰')) {
+        return '$k$nameが日本球界復帰！　$clubを経て${ik ? '育成から再出発' : '大型補強で合流'}';
+      }
+      if (ik) return '$k$clubから$nameを育成で獲得！　原石の覚醒に期待';
+      return '$k$clubの$nameを獲得！　実績十分の助っ人が加入';
     }
 
     // 新外国人獲得

@@ -852,6 +852,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (text.contains('ポスティング')) return 'posting';
       if (text.contains('海外FA')) return 'overseas_fa';
       if (text.contains('外国人') && (text.contains('契約') || text.contains('獲得'))) return 'foreign_sign';
+      if ((text.contains('日本球界復帰') || RegExp(r'（[^）]+の[^）]+）と(?:育成)?契約').hasMatch(text)) && (text.contains('契約') || text.contains('獲得'))) return 'foreign_sign';
       if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得'))) return 'free_sign';
       if (text.contains('FA') && (text.contains('獲得') || text.contains('移籍') || text.contains('残留') || text.contains('契約'))) return 'fa_sign';
       if (text.contains('支配下登録')) return 'promote';

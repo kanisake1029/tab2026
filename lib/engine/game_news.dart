@@ -60,12 +60,98 @@ class GameNews {
     return (int.tryParse(t[0]) ?? 0) * 3.0 + (t.length > 1 ? (int.tryParse(t[1]) ?? 0) : 0);
   }
 
-  /// 試合のMVP：勝った球団（引き分けは両軍）の打者・投手から、いちばん活躍した1人
+  /// 実況から「先制・同点・勝ち越し・逆転・サヨナラ」を判定し、印象的な活躍の加点とサヨナラ打者を返す
+  static ({Map<String, double> pts, Map<String, String> tag, String? walkOffBatter}) _clutchBreakdown(Match m) {
+    final pts = <String, double>{};
+    final tag = <String, String>{};
+    String? walkOffBatter;
+    final pbp = m.playByPlay;
+    if (pbp == null || pbp.isEmpty) return (pts: pts, tag: tag, walkOffBatter: null);
+    final box = m.boxScore ?? const <String, dynamic>{};
+    final names = <String>[
+      ...((box['homeBatters'] as Map?)?.keys.map((e) => '$e') ?? const []),
+      ...((box['awayBatters'] as Map?)?.keys.map((e) => '$e') ?? const []),
+    ]..sort((a, b) => b.length.compareTo(a.length));
+    final homeSet = {
+      ...((box['homeBatters'] as Map?)?.keys.map((e) => '$e') ?? const []),
+    };
+    final awaySet = {
+      ...((box['awayBatters'] as Map?)?.keys.map((e) => '$e') ?? const []),
+    };
+    var inn = 1;
+    var isTop = true;
+    var h = 0, a = 0;
+    int? leader; // null=0-0, 0=同点, 1=homeリード, -1=awayリード
+    final innRe = RegExp(r'^(\d+)回(表|裏)');
+    final ptRe = RegExp(r'(\d+)点');
+    for (final line in pbp) {
+      final im = innRe.firstMatch(line);
+      if (im != null) {
+        inn = int.parse(im.group(1)!);
+        isTop = im.group(2) == '表';
+      }
+      final isWalkOff = line.contains('サヨナラ');
+      int runs = 0;
+      final pm = ptRe.firstMatch(line);
+      if (pm != null) {
+        runs = int.parse(pm.group(1)!);
+      } else if (line.contains('ホームラン') && !line.contains('ファウル')) {
+        runs = 1;
+      }
+      if (runs <= 0 && !isWalkOff) continue;
+      String? batter;
+      for (final n in names) {
+        if (line.contains(n)) {
+          batter = n;
+          break;
+        }
+      }
+      final homeBat = batter != null ? (homeSet.contains(batter) && !awaySet.contains(batter) ? true : (awaySet.contains(batter) && !homeSet.contains(batter) ? false : !isTop)) : !isTop;
+      final prevLeader = leader;
+      if (homeBat) {
+        h += max(1, runs);
+      } else {
+        a += max(1, runs);
+      }
+      final now = (h - a).sign;
+      final mySign = homeBat ? 1 : -1;
+      String kind = '';
+      double bonus = 0.0;
+      if (isWalkOff) {
+        kind = 'サヨナラ';
+        bonus = 12.0;
+        if (batter != null) walkOffBatter = batter;
+      } else if (prevLeader == null && now == mySign) {
+        kind = '先制';
+        bonus = 2.0;
+      } else if (prevLeader == -mySign && now == 0) {
+        kind = '同点';
+        bonus = inn >= 7 ? 5.0 : 3.5;
+      } else if (prevLeader == -mySign && now == mySign) {
+        kind = '逆転';
+        bonus = inn >= 7 ? 8.0 : 6.0;
+      } else if (prevLeader == 0 && now == mySign) {
+        kind = '勝ち越し';
+        bonus = inn >= 7 ? 6.5 : 4.5;
+      }
+      leader = now;
+      if (batter != null && bonus > 0) {
+        pts[batter] = (pts[batter] ?? 0.0) + bonus;
+        if (kind == 'サヨナラ' || (tag[batter] == null) || (kind == '逆転' && tag[batter] != 'サヨナラ') || (kind == '勝ち越し' && tag[batter] == '先制')) {
+          tag[batter] = kind;
+        }
+      }
+    }
+    return (pts: pts, tag: tag, walkOffBatter: walkOffBatter);
+  }
+
+  /// 試合のMVP：勝った球団（引き分けは両軍）の打者・投手から、成績＋印象的な活躍（サヨナラ・逆転・勝ち越し・同点）のポイントで1人を選ぶ
   static GameMvp? mvpOf(Match m) {
     final box = m.boxScore;
     if (box == null || m.homeScore == null) return null;
     final hs = m.homeScore!, as = m.awayScore ?? 0;
     final sides = hs == as ? [true, false] : [hs > as];
+    final clutch = _clutchBreakdown(m);
     GameMvp? best;
     var bestScore = -1e9;
     for (final home in sides) {
@@ -74,7 +160,8 @@ class GameNews {
         final v = e.value;
         if (v is! Map) continue;
         final h = (v['h'] ?? 0) as int, hr = (v['hr'] ?? 0) as int, rbi = (v['rbi'] ?? 0) as int, ab = (v['ab'] ?? 0) as int, bb = (v['bb'] ?? 0) as int;
-        final sc = hr * 4.0 + rbi * 2.0 + h * 1.5 + bb * 0.5 - (ab - h) * 0.3;
+        final cBonus = clutch.pts['${e.key}'] ?? 0.0;
+        final sc = hr * 4.0 + rbi * 2.0 + h * 1.5 + bb * 0.5 - (ab - h) * 0.3 + cBonus;
         if (sc > bestScore) {
           bestScore = sc;
           best = GameMvp('${e.key}', home, '$ab打数$h安打${hr > 0 ? '$hr本塁打' : ''}${rbi > 0 ? '$rbi打点' : ''}', false, h: h, hr: hr, rbi: rbi);
@@ -146,10 +233,14 @@ class GameNews {
     }
 
     final hi = max(hs, as), lo = min(hs, as), diff = hi - lo, total = hs + as;
+    final clutch = _clutchBreakdown(m);
     final walkOff = (m.playByPlay ?? const []).any((l) => l.contains('サヨナラ'));
-    final fallbackSub = diff <= 1
-        ? '$hi−$loの緊迫した接戦をモノに'
-        : (total >= 13 ? '計$total得点の打撃戦を制す' : '$ltに$hi−$loで快勝');
+    final walkOffName = clutch.walkOffBatter;
+    final fallbackSub = (walkOff && walkOffName != null && mvp?.name != walkOffName)
+        ? '$walkOffNameのサヨナラ打で劇勝'
+        : (diff <= 1
+            ? '$hi−$loの緊迫した接戦をモノに'
+            : (total >= 13 ? '計$total得点の打撃戦を制す' : '$ltに$hi−$loで快勝'));
     final sub = winTag.isNotEmpty && loseTag.isNotEmpty
         ? '$winTag、$loseTag'
         : (winTag.isNotEmpty ? winTag : (loseTag.isNotEmpty ? loseTag : fallbackSub));
@@ -169,20 +260,25 @@ class GameNews {
       } else {
         final hrs = GameSummary.homeRuns(m, home, away).where((h) => h.$2 == mvp.name).toList();
         final grand = hrs.any((h) => h.$3.contains('満塁'));
-        if (walkOff) {
+        final mvpIsWalkOff = walkOff && (walkOffName == null || walkOffName == mvp.name);
+        final cTag = clutch.tag[mvp.name];
+        final hrTag = cTag == '逆転' || cTag == '勝ち越し' || cTag == '同点' ? cTag : '決勝';
+        if (mvpIsWalkOff) {
           main = mvp.hr >= 1
               ? '${mvp.name}が劇的サヨナラ${grand ? '満塁弾' : 'アーチ'}！'
               : pick(['${mvp.name}が劇的サヨナラ打！', '${mvp.name}のサヨナラ打で本拠地歓喜！']);
         } else if (mvp.hr >= 2) {
           main = pick(['${mvp.name}が${mvp.hr}発の大暴れ！', '主砲・${mvp.name}が${mvp.hr}本塁打${mvp.rbi}打点！']);
         } else if (mvp.hr == 1 && mvp.rbi >= 3) {
-          main = '${mvp.name}、価値ある${grand ? '満塁弾' : '一発'}含む${mvp.rbi}打点！';
+          main = '${mvp.name}、価値ある${grand ? '満塁弾' : '${hrTag}弾'}含む${mvp.rbi}打点！';
         } else if (mvp.hr == 1) {
-          main = pick(['${mvp.name}が決勝アーチ！　一振りで勝負決める', '${mvp.name}の一発が効いた！']);
+          main = pick(['${mvp.name}が${hrTag}アーチ！　一振りで流れ掴む', '${mvp.name}の一発が効いた！']);
         } else if (mvp.rbi >= 3) {
           main = pick(['${mvp.name}が${mvp.rbi}打点の固め打ち！', '打線の核・${mvp.name}が${mvp.rbi}打点の大活躍']);
         } else if (mvp.h >= 3) {
           main = pick(['${mvp.name}が猛打賞の躍動！', '安打製造機・${mvp.name}が${mvp.h}安打の固め打ち']);
+        } else if (cTag == '逆転' || cTag == '勝ち越し') {
+          main = '${mvp.name}が値千金の${cTag}打！';
         } else {
           main = pick(['${mvp.name}が値千金の活躍！', '${mvp.name}が勝負強さ発揮！']);
         }

@@ -1684,7 +1684,7 @@ extension OffseasonOps on AppState {
     if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
     RosterEngine.addPlayer(my, p);
     transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（外国人・${p.ikusei ? '育成・' : ''}${p.mainPosition}）と契約（${formatSalary(offerSal)}${offerY > 1 ? '・$offerY年' : ''}）');
-    _addNews(['${p.registeredName}と契約しました（${formatSalary(offerSal)}・$offerY年）']);
+    _addNews(['${p.registeredName}（外国人${p.ikusei ? '・育成' : ''}）と${p.ikusei ? '育成' : ''}契約しました（${formatSalary(offerSal)}・$offerY年）']);
     updateAndSave();
     return null;
   }
