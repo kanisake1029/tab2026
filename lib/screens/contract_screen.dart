@@ -7,6 +7,7 @@ import '../models/amateur.dart';
 import '../models/player.dart';
 import '../providers/app_state.dart';
 import '../utils/salary_utils.dart';
+import '../widgets/player_detail_dialog.dart';
 
 const _sub = Color(0xFF78716C);
 const _ink = Color(0xFF1C1917);
@@ -81,7 +82,14 @@ class _ContractScreenState extends State<ContractScreen> {
                   '前年 ${formatSalary(fa.player.salary)}　希望 ${formatSalary(app.renewAsk(fa.player))}（${app.renewPreferredYears(fa.player)}年）　信頼 ${fa.player.trust}・愛着 ${fa.player.teamLove}',
                   style: const TextStyle(fontSize: 12),
                 ),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                    icon: const Icon(Icons.person_search_outlined, size: 20),
+                    tooltip: '選手詳細',
+                    onPressed: () => showPlayerDetail(context, app, fa.player, allowActions: false),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ]),
                 onTap: () => _openPriorityForeign(fa),
               ),
             ),
@@ -96,7 +104,14 @@ class _ContractScreenState extends State<ContractScreen> {
                 '今 ${formatSalary(p.salary)}${app.inMultiYear(p) ? '　複数年契約中（残り${p.contractYears}年）' : app.renewalDone(p) ? '　更改済み${p.contractYears > 1 ? '（${p.contractYears}年）' : ''}' : p.draftYear == app.currentDate.year ? '　新人（来年から）' : '　希望 ${formatSalary(app.renewAsk(p))}（${app.renewPreferredYears(p)}年）'}　信頼 ${p.trust}・愛着 ${p.teamLove}',
                 style: const TextStyle(fontSize: 12),
               ),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  icon: const Icon(Icons.person_search_outlined, size: 20),
+                  tooltip: '選手詳細',
+                  onPressed: () => showPlayerDetail(context, app, p, allowActions: false),
+                ),
+                const Icon(Icons.chevron_right),
+              ]),
               onTap: () => _open(p),
             ),
           ),
@@ -121,7 +136,14 @@ class _ContractScreenState extends State<ContractScreen> {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 20 + MediaQuery.of(c).viewInsets.bottom),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${p.registeredName}（優先交渉）', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            Row(children: [
+              Expanded(child: Text('${p.registeredName}（優先交渉）', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
+              TextButton.icon(
+                onPressed: () => showPlayerDetail(c, app, p, allowActions: false),
+                icon: const Icon(Icons.person_search_outlined, size: 18),
+                label: const Text('選手詳細'),
+              ),
+            ]),
             Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳　前年 ${formatSalary(p.salary)}　信頼 ${p.trust}・愛着 ${p.teamLove}', style: const TextStyle(color: _sub, fontSize: 12.5)),
             const SizedBox(height: 12),
             Text('希望（$years年なら）：${formatSalary(app.renewAskFor(p, years))}', style: const TextStyle(fontSize: 12.5, color: _sub)),
@@ -171,7 +193,14 @@ class _ContractScreenState extends State<ContractScreen> {
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 20 + MediaQuery.of(c).viewInsets.bottom),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(p.registeredName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            Row(children: [
+              Expanded(child: Text(p.registeredName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
+              TextButton.icon(
+                onPressed: () => showPlayerDetail(c, app, p, allowActions: false),
+                icon: const Icon(Icons.person_search_outlined, size: 18),
+                label: const Text('選手詳細'),
+              ),
+            ]),
             Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳・プロ${p.proYears}年　今の年俸 ${formatSalary(p.salary)}　信頼 ${p.trust}・愛着 ${p.teamLove}　提示 ${app.renewTries[p.id] ?? 0}回', style: const TextStyle(color: _sub, fontSize: 12.5)),
             const SizedBox(height: 12),
             if (canRenew) ...[
