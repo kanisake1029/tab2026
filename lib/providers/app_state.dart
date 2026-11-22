@@ -1040,6 +1040,7 @@ class AppState extends ChangeNotifier {
     for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
       p.prevGames = p.seasonStats.games;
       p.prevApps = p.seasonStats.apps;
+      p.prevInnings = p.seasonStats.inningsPitched;
       p.age += 1;
       p.proYears += 1;
     }

@@ -475,6 +475,12 @@ void main() {
     expect(TransferEngine.activeDraftEligible(reg, 2027), isFalse);
     expect(TransferEngine.activeDraftEligible(sub, 2027), isTrue);
 
+    // 投手: 前季30イニング未満（89アウト = 29回2/3）は対象、30イニング（90アウト）は対象外
+    final pUnder30 = Player(id: 'ad_p_ok', lastName: '中継ぎ', isPitcher: true, mainPos: '投手', age: 25, proYears: 4, salary: 3000, prevApps: 25, prevInnings: 89);
+    final pAt30 = Player(id: 'ad_p_no', lastName: '先発', isPitcher: true, mainPos: '投手', age: 25, proYears: 4, salary: 3000, prevApps: 5, prevInnings: 90);
+    expect(TransferEngine.activeDraftEligible(pUnder30, 2027), isTrue);
+    expect(TransferEngine.activeDraftEligible(pAt30, 2027), isFalse);
+
     // 2) 自球団自由契約→再契約（育成含む）は「再契約」になり移籍記事にならない
     final p = my.players.firstWhere((x) => !x.ikusei);
     my.players.remove(p);

@@ -381,13 +381,13 @@ class TransferEngine {
   // ───────── 現役ドラフト（仕様書 5章）─────────
 
   /// 現役ドラフトの対象（自動）：支配下・日本人扱い・プロ3年目以上・31歳以下・FA 権なし・年俸5000万円未満・
-  ///  今季の1軍出場が少ない（野手30試合未満・投手15登板未満）・そのオフに入った選手でない。育成選手は対象外（条件は仮）
+  ///  前季の1軍出場が少ない（野手30試合未満・投手30イニング未満）・そのオフに入った選手でない。育成選手は対象外（条件は仮）
   static bool activeDraftEligible(Player p, int offYear) {
-    final useSeason = p.seasonStats.games > 0 || p.seasonStats.apps > 0;
+    final useSeason = p.seasonStats.games > 0 || p.seasonStats.apps > 0 || p.seasonStats.inningsPitched > 0;
     final g = useSeason ? p.seasonStats.games : p.prevGames;
-    final a = useSeason ? p.seasonStats.apps : p.prevApps;
+    final ip = useSeason ? p.seasonStats.inningsPitched : p.prevInnings;
     return !p.ikusei && !p.foreignSlot && !p.hasFA && p.proYears >= 3 && p.age <= 31 && p.salary < 5000 && p.offJoin != offYear && p.draftYear != offYear &&
-        (p.isPitcher ? a < 15 : g < 30);
+        (p.isPitcher ? ip < 90 : g < 30);
   }
 
   /// 現役ドラフトを行う：order（指名の順。最初の球団から）で、各球団が1人ずつ指名する。

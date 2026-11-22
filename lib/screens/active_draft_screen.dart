@@ -49,7 +49,7 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
           child: Text(
             '各球団が、他球団の対象選手から1人ずつ指名します（下位の球団から。指名された球団が次に指名）。各球団から移るのは1人まで。'
-            '対象は自動で決まります（支配下・プロ3年目以上・31歳以下・FA 権なし・年俸5000万円未満・今季の1軍出場が少ない選手。育成は対象外）。\n'
+            '対象は自動で決まります（支配下・プロ3年目以上・31歳以下・FA 権なし・年俸5000万円未満・前季1軍 野手30試合未満・投手30回未満の選手。育成は対象外）。\n'
             '自球団の対象：${mine.isEmpty ? 'なし' : mine.map((p) => p.registeredName).join('・')}',
             style: const TextStyle(color: Color(0xFFC6F24E), fontSize: 12.5, height: 1.5),
           ),
@@ -71,14 +71,20 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
         Expanded(
           child: ListView(children: [
             for (final p in list)
-              PlayerLine(
-                app: app,
-                p: p,
-                selected: identical(p, _sel),
-                note: '${teamOf(p)}　今季1軍 ${p.isPitcher ? '${p.seasonStats.apps}登板' : '${p.seasonStats.games}試合'}　${formatSalary(p.salary)}',
-                onTap: () => showPlayerDetail(context, app, p, allowActions: false),
-                trailing: Radio<String>(value: p.id, groupValue: _sel?.id, onChanged: (_) => setState(() => _sel = p)),
-              ),
+              Builder(builder: (_) {
+                final useSeason = p.seasonStats.games > 0 || p.seasonStats.apps > 0 || p.seasonStats.inningsPitched > 0;
+                final ip = useSeason ? p.seasonStats.inningsPitched : p.prevInnings;
+                final g = useSeason ? p.seasonStats.games : p.prevGames;
+                final stat = p.isPitcher ? '${ip ~/ 3}${ip % 3 == 0 ? '' : '.${ip % 3}'}回' : '$g試合';
+                return PlayerLine(
+                  app: app,
+                  p: p,
+                  selected: identical(p, _sel),
+                  note: '${teamOf(p)}　前季1軍 $stat　${formatSalary(p.salary)}',
+                  onTap: () => showPlayerDetail(context, app, p, allowActions: false),
+                  trailing: Radio<String>(value: p.id, groupValue: _sel?.id, onChanged: (_) => setState(() => _sel = p)),
+                );
+              }),
           ]),
         ),
         Container(

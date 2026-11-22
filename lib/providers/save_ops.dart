@@ -298,11 +298,12 @@ extension SaveOps on AppState {
       if (rewindToOpeningDay()) needSave = true;
       dirtyKv['rewindOpeningV2'] = '1';
     }
-    if (offAfterSeason && teams.expand((t) => t.players).every((p) => p.prevGames == 0 && p.prevApps == 0)) {
+    final allRosterPlayers = [for (final t in teams) ...t.players];
+    if (offAfterSeason && (allRosterPlayers.every((p) => p.prevGames == 0 && p.prevApps == 0) || allRosterPlayers.every((p) => p.prevInnings == 0))) {
       try {
         final rowsPrev = await (db.select(db.seasonRecords)..where((t) => t.season.equals(startYear - 1) & t.kind.equals('player'))).get();
         if (rowsPrev.isNotEmpty) {
-          final byId = {for (final t in teams) for (final p in t.players) p.id: p};
+          final byId = {for (final p in allRosterPlayers) p.id: p};
           for (final r in rowsPrev) {
             final p = byId[r.refId];
             if (p == null) continue;
@@ -313,6 +314,7 @@ extension SaveOps on AppState {
               final pa = (st['pitchApps'] ?? 0) as int;
               p.prevGames = g;
               p.prevApps = pa > 0 ? pa : g;
+              p.prevInnings = (st['inningsPitched'] as num?)?.toInt() ?? 0;
             }
           }
           needSave = true;
