@@ -9,9 +9,21 @@ extension NumberOps on AppState {
   /// オフシーズン（11/1〜1/31）は背番号をすぐ変えられ、変更は経歴に残さない
   bool get isOffseasonNumberFree => currentDate.month >= 11 || currentDate.month == 1;
 
+  /// 開幕前日より前か（オフ期間の入団・再契約・支配下登録等は開幕前日に背番号を確定する）
+  bool isBeforeOpeningDay([DateTime? at]) {
+    final d = DateUtils.dateOnly(at ?? currentDate);
+    if (seasonFinished || seasonOver) return true;
+    final (firstReg, _) = _regularRange();
+    if (firstReg == null) return d.month >= 10 || d.month <= 3;
+    return d.isBefore(DateUtils.dateOnly(firstReg).subtract(const Duration(days: 1)));
+  }
+
   /// 入団・移籍した直後、またはオフ期間（11/1〜1/31）で背番号をすぐ変えられるか（特別に決めた日は全員）
   bool numberFreeNow(Player p) =>
-      isOpeningNumberDay || isOffseasonNumberFree || (p.numberFreeUntil.isNotEmpty && p.numberFreeUntil.compareTo(ChronicleOps.ymd(currentDate)) >= 0);
+      isOpeningNumberDay ||
+      isOffseasonNumberFree ||
+      p.numberPending ||
+      (p.numberFreeUntil.isNotEmpty && p.numberFreeUntil.compareTo(ChronicleOps.ymd(currentDate)) >= 0);
 
   /// 今日は、全員の背番号をすぐ変えられる特別な日か（初期の背番号の扱い）
   bool get isOpeningNumberDay => openingNumberDay.isNotEmpty && openingNumberDay == ChronicleOps.ymd(currentDate);
@@ -19,6 +31,10 @@ extension NumberOps on AppState {
   /// すぐ変える。初期の背番号・オフ期間（11/1〜1/31）・入団直後の変更は経歴に残さず、入団・支配下登録の記録の番号を書き換える
   void _changeNow(Team t, Player p, int n) {
     if (n == p.uniformNumber) return;
+    if (p.numberPending) {
+      p.uniformNumber = n;
+      return;
+    }
     if (numberFreeNow(p)) {
       final from = 'は${p.uniformText}。', to = 'は${uniformLabel(n)}。';
       final cutoff = isOpeningNumberDay ? historyFrom : ChronicleOps.ymd(currentDate.subtract(const Duration(days: 120)));
@@ -100,31 +116,43 @@ extension NumberOps on AppState {
     return null;
   }
 
-  /// 2月1日：予約した背番号に変える（全球団）。重なる予約は取り消して今の番号のまま
+  /// 開幕前日：予約した背番号に変え、未確定の入団・昇格選手の背番号を確定する（全球団）
   void applyNextNumbers(DateTime d) {
     final mine = <String>[];
     for (final t in leagueTeams) {
-      final res = t.players.where((p) => p.nextNumber != null).toList();
-      if (res.isEmpty) continue;
+      final targets = t.players.where((p) => p.nextNumber != null || p.numberPending).toList();
+      if (targets.isEmpty) continue;
       final finalNum = {for (final p in t.players) p: p.nextNumber ?? p.uniformNumber};
       final count = <int, int>{};
       for (final n in finalNum.values) {
         count[n] = (count[n] ?? 0) + 1;
       }
-      for (final p in res) {
-        final n = p.nextNumber!;
-        if ((count[n] ?? 0) > 1 || numberRule(p, n) != null) {
-          if (t.id == myTeamId) mine.add('${p.registeredName}の背番号${uniformLabel(n)}は、ほかの選手と重なるため変えませんでした');
-          p.nextNumber = null;
-          continue;
+      for (final p in targets) {
+        final next = p.nextNumber;
+        if (next != null) {
+          if ((count[next] ?? 0) > 1 || numberRule(p, next) != null) {
+            if (t.id == myTeamId) mine.add('${p.registeredName}の背番号${uniformLabel(next)}は、ほかの選手と重なるため変えませんでした');
+            p.nextNumber = null;
+          } else {
+            if (!p.numberPending) {
+              _numberChron(t, p, p.uniformNumber, next, d);
+              if (t.id == myTeamId) mine.add('${p.registeredName} ${uniformLabel(p.uniformNumber)}→${uniformLabel(next)}');
+            }
+            p.uniformNumber = next;
+            p.nextNumber = null;
+          }
         }
-        _numberChron(t, p, p.uniformNumber, n, d);
-        if (t.id == myTeamId) mine.add('${p.registeredName} ${uniformLabel(p.uniformNumber)}→${uniformLabel(n)}');
-        p.uniformNumber = n;
-        p.nextNumber = null;
+        if (p.numberPending) {
+          p.numberPending = false;
+          _chron(d, t.id, 'number', '${_pos(p)} ${p.registeredName}の背番号が${p.uniformText}に決定。', pid: p.id, pt: '背番号が${p.uniformText}に決定。');
+          if (t.id == myTeamId) mine.add('${p.registeredName} 背番号${p.uniformText}に決定');
+        }
       }
     }
-    if (mine.isNotEmpty) _addNews(['背番号の変更（開幕前日）：${mine.join('、')}']);
+    if (mine.isNotEmpty) {
+      final hasChange = mine.any((s) => s.contains('→'));
+      _addNews(['${hasChange ? '背番号の変更' : '背番号の決定'}（開幕前日）：${mine.join('、')}']);
+    }
   }
 
   /// 入団・移籍した選手（自球団）：しばらくは背番号をすぐ変えられる
@@ -157,10 +185,15 @@ extension NumberOps on AppState {
           add(n, d, nm, how);
         } else if (k == 'number') {
           final m = RegExp(r'^\S+ (.+)の背番号を(00|\d+)から(00|\d+)に変更').firstMatch(text);
-          if (m == null) continue;
-          final from = num(m.group(2)!), to = num(m.group(3)!);
-          if (to != null) add(to, d, m.group(1)!, '${m.group(2)}から変更');
-          if (from != null) add(from, d, m.group(1)!, '${m.group(3)}へ変更（空き番号に）');
+          if (m != null) {
+            final from = num(m.group(2)!), to = num(m.group(3)!);
+            if (to != null) add(to, d, m.group(1)!, '${m.group(2)}から変更');
+            if (from != null) add(from, d, m.group(1)!, '${m.group(3)}へ変更（空き番号に）');
+          } else {
+            final m2 = RegExp(r'^\S+ (.+)の背番号が(00|\d+)に決定').firstMatch(text);
+            final n = m2 == null ? null : num(m2.group(2)!);
+            if (n != null) add(n, d, m2!.group(1)!, '背番号決定');
+          }
         } else if (k == 'leave') {
           // 退団した選手の番号は空く（いまの番号はわからないので、その選手が最後につけた番号に印を付ける）
           final nm = re.firstMatch(text)?.group(2) ?? '';

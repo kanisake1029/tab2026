@@ -73,18 +73,31 @@ extension ChronicleOps on AppState {
       _chron(d, tid, 'leave', '${_pos(p)} ${p.registeredName}(${p.age})が$why。', pid: p.id, pt: pt);
     }
     // 入団・支配下登録
+    final pending = isBeforeOpeningDay(d);
     for (final e in now.entries) {
       final (t, p) = e.value;
       final o = old[e.key];
       if (o != null && o.$1 == t.id) {
         if (o.$2 && !p.ikusei) {
-          _chron(d, t.id, 'reg', '${_pos(p)} ${p.registeredName}(${p.age})を支配下登録。背番号は${p.uniformText}。', pid: p.id, pt: '支配下登録。背番号${p.uniformText}。');
+          if (pending) {
+            p.numberPending = true;
+            _chron(d, t.id, 'reg', '${_pos(p)} ${p.registeredName}(${p.age})を支配下登録。', pid: p.id, pt: '支配下登録。');
+          } else {
+            _chron(d, t.id, 'reg', '${_pos(p)} ${p.registeredName}(${p.age})を支配下登録。背番号は${p.uniformText}。', pid: p.id, pt: '支配下登録。背番号${p.uniformText}。');
+          }
           if (t.id == myTeamId) markNumberFree(p, d); // 支配下登録の直後は、背番号をすぐ変えられる
+        } else if (!o.$2 && p.ikusei && pending) {
+          p.numberPending = true;
         }
         continue;
       }
       final (how, pt) = _joinText(p, t, from: o == null ? null : teamById(o.$1));
-      _chron(d, t.id, 'join', '${_pos(p)} ${p.registeredName}(${p.age})が$how。背番号は${p.uniformText}。', pid: p.id, pt: '$pt背番号${p.uniformText}。');
+      if (pending) {
+        p.numberPending = true;
+        _chron(d, t.id, 'join', '${_pos(p)} ${p.registeredName}(${p.age})が$how。', pid: p.id, pt: pt.endsWith('。') ? pt : '$pt。');
+      } else {
+        _chron(d, t.id, 'join', '${_pos(p)} ${p.registeredName}(${p.age})が$how。背番号は${p.uniformText}。', pid: p.id, pt: '$pt背番号${p.uniformText}。');
+      }
       if (t.id == myTeamId) markNumberFree(p, d); // 入団・移籍の直後は、背番号をすぐ変えられる
     }
     // コーチ
@@ -131,6 +144,9 @@ extension ChronicleOps on AppState {
     }
     if (last.contains('自由契約')) {
       final ik = last.contains('育成');
+      if (last.contains('再契約')) {
+        return ('自由契約から${ik ? '育成' : ''}再契約', '自由契約から${t.name}と${ik ? '育成' : ''}再契約。');
+      }
       return ('自由契約から${ik ? '育成契約で' : ''}入団', '自由契約から${t.name}に${ik ? '育成契約で' : ''}入団。');
     }
     if (last.contains('日本球界復帰')) {

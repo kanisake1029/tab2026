@@ -258,6 +258,7 @@ class Player {
   String? lastDemotedDate;
   int? nextNumber;         // 来季の背番号（2月1日から。null は変更なし。-1 は「00」）
   String numberFreeUntil;  // 入団・移籍した直後で、背番号をすぐ変えられる期限（yyyy-mm-dd。'' はなし）
+  bool numberPending;      // オフ期間中の入団等で、開幕前日に背番号を確定する対象か
   int draftCustomAge;
   int proYears;
 
@@ -337,7 +338,7 @@ class Player {
   Map<String, int> potential;  // 以前の「潜在能力（上限）」。ver1.0 からは使わない（古いセーブの読み込み用に残す）
   int quick;                   // クイック（投手。1〜100）。高いほど盗塁されにくい
   bool twoWay;                 // 二刀流（野手なら投手としても、投手なら野手としても起用できる）
-  int adapt;                   // 環境適応力（外国人。1〜100・隠し）。入団時に能力へ倍率がかかる（D50×0.8・C60×0.9・B70×1.0）
+  int adapt;                   // 環境適応力（外国人。1〜100・隠し）。入団時に能力へ倍率がかかる（C60×1.00・B70×1.05・A80×1.10・90×1.15・S100×1.20）
   String origin;               // 出身国（外国人。例：ドミニカ）
   String birthplace;           // 出身地（日本人の都道府県。例：大阪府）
   String styleShift = '';      // ベテランのモデルチェンジ：'技巧派'（投手）・'職人'（野手）。'' はなし
@@ -401,6 +402,7 @@ class Player {
     this.lastDemotedDate,
     this.nextNumber,
     this.numberFreeUntil = '',
+    this.numberPending = false,
     this.draftCustomAge = 24,
     this.proYears = 1,
     this.trajectory = 2,
@@ -698,6 +700,7 @@ class Player {
       'lastDemotedDate': lastDemotedDate,
       if (nextNumber != null) 'nextNumber': nextNumber,
       if (numberFreeUntil.isNotEmpty) 'numberFreeUntil': numberFreeUntil,
+      if (numberPending) 'numberPending': true,
       'draftCustomAge': draftCustomAge,
       'proYears': proYears,
       'trajectory': trajectory,
@@ -853,6 +856,7 @@ class Player {
       lastDemotedDate: json['lastDemotedDate'],
       nextNumber: json['nextNumber'] as int?,
       numberFreeUntil: (json['numberFreeUntil'] ?? '') as String,
+      numberPending: json['numberPending'] == true,
       draftCustomAge: json['draftCustomAge'],
       proYears: json['proYears'],
       trajectory: json['trajectory'],

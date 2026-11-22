@@ -6,6 +6,7 @@ import 'package:npb_pennant_app/db/app_database.dart';
 import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
 import 'package:npb_pennant_app/engine/condition_engine.dart';
+import 'package:npb_pennant_app/engine/foreign_engine.dart';
 import 'package:npb_pennant_app/engine/game_news.dart';
 import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/match_simulator.dart';
@@ -492,5 +493,74 @@ void main() {
     expect(app.news.first, contains('再契約'));
     final newsItem = ItemNews.of('11/15', app.news.first, ItemNews.topicOf(app.news.first)!, player: p, team: my);
     expect(newsItem.headline, contains('再契約'));
+  });
+
+  test('外国人来日時の適応力は S100=1.20〜60=1.00 で平均60前後になる', () {
+    expect(ForeignEngine.adaptMult(100), closeTo(1.20, 1e-9));
+    expect(ForeignEngine.adaptMult(90), closeTo(1.15, 1e-9));
+    expect(ForeignEngine.adaptMult(80), closeTo(1.10, 1e-9));
+    expect(ForeignEngine.adaptMult(70), closeTo(1.05, 1e-9));
+    expect(ForeignEngine.adaptMult(60), closeTo(1.00, 1e-9));
+    expect(ForeignEngine.adaptMult(50), closeTo(0.95, 1e-9));
+
+    final r = Random(42);
+    var sum = 0;
+    var maxAdapt = 0;
+    const n = 2000;
+    for (var i = 0; i < n; i++) {
+      final p = ForeignEngine.make(2026, r, ikusei: false, age: 27, mean: 70);
+      sum += p.adapt;
+      if (p.adapt > maxAdapt) maxAdapt = p.adapt;
+    }
+    final avg = sum / n;
+    expect(avg, inInclusiveRange(57.0, 63.0));
+    expect(maxAdapt, greaterThan(95));
+  });
+
+  test('オフ期間の育成→自由契約→支配下再契約は入団時に背番号を確定せず開幕前日に決定する', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    app.seasonFinished = true;
+    app.draftDoneYear = 2026;
+    app.currentDate = DateTime(2026, 11, 20);
+    expect(app.isBeforeOpeningDay(), isTrue);
+
+    final pIk = my.players.firstWhere((x) => !x.ikusei);
+    expect(app.reSignIkusei(pIk), isNull);
+    expect(pIk.ikusei, isTrue);
+    expect(app.news.first, isNot(contains('背番号')));
+
+    expect(app.releasePlayer(pIk), isNull);
+    final fa = app.freeAgents.last;
+    expect(app.signFreeAgent(fa, ikusei: false), isNull);
+    expect(pIk.ikusei, isFalse);
+    expect(pIk.numberPending, isTrue);
+
+    final joinChron = app.chron.lastWhere((c) => c['pid'] == pIk.id && c['k'] == 'join');
+    expect('${joinChron['t']}', contains('自由契約から再契約'));
+    expect('${joinChron['t']}', isNot(contains('背番号は')));
+
+    // 仮番号を変更しても「変更」年表は残らず、開幕前日まで保留のまま
+    final desired = RosterEngine.freeNumber(my, ikusei: false);
+    expect(app.setNumber(my, pIk, desired), isNull);
+    expect(pIk.uniformNumber, desired);
+    expect(pIk.numberPending, isTrue);
+    expect(app.chron.where((c) => c['pid'] == pIk.id && c['k'] == 'number'), isEmpty);
+
+    // 開幕前日で背番号が正式決定し、年表・ニュース・背番号の変遷に「に決定」として記録される
+    app.applyNextNumbers(DateTime(2027, 3, 25));
+    expect(pIk.numberPending, isFalse);
+    final numChron = app.chron.lastWhere((c) => c['pid'] == pIk.id && c['k'] == 'number');
+    expect('${numChron['t']}', contains('の背番号が${uniformLabel(desired)}に決定。'));
+    expect(app.news.first, startsWith('背番号の決定（開幕前日）：'));
+    final newsItem = ItemNews.of('3/25', app.news.first, ItemNews.topicOf(app.news.first)!, team: my);
+    expect(newsItem.headline, contains('に決定'));
+    final hist = await app.numberHistory(my);
+    expect(hist[desired]?.any((e) => e.$2 == pIk.registeredName && e.$3 == '背番号決定'), isTrue);
   });
 }

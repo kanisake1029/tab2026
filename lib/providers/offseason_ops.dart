@@ -1499,14 +1499,17 @@ extension OffseasonOps on AppState {
       if (!p.isPitcher && fielders <= 12) return '支配下の野手が足りなくなります';
       RosterEngine.removePlayer(my, p);
       p.ikusei = true;
+      if (isBeforeOpeningDay()) p.numberPending = true;
       RosterEngine.addPlayer(my, p); // 背番号は3桁になる
     }
     // 育成の年数は通算で数える（支配下に上げて戻す抜け道を防ぐ。仕様書 6.1）
     p.prevSalary = p.salary;
     p.salary = min(p.salary, 600);
     p.contractYears = 1;
-    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 育成再契約（背番号${p.uniformNumber}）');
-    _addNews(['${p.registeredName}と育成選手として再契約しました（年俸${formatSalary(p.salary)}・背番号${p.uniformNumber}）']);
+    final numTag = isBeforeOpeningDay() ? '' : '（背番号${p.uniformNumber}）';
+    final newsNumTag = isBeforeOpeningDay() ? '' : '・背番号${p.uniformNumber}';
+    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 育成再契約$numTag');
+    _addNews(['${p.registeredName}と育成選手として再契約しました（年俸${formatSalary(p.salary)}$newsNumTag）']);
     updateAndSave();
     return null;
   }
@@ -1534,9 +1537,11 @@ extension OffseasonOps on AppState {
     if (!tradeOpen) return '支配下登録は7月31日までです';
     p.ikusei = false;
     p.uniformNumber = RosterEngine.freeNumber(my, ikusei: false);
+    if (isBeforeOpeningDay()) p.numberPending = true;
     p.salary = max(p.salary, 450);
-    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 支配下登録（背番号${p.uniformNumber}）');
-    _addNews(['${p.registeredName}を支配下登録しました（背番号${p.uniformNumber}）']);
+    final numTag = isBeforeOpeningDay() ? '' : '（背番号${p.uniformNumber}）';
+    transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 支配下登録$numTag');
+    _addNews(['${p.registeredName}を支配下登録しました$numTag']);
     updateAndSave();
     return null;
   }

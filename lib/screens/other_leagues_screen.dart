@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import '../widgets/chip_grid.dart';
 import 'package:flutter/material.dart';
+import '../engine/foreign_engine.dart';
 import '../engine/other_league_engine.dart';
 import '../engine/trust_engine.dart';
 import '../models/other_league.dart';
@@ -7,6 +10,7 @@ import '../models/player.dart';
 import '../providers/app_state.dart';
 import '../widgets/frozen_table.dart';
 import '../widgets/player_detail_dialog.dart';
+import '../widgets/prospect_widgets.dart';
 import '../utils/salary_utils.dart';
 
 const _ink = Color(0xFF1C1917);
@@ -24,9 +28,34 @@ List<OTeam> affiliatesOf(OtherWorld w, OTeam mlb) => [
           if (t.leagueId == lg && t.org == mlb.id) t,
     ];
 
+Future<void> _showOtherForeignReport(BuildContext context, AppState app, Player p) {
+  final eye = app.myTeam == null ? 50 : app.scoutEye(app.myTeam!);
+  scoutEyeForDetail = eye;
+  final year = app.currentDate.month >= 12 ? app.currentDate.year + 1 : app.currentDate.year;
+  final t = app.otherWorld?.teamOfPlayer(p.id);
+  final lg = t == null ? null : OtherLeagueEngine.leagues[t.leagueId];
+  final v = ForeignEngine.view(p, eye, year);
+  if (t != null && lg != null) {
+    v.school = '${lg.name}・${t.name}';
+    if (p.seasonStats.games > 0 || p.seasonStats.pitchApps > 0) {
+      v.memo = [OtherLeagueEngine.recordLine(p, lg, t, lg.seasonYear(app.currentDate)), ...p.abroad];
+    }
+  }
+  final adapt = ForeignEngine.adaptRange(p, eye);
+  return showProspectDetail(
+    context,
+    v,
+    adapt: adapt,
+    memoTitle: '海外での成績（出身：${p.origin}）',
+    note: '今の能力は実際の値の±5の幅で分かります。環境適応力はスカウトの眼力が高いほど狭い幅で見抜けます（眼力D50で±20、S100で±5）。入団すると、適応力に応じた倍率が打撃・投球の能力にかかります（球速・走力・肩・守備・スタミナは変わりません）。',
+    eye: eye,
+  );
+}
+
 Future<void> openOtherPlayer(BuildContext context, AppState app, Player p, VoidCallback changed) async {
   final block = app.otherOfferBlock(p);
   final back = app.otherWorld?.fromNpb[p.id];
+  final isForeignReport = p.nationality == '海外' && back == null;
   final act = await showModalBottomSheet<String>(
     context: context,
     builder: (c) => SafeArea(
@@ -36,6 +65,13 @@ Future<void> openOtherPlayer(BuildContext context, AppState app, Player p, VoidC
           child: Text('${p.registeredName}（${p.age}歳・${p.mainPosition}・総合${p.ovr}）${back != null ? '\n$back' : ''}', style: const TextStyle(fontWeight: FontWeight.w800, height: 1.4)),
         ),
         ListTile(leading: const Icon(Icons.badge_outlined), title: const Text('詳しく見る（能力・来歴）'), onTap: () => Navigator.pop(c, 'detail')),
+        if (isForeignReport)
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('外国人選手 調査書を見る'),
+            subtitle: const Text('スカウト見立て・環境適応力・海外での成績'),
+            onTap: () => Navigator.pop(c, 'report'),
+          ),
         if (block == null) ...[
           ListTile(
             leading: const Icon(Icons.handshake_outlined),
@@ -59,7 +95,33 @@ Future<void> openOtherPlayer(BuildContext context, AppState app, Player p, VoidC
     await showPlayerDetail(context, app, p, allowActions: false);
     return;
   }
+  if (act == 'report') {
+    await _showOtherForeignReport(context, app, p);
+    return;
+  }
   if (act == 'ikusei') {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text('${p.registeredName}と育成契約しますか？'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('年俸 ${formatSalary(min(app.otherSalary(p), 600))}・1年契約'),
+          if (isForeignReport) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _showOtherForeignReport(d, app, p),
+              icon: const Icon(Icons.description_outlined, size: 16),
+              label: const Text('調査書を見る'),
+            ),
+          ],
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('やめる')),
+          FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('契約する')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
     final err = app.offerOtherPlayer(p, ikusei: true);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err ?? '${p.registeredName}と育成契約しました')));
@@ -96,6 +158,16 @@ Future<void> openOtherPlayer(BuildContext context, AppState app, Player p, VoidC
               onChanged: (v) => set(() => years = v ?? 1),
             ),
           ]),
+          if (isForeignReport) ...[
+            const SizedBox(height: 6),
+            const Text('入団すると環境適応力に応じて、打撃・投球の能力に倍率がかかります。', style: TextStyle(fontSize: 11, color: _sub)),
+            const SizedBox(height: 4),
+            OutlinedButton.icon(
+              onPressed: () => _showOtherForeignReport(d, app, p),
+              icon: const Icon(Icons.description_outlined, size: 16),
+              label: const Text('調査書を見る'),
+            ),
+          ],
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),

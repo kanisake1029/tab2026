@@ -264,14 +264,16 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
                   controller: number,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    labelText: free ? '背番号（すぐ変わります）' : '来季の背番号（開幕前日から）',
-                    helperText: free
-                        ? (app.isOpeningNumberDay
-                            ? '今年だけ特別に、今日（開幕日）はすぐ変えられます'
-                            : (app.isOffseasonNumberFree
-                                ? 'オフ期間（11/1〜1/31）はすぐ変わり、変更は経歴に残りません'
-                                : '入団・移籍したばかりなので、${p.numberFreeUntil.substring(5).replaceAll('-', '/')}まではすぐ変わり、変更は経歴に残りません'))
-                        : 'いまは #${p.uniformText}。背番号の変更は毎年開幕前日から（チーム → 全選手 →「背番号」で一括も）',
+                    labelText: p.numberPending ? '仮背番号（開幕前日に決定）' : (free ? '背番号（すぐ変わります）' : '来季の背番号（開幕前日から）'),
+                    helperText: p.numberPending
+                        ? '現在は仮の番号です。開幕前日までは変更でき、開幕前日に正式決定します（変更記録は残りません）'
+                        : (free
+                            ? (app.isOpeningNumberDay
+                                ? '今年だけ特別に、今日（開幕日）はすぐ変えられます'
+                                : (app.isOffseasonNumberFree
+                                    ? 'オフ期間（11/1〜1/31）はすぐ変わり、変更は経歴に残りません'
+                                    : '入団・移籍したばかりなので、${p.numberFreeUntil.substring(5).replaceAll('-', '/')}まではすぐ変わり、変更は経歴に残りません'))
+                            : 'いまは #${p.uniformText}。背番号の変更は毎年開幕前日から（チーム → 全選手 →「背番号」で一括も）'),
                     helperMaxLines: 2,
                   ),
                 ),

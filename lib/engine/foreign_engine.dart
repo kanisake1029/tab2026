@@ -12,7 +12,7 @@ import 'fielding_gen.dart';
 import 'pitch_catalog.dart';
 
 /// 外国人選手：毎年12月1日の一覧（支配下120人・育成60人）、出身国、海外での成績、環境適応力
-///  支配下：今の能力は ±5 の幅、環境適応力はスカウトの眼力に応じた幅で分かる。入団時に能力へ倍率（D50×0.8・C60×0.9・B70×1.0）
+///  支配下：今の能力は ±5 の幅、環境適応力はスカウトの眼力に応じた幅で分かる。入団時に能力へ倍率（C60×1.00・B70×1.05・A80×1.10・90×1.15・S100×1.20）
 ///  育成：ドラフトと同じく才能・向上心の見立て
 class ForeignEngine {
   static const mainCount = 120, ikuseiCount = 60;
@@ -172,8 +172,8 @@ class ForeignEngine {
 
   // ───────── 環境適応力 ─────────
 
-  /// 入団時の倍率（D50×0.8・C60×0.9・B70×1.0。上は ×1.1、下は ×0.6 まで）
-  static double adaptMult(int a) => (0.8 + (a - 50) * 0.01).clamp(0.6, 1.1);
+  /// 入団時の倍率（C60×1.00・B70×1.05・A80×1.10・90×1.15・S100×1.20。下は ×0.70 まで）
+  static double adaptMult(int a) => (1.0 + (a - 60) * 0.005).clamp(0.7, 1.2);
 
   /// 入団時に適応力の倍率をかける（打撃・投球の能力と球種のキレ。球速・走力・肩・守備・スタミナは体のものなので変えない）
   static void applyAdapt(Player p) {
@@ -322,7 +322,7 @@ class ForeignEngine {
       p.faService = 0;
       p.ikusei = ikusei;
       p.draftInfo = '外国人選手（$year年${ikusei ? '・育成' : ''}）';
-      p.adapt = (60 + _g(r) * 13).round().clamp(20, 95);
+      p.adapt = (60 + _g(r) * 13).round().clamp(20, 100);
       p.origin = org;
       p.abroad = abroadRecord(p, p.origin, year - 1, r, young: ikusei);
       if (ikusei) {

@@ -305,7 +305,7 @@ Future<void> showProspectDetail(BuildContext context, Prospect p, {(int, int)? a
           cell('氏名', Text(pl.listName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
           cell('生年月日', txt('${pl.birthDate.replaceAll('-', '/')}（${pl.age}歳）')),
           cell(foreign ? '出身国' : '出身地', txt(foreign ? pl.origin : (pl.birthplace.isEmpty ? '−' : pl.birthplace))),
-          cell('所属', txt(foreign ? (pl.draftInfo.isEmpty ? '−' : pl.draftInfo) : '${p.category}・${p.school}', bold: true)),
+          cell('所属', txt(foreign ? (pl.draftInfo.isNotEmpty ? pl.draftInfo : (p.school.isNotEmpty ? p.school : '−')) : '${p.category}・${p.school}', bold: true)),
           if (!foreign) cell('経歴', txt(CareerPath.of(pl).join(' → '))),
           cell('守備位置', txt('$pos　$hand')),
           cell('体格', txt('${pl.height}cm・${pl.weight}kg')),

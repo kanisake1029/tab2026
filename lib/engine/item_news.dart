@@ -45,7 +45,7 @@ class ItemNews {
     bool has(List<String> ws) => ws.any(t.contains);
     if (has(['リーグ規定', 'ポストシーズン', '雨天', '提案', 'キャンプ', 'スポンサー', 'グッズ', '施設'])) return null;
     if (has(['負傷', '悪化', '全治', '故障', '離脱'])) return NewsTopic.injury;
-    if (has(['ポスティング', '海外FA', 'FA宣言', 'FA 宣言', 'FA：', 'トレード', '新外国人', '補償', '支配下登録', '育成再契約', '再契約', 'と契約', 'と育成契約', '背番号の変更'])) return NewsTopic.transfer;
+    if (has(['ポスティング', '海外FA', 'FA宣言', 'FA 宣言', 'FA：', 'トレード', '新外国人', '補償', '支配下登録', '育成再契約', '再契約', 'と契約', 'と育成契約', '背番号の変更', '背番号の決定'])) return NewsTopic.transfer;
     if (has(['戦力外', '自由契約', '退団', '引退', '育成契約満了'])) return NewsTopic.release;
     if (has(['ドラフト'])) return NewsTopic.draft;
     if (has(['FA', '入団', '獲得', '移籍', '加入', '育成選手'])) return NewsTopic.transfer;
@@ -81,8 +81,8 @@ class ItemNews {
     final critic = NewsTalk.critics[r.nextInt(NewsTalk.critics.length)];
     // トレード：関わった全員を、行き先の球団ごとに取り上げる
     if (text.contains('トレード成立') && involved.length >= 2) return _trade(date, text, involved, myTeamId, r, critic);
-    // 背番号変更：1人だけをピックアップせず一覧で見やすく整理する
-    if (text.contains('背番号の変更')) return _numberChanges(date, text, team, r, critic);
+    // 背番号変更・決定：1人だけをピックアップせず一覧で見やすく整理する
+    if (text.contains('背番号の変更') || text.contains('背番号の決定')) return _numberChanges(date, text, team, r, critic);
     final p = player;
     final name = p?.registeredName ?? '';
     final t = team == null ? '' : _short(team);
@@ -248,7 +248,7 @@ class ItemNews {
     return text;
   }
 
-  /// 開幕前日の背番号変更まとめ記事（1人だけを抜き出さず、全変更選手を箇条書きで見やすく整理）
+  /// 開幕前日の背番号変更・決定まとめ記事（1人だけを抜き出さず、全対象選手を箇条書きで見やすく整理）
   static ItemNews _numberChanges(String date, String text, Team? team, Random r, String critic) {
     final t = team == null ? '' : _short(team);
     final k = t.isEmpty ? '' : '【$t】';
@@ -257,24 +257,39 @@ class ItemNews {
     final formatted = <String>[];
     String? firstPlayerName;
     String? firstNewNum;
+    var hasChange = false, hasDecide = false;
     for (final item in items) {
       final m = RegExp(r'^(.+?)\s+(\S+)→(\S+)$').firstMatch(item);
       if (m != null) {
+        hasChange = true;
         firstPlayerName ??= m.group(1)!.trim();
         firstNewNum ??= m.group(3)!.trim();
         formatted.add('・${m.group(1)!.trim()}　${m.group(2)} → ${m.group(3)}');
+        continue;
+      }
+      final dm = RegExp(r'^(.+?)\s+背番号(\S+)に決定$').firstMatch(item);
+      if (dm != null) {
+        hasDecide = true;
+        firstPlayerName ??= dm.group(1)!.trim();
+        firstNewNum ??= dm.group(2)!.trim();
+        formatted.add('・${dm.group(1)!.trim()}　背番号 ${dm.group(2)}');
       } else {
         formatted.add('・$item');
       }
     }
-    final head = items.length <= 1 && firstPlayerName != null && firstNewNum != null
-        ? '$k$firstPlayerNameの新背番号が決定！　今季から「$firstNewNum」で心機一転'
-        : '$k新シーズンの背番号変更を発表！　${firstPlayerName != null ? '$firstPlayerNameら${items.length}選手が新番号に' : '計${items.length}選手が新番号で始動'}';
+    final kindLabel = (hasChange && hasDecide)
+        ? '変更・決定'
+        : (hasDecide ? '決定' : '変更');
+    final head = (items.length <= 1 && firstPlayerName != null && firstNewNum != null)
+        ? (hasDecide && !hasChange
+            ? '$k$firstPlayerNameの背番号が「$firstNewNum」に決定！　開幕を前に新番号で始動'
+            : '$k$firstPlayerNameの新背番号が決定！　今季から「$firstNewNum」で心機一転')
+        : '$k新シーズンの背番号$kindLabelを発表！　${firstPlayerName != null ? '$firstPlayerNameら${items.length}選手が新番号に' : '計${items.length}選手が新番号で始動'}';
     final body = <String>[
-      '${t.isEmpty ? '' : '$tは'}新シーズンの開幕を控え、背番号の変更を発表した。',
-      '■背番号変更一覧（${items.length}名）',
+      '${t.isEmpty ? '' : '$tは'}新シーズンの開幕を控え、背番号の$kindLabelを発表した。',
+      '■背番号$kindLabel一覧（${items.length}名）',
       ...formatted,
-      '野球評論家の$critic氏は「背番号の変更は球団の期待の表れ。新しい番号を背負う選手たちが今季どれだけチームを牽引できるか注目だ」と語る。',
+      '野球評論家の$critic氏は「背番号の$kindLabelは球団の期待の表れ。新しい番号を背負う選手たちが今季どれだけチームを牽引できるか注目だ」と語る。',
     ];
     final mineLines = [
       if (firstPlayerName != null && firstNewNum != null) '$firstPlayerNameの「$firstNewNum」似合いそうやな',
@@ -356,15 +371,17 @@ class ItemNews {
       }
     }
 
-    // 背番号の変更（開幕前日）
-    if (text.contains('背番号の変更') && name.isNotEmpty) {
+    // 背番号の変更・決定（開幕前日）
+    if ((text.contains('背番号の変更') || text.contains('背番号の決定')) && name.isNotEmpty) {
       final bodyPart = text.contains('：') ? text.split('：').last : text;
       final items = bodyPart.split('、').where((s) => s.trim().isNotEmpty).toList();
-      final arrow = RegExp(r'→([^\s、。]+)').firstMatch(bodyPart)?.group(1);
+      final arrow = RegExp(r'→([^\s、。]+)').firstMatch(bodyPart)?.group(1) ?? RegExp(r'背番号(\S+)に決定').firstMatch(bodyPart)?.group(1);
       if (items.length <= 1 && arrow != null) {
-        return '$k$nameの新背番号が決定！　今季から「$arrow」で心機一転';
+        return text.contains('背番号の決定')
+            ? '$k$nameの背番号が「$arrow」に決定！　開幕を前に新番号で始動'
+            : '$k$nameの新背番号が決定！　今季から「$arrow」で心機一転';
       }
-      return '$k新シーズンの背番号変更を発表！　$nameら${items.length}選手が新番号に';
+      return '$k新シーズンの背番号${text.contains('背番号の決定') ? '決定' : '変更'}を発表！　$nameら${items.length}選手が新番号に';
     }
 
     // 育成から支配下昇格

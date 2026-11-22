@@ -190,7 +190,7 @@ extension OtherOps on AppState {
     p.uniformNumber = 0;
     final lg = OtherLeagueEngine.leagues[t.leagueId];
     p.draftInfo = '外国人選手（$year年・${lg?.name ?? ''}の${t.name}から${ikusei ? '・育成' : ''}）';
-    if (p.adapt <= 0) p.adapt = (60 + _g(r) * 13).round().clamp(20, 95);
+    if (p.adapt <= 0) p.adapt = (60 + _g(r) * 13).round().clamp(20, 100);
     p.salary = ikusei ? 300 + r.nextInt(4) * 100 : round50(estimateSalary(p) * (0.55 + r.nextDouble() * 0.3));
     return p;
   }

@@ -77,8 +77,8 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               Text(p.listName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
-              Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}${free && !app.isOpeningNumberDay && !app.isOffseasonNumberFree ? '　入団直後（すぐ変わる）' : (app.isOffseasonNumberFree ? '　オフ期間（すぐ変わる）' : '')}',
-                  style: TextStyle(fontSize: 11, color: free ? const Color(0xFF15803D) : const Color(0xFF78716C))),
+              Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}${p.numberPending ? '　仮番号（開幕前日に決定）' : (free && !app.isOpeningNumberDay && !app.isOffseasonNumberFree ? '　入団直後（すぐ変わる）' : (app.isOffseasonNumberFree ? '　オフ期間（すぐ変わる）' : ''))}',
+                  style: TextStyle(fontSize: 11, color: (free || p.numberPending) ? const Color(0xFF15803D) : const Color(0xFF78716C))),
             ]),
           ),
           const Icon(Icons.arrow_forward, size: 16, color: Color(0xFF78716C)),
