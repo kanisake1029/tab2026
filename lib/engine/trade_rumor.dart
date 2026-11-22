@@ -174,6 +174,6 @@ class TradeRumor {
       return ItemNews.fanList(rr, lines, names, positive: true, extra: 1);
     }
 
-    return ItemNews(NewsTopic.rumor, '${day.month}/${day.day}', headline, headline, body, ins.first, first, fans(true), fans(false), playerTeam: mineIsB ? a : b);
+    return ItemNews(NewsTopic.rumor, '${day.month}/${day.day}', headline, headline, body, null, first, fans(true), fans(false), playerTeam: second);
   }
 }

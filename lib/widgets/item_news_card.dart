@@ -88,6 +88,21 @@ class ItemNewsCard extends StatelessWidget {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (n.player != null)
             PlayerAvatar(n.player!, size: 44, date: date)
+          else if (n.team != null && n.playerTeam != null && n.team!.id != n.playerTeam!.id)
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [teamColor(teams, n.team!).withValues(alpha: 0.22), teamColor(teams, n.playerTeam!).withValues(alpha: 0.22)],
+                ),
+                border: Border.all(color: c.withValues(alpha: 0.35)),
+              ),
+              child: Icon(Icons.swap_horiz, color: c),
+            )
           else
             Container(width: 44, height: 44, decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)), child: Icon(Icons.article_outlined, color: c)),
           const SizedBox(width: 10),
@@ -199,6 +214,28 @@ class _ItemArticleState extends State<_ItemArticle> {
                 Text('${n.playerTeam == null ? '' : '${teamShort(n.playerTeam!)}　'}${n.player!.isPitcher ? '投手' : n.player!.mainPosition}　${n.player!.age}歳', style: const TextStyle(fontSize: 12.5, color: _sub)),
               ]),
             ),
+          ]),
+        )
+      else if (n.team != null && n.playerTeam != null && n.team!.id != n.playerTeam!.id)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            gradient: LinearGradient(
+              colors: [
+                teamColor(widget.teams, n.team!).withValues(alpha: 0.2),
+                teamColor(widget.teams, n.playerTeam!).withValues(alpha: 0.2),
+              ],
+            ),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Container(width: 4, height: 18, color: teamColor(widget.teams, n.team!)),
+            const SizedBox(width: 6),
+            Text(teamShort(n.team!), style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Icon(Icons.swap_horiz, size: 20, color: c)),
+            Container(width: 4, height: 18, color: teamColor(widget.teams, n.playerTeam!)),
+            const SizedBox(width: 6),
+            Text(teamShort(n.playerTeam!), style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
           ]),
         ),
       const SizedBox(height: 10),

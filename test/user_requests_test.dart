@@ -12,6 +12,7 @@ import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/match_simulator.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
 import 'package:npb_pennant_app/engine/roster_engine.dart';
+import 'package:npb_pennant_app/engine/trade_rumor.dart';
 import 'package:npb_pennant_app/engine/transfer_engine.dart';
 import 'package:npb_pennant_app/models/team.dart';
 import 'package:npb_pennant_app/utils/schedule_generator.dart';
@@ -565,5 +566,112 @@ void main() {
     expect(newsItem.headline, contains('に決定'));
     final hist = await app.numberHistory(my);
     expect(hist[desired]?.any((e) => e.$2 == pIk.registeredName && e.$3 == '背番号決定'), isTrue);
+  });
+
+  test('ニュース記事の順序（同日内・球団のかたまり）と複数人記事で1人だけピックアップされないこと', () async {
+    final tA = Team(id: 'A', name: '球団A', shortName: 'A', league: 'CL', players: []);
+    final tB = Team(id: 'B', name: '球団B', shortName: 'B', league: 'CL', players: []);
+    final tC = Team(id: 'C', name: '球団C', shortName: 'C', league: 'PL', players: []);
+    final p1 = Player(id: 'p1', lastName: '一', isPitcher: false, mainPos: '一塁手', age: 25, proYears: 4);
+    final p2 = Player(id: 'p2', lastName: '二', isPitcher: false, mainPos: '二塁手', age: 26, proYears: 5);
+    final d1 = DateTime(2026, 11, 15, 9, 0);
+    final d1Later = DateTime(2026, 11, 15, 18, 0);
+    final d2 = DateTime(2026, 11, 16);
+
+    final feed = [
+      (d1, ItemNews(NewsTopic.transfer, '11/15', 'A1', '【A】A1', ['A1'], p1, tA, const [], const [])),
+      (d1, ItemNews(NewsTopic.transfer, '11/15', 'C1', '【C】C1', ['C1'], p2, tC, const [], const [])),
+      (d1Later, ItemNews(NewsTopic.release, '11/15', 'B1', '【B】B1', ['B1'], p1, tB, const [], const [])),
+      (d1, ItemNews(NewsTopic.transfer, '11/15', 'C2', '【C】C2', ['C2'], p1, tC, const [], const [])),
+      (d1Later, ItemNews(NewsTopic.transfer, '11/15', 'A2', '【A】A2', ['A2'], p2, tA, const [], const [])),
+      (d2, ItemNews(NewsTopic.transfer, '11/16', 'New', '【C】New', ['New'], p1, tC, const [], const [])),
+    ];
+    ItemNews.sortFeed(feed, leagueTeams: [tA, tB, tC], myTeamId: tB.id, groupByTeam: true);
+    expect(feed.map((e) => e.$2.headline).toList(), ['【C】New', '【B】B1', '【A】A1', '【A】A2', '【C】C1', '【C】C2']);
+
+    final relMulti = ItemNews.releaseBatch('11/10', tA, [p1, p2]);
+    expect(relMulti.player, isNull);
+    final relSingle = ItemNews.releaseBatch('11/10', tA, [p1]);
+    expect(relSingle.player, p1);
+
+    final draftMulti = ItemNews.draftSummary('10/31', tA, [
+      (round: '1位', player: p1, school: '甲高校'),
+      (round: '2位', player: p2, school: '乙大学'),
+    ]);
+    expect(draftMulti.player, isNull);
+
+    final tradeNews = ItemNews.of(
+      '12/1',
+      'トレード成立：Aの一とBの二',
+      NewsTopic.transfer,
+      player: p1,
+      team: tA,
+      myTeamId: tA.id,
+      involved: [(p1, tB), (p2, tA)],
+    );
+    expect(tradeNews.player, isNull);
+
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final rumors = TradeRumor.recent(app.teams, DateTime(2026, 11, 20), myTeamId: app.teams.first.id, count: 3);
+    expect(rumors, isNotEmpty);
+    for (final r in rumors) {
+      expect(r.player, isNull);
+      expect(r.team, isNotNull);
+      expect(r.playerTeam, isNotNull);
+    }
+  });
+
+  test('移籍・退団関連の記事はタイトル・本文・コメントが矛盾しない', () {
+    final team = Team(id: 'T1', name: '東新', shortName: '東新', league: 'CL', players: []);
+    final p = Player(id: 'p_consistency', lastName: '山本', firstName: '一郎', isPitcher: true, mainPos: '投手', age: 27, proYears: 7);
+
+    // 1) ポスティング契約不成立で残留
+    const postNoDealTxt = 'ポスティング：山本 一郎（東新）は大リーグの球団と契約に至らず、残留します';
+    final postNoDeal = ItemNews.of('12/20', postNoDealTxt, ItemNews.topicOf(postNoDealTxt)!, player: p, team: team);
+    expect(postNoDeal.headline, contains('残留'));
+    expect(postNoDeal.headline, isNot(contains('移籍')));
+    expect(postNoDeal.body.first, contains('契約合意に至らず残留'));
+    expect(postNoDeal.teamFans.any((f) => f.text.contains('メジャーでも頑張って') || f.text.contains('穴は痛い')), isFalse);
+
+    // 2) ポスティング不承認で残留
+    const postRejTxt = 'ポスティング：東新の山本 一郎の希望を、球団が認めませんでした';
+    final postRej = ItemNews.of('11/10', postRejTxt, ItemNews.topicOf(postRejTxt)!, player: p, team: team);
+    expect(postRej.headline, contains('不承認で残留'));
+    expect(postRej.body.first, contains('認めず'));
+
+    // 3) ポスティングでMLB移籍決定
+    const postMovedTxt = 'ポスティング：山本 一郎が東新から大リーグのLADへ移籍。東新は提携枠を1つ得ました';
+    final postMoved = ItemNews.of('12/15', postMovedTxt, ItemNews.topicOf(postMovedTxt)!, player: p, team: team);
+    expect(postMoved.headline, contains('LADへ電撃移籍'));
+
+    // 4) 海外FA契約不成立で残留
+    const ovStayTxt = '海外FA：山本 一郎（東新）は大リーグとの契約に至らず、残留しました';
+    final ovStay = ItemNews.of('12/28', ovStayTxt, ItemNews.topicOf(ovStayTxt)!, player: p, team: team);
+    expect(ovStay.headline, contains('残留'));
+    expect(ovStay.headline, isNot(contains('移籍決定')));
+
+    // 5) FA未契約で自由契約
+    const faUnTxt = 'FA：山本 一郎（元東新）はどこの球団とも契約せず、自由契約になりました';
+    final faUn = ItemNews.of('1/5', faUnTxt, ItemNews.topicOf(faUnTxt)!, player: p, team: team);
+    expect(faUn.headline, contains('自由契約'));
+    expect(faUn.headline, isNot(contains('FA獲得が決定')));
+    expect(faUn.body.first, contains('自由契約となった'));
+
+    // 6) 現役引退（コーチ就任含む）
+    const retireTxt = '山本 一郎が現役を引退し、投手コーチに就任しました';
+    final retire = ItemNews.of('10/25', retireTxt, ItemNews.topicOf(retireTxt)!, player: p, team: team);
+    expect(retire.headline, contains('現役引退'));
+    expect(retire.body.join('\n'), isNot(contains('起用法しだいで')));
+    expect(retire.otherFans.every((f) => !f.text.contains('拾ってくれ') && !f.text.contains('新天地')), isTrue);
+
+    // 7) 契約更改合意せず退団
+    const holdoutTxt = '山本 一郎は契約更改で合意できず、退団しました（自由契約）';
+    final holdout = ItemNews.of('12/2', holdoutTxt, ItemNews.topicOf(holdoutTxt)!, player: p, team: team);
+    expect(holdout.headline, contains('契約更改で合意せず退団'));
+    expect(holdout.headline, isNot(contains('戦力外通告')));
   });
 }

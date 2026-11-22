@@ -1023,7 +1023,8 @@ class _HomeScreenState extends State<HomeScreen> {
       Player? byId(String id) => everyone.where((p) => p.id == id).firstOrNull;
       dated.addAll(OffseasonNews.predictions(teams: app.teams, faCases: app.faCases, freeAgents: app.freeAgents, foreignPool: app.foreignPool, today: today, playerById: byId, myTeamId: app.myTeamId));
     }
-    dated.sort((x, y) => y.$1.compareTo(x.$1));
+    final leagueTeams = app.teams.where((t) => t.league == 'CL' || t.league == 'PL').toList();
+    ItemNews.sortFeed(dated, leagueTeams: leagueTeams, myTeamId: app.myTeamId, groupByTeam: _newsTeamId == null);
 
     final filtered = dated.map((e) => e.$2).where((it) {
       if (_newsFact == 'confirmed' && !it.isConfirmed) return false;
@@ -1033,7 +1034,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return true;
     }).take(60).toList();
 
-    final leagueTeams = app.teams.where((t) => t.league == 'CL' || t.league == 'PL').toList();
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),

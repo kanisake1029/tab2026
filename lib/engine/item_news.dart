@@ -11,6 +11,41 @@ typedef MlbStar = (Player, String, String?);
 /// お知らせのうち、ネットニュース風の記事にするもの（確定：移籍・戦力外・ドラフト・故障・記録・試合／憶測：予想）
 enum NewsTopic { transfer, release, draft, injury, record, game, rumor }
 
+/// 移籍・退団記事の種別（否定・残留系を移籍・成立系より先に判定して見出し・本文・コメントを統一する）
+enum _MoveCase {
+  postingStayRejected,
+  postingStayNoDeal,
+  postingApproved,
+  postingMoved,
+  postingWish,
+  overseasFaStay,
+  overseasFaMoved,
+  overseasFaDeclare,
+  faDeclare,
+  faUnsigned,
+  faStay,
+  faSigned,
+  faCompPlayer,
+  faCompPickOrMoney,
+  partnerJoin,
+  partnerStay,
+  partnerLeave,
+  ikuseiTenderSigned,
+  ikuseiTenderFree,
+  promote,
+  otherLeagueJoin,
+  foreignSign,
+  reSignIkusei,
+  reSignMain,
+  freeAgentSign,
+  retire,
+  contractHoldout,
+  retireRefused,
+  contractExpired,
+  released,
+  other,
+}
+
 /// お知らせ1件から作る記事：見出し・リード・本文（選手の成績など）・ファンのコメント（自球団／他球団）
 class ItemNews {
   final NewsTopic topic;
@@ -40,15 +75,80 @@ class ItemNews {
         NewsTopic.rumor => '予想',
       };
 
+  static const _topicOrder = {
+    NewsTopic.game: 0,
+    NewsTopic.draft: 1,
+    NewsTopic.transfer: 2,
+    NewsTopic.release: 3,
+    NewsTopic.record: 4,
+    NewsTopic.injury: 5,
+    NewsTopic.rumor: 6,
+  };
+
+  /// ニュース一覧の並び順を整える（新しい日付順 → 全球団時は同日内を自球団先頭＋球団のかたまり → 種別順 → 確定優先）
+  static void sortFeed(List<(DateTime, ItemNews)> items, {required List<Team> leagueTeams, String? myTeamId, bool groupByTeam = true}) {
+    final order = <String, int>{
+      if (myTeamId != null) myTeamId: 0,
+      for (var i = 0; i < leagueTeams.length; i++)
+        if (leagueTeams[i].id != myTeamId) leagueTeams[i].id: i + 1,
+    };
+    int teamRank(ItemNews it) {
+      if (myTeamId != null &&
+          (it.team?.id == myTeamId || it.playerTeam?.id == myTeamId || it.homeTeam?.id == myTeamId || it.awayTeam?.id == myTeamId)) {
+        return 0;
+      }
+      final primary = it.team ?? it.playerTeam ?? it.homeTeam ?? it.awayTeam;
+      return primary == null ? 999 : (order[primary.id] ?? 998);
+    }
+
+    DateTime day(DateTime d) => DateTime(d.year, d.month, d.day);
+    items.sort((x, y) {
+      final dc = day(y.$1).compareTo(day(x.$1));
+      if (dc != 0) return dc;
+      if (groupByTeam) {
+        final tc = teamRank(x.$2).compareTo(teamRank(y.$2));
+        if (tc != 0) return tc;
+      }
+      final xc = (x.$2.isConfirmed ? 0 : 1).compareTo(y.$2.isConfirmed ? 0 : 1);
+      if (xc != 0) return xc;
+      final pc = (_topicOrder[x.$2.topic] ?? 9).compareTo(_topicOrder[y.$2.topic] ?? 9);
+      if (pc != 0) return pc;
+      return x.$2.headline.compareTo(y.$2.headline);
+    });
+  }
+
   /// お知らせの文から、記事にする種類を決める（登録・抹消・昇格などの入れ替えやまとめ行は個別に扱う）
   static NewsTopic? topicOf(String t) {
     bool has(List<String> ws) => ws.any(t.contains);
     if (has(['リーグ規定', 'ポストシーズン', '雨天', '提案', 'キャンプ', 'スポンサー', 'グッズ', '施設'])) return null;
     if (has(['負傷', '悪化', '全治', '故障', '離脱'])) return NewsTopic.injury;
-    if (has(['ポスティング', '海外FA', 'FA宣言', 'FA 宣言', 'FA：', 'トレード', '新外国人', '補償', '支配下登録', '育成再契約', '再契約', 'と契約', 'と育成契約', '背番号の変更', '背番号の決定'])) return NewsTopic.transfer;
-    if (has(['戦力外', '自由契約', '退団', '引退', '育成契約満了'])) return NewsTopic.release;
+    if (has([
+      'ポスティング',
+      '海外FA',
+      'FA宣言',
+      'FA 宣言',
+      'FA：',
+      'トレード',
+      '新外国人',
+      '補償',
+      '支配下登録',
+      '育成再契約',
+      '再契約',
+      'と契約',
+      'と育成契約',
+      '背番号の変更',
+      '背番号の決定',
+      '現役ドラフト',
+      '提携枠',
+    ])) {
+      return NewsTopic.transfer;
+    }
+    if (t.contains('提携期間') || t.contains('育成テンダー')) {
+      return (t.contains('自由契約') || t.contains('離れて') || t.contains('移ります')) ? NewsTopic.release : NewsTopic.transfer;
+    }
+    if (has(['契約満了', '戦力外', '自由契約', '退団', '引退', '育成契約満了'])) return NewsTopic.release;
     if (has(['ドラフト'])) return NewsTopic.draft;
-    if (has(['FA', '入団', '獲得', '移籍', '加入', '育成選手'])) return NewsTopic.transfer;
+    if (has(['FA', '入団', '獲得', '移籍', '加入', '育成選手', '残留'])) return NewsTopic.transfer;
     if (has(['勝目', '本塁打', '記録', '達成', '猛打', '完封', 'MVP', 'タイトル', '連続']) || RegExp(r'\d+号').hasMatch(t)) return NewsTopic.record;
     return null;
   }
@@ -83,129 +183,88 @@ class ItemNews {
     if (text.contains('トレード成立') && involved.length >= 2) return _trade(date, text, involved, myTeamId, r, critic);
     // 背番号変更・決定：1人だけをピックアップせず一覧で見やすく整理する
     if (text.contains('背番号の変更') || text.contains('背番号の決定')) return _numberChanges(date, text, team, r, critic);
+    // 現役ドラフト：複数選手の移籍は1人ピックアップにせず一覧整理する
+    if (text.contains('現役ドラフト：') && !text.contains('移籍なし')) return _activeDraft(date, text, team, r, critic);
+
     final p = player;
     final name = p?.registeredName ?? '';
     final t = team == null ? '' : _short(team);
-    final leadText = _leadBody(text, topic, name, t);
+    final mc = _classifyMove(text, topic, p);
+    final leadText = _leadBody(text, topic, mc, name, t);
     final body = <String>[leadText.endsWith('。') ? leadText : '$leadText。'];
     if (p != null) {
       body.add('${NewsTalk.prof(p)}${team != null ? '（${_short(team)}）' : ''}。${NewsTalk.stats(p)}');
-      if (topic == NewsTopic.injury && p.injuryDays > 0) body.add('復帰までは約${p.injuryDays}日かかる見込みで、${pick(['チームにとっては痛い離脱となった', '首脳陣は戦力の穴埋めを迫られる', '早期の復帰が待たれる'])}。');
-      if (topic == NewsTopic.record) body.add(pick(['チームメートからも祝福を受けた。', '節目の数字に、スタンドからは大きな拍手が送られた。', 'さらなる記録の更新に期待がかかる。']));
-      if (topic == NewsTopic.transfer || topic == NewsTopic.record) body.add('野球評論家の$critic氏は「${NewsTalk.insight(p, r)}」と見る。');
+      if (topic == NewsTopic.injury && p.injuryDays > 0) {
+        body.add('復帰までは約${p.injuryDays}日かかる見込みで、${pick(['チームにとっては痛い離脱となった', '首脳陣は戦力の穴埋めを迫られる', '早期の復帰が待たれる'])}。');
+      }
+      if (topic == NewsTopic.record) {
+        body.add(pick(['チームメートからも祝福を受けた。', '節目の数字に、スタンドからは大きな拍手が送られた。', 'さらなる記録の更新に期待がかかる。']));
+      }
+      if (mc == _MoveCase.retire) {
+        final careerNote = (p.career.hits > 0 || p.career.wins > 0) ? '球界に確かな足跡を残した功労者。' : 'チームのために全力でプレーし続けた。';
+        body.add('${p.proYears}年間の現役生活に別れを告げ、$critic氏は「$careerNote次のステージでの活躍にも期待したい」と労った。');
+      } else if (topic == NewsTopic.record || (topic == NewsTopic.transfer && !_needsReleaseExtra(mc))) {
+        body.add('野球評論家の$critic氏は「${NewsTalk.insight(p, r)}」と見る。');
+      }
     }
-    final stay = text.contains('残留') || text.contains('再契約');
-    final out = topic == NewsTopic.release && !stay && !['契約', 'FA宣言', 'FA 宣言'].any(text.contains);
-    final inn = ['獲得', '入団', '加入', '新外国人', 'ドラフト', '指名', '契約'].any(text.contains);
+
     List<String> fanLines(bool mine) {
       switch (topic) {
         case NewsTopic.injury:
           return mine
-              ? [if (name.isNotEmpty) ...['$name早く戻ってきて…', '$nameの離脱は痛すぎる', '$nameには無理せず治してほしい', '$nameおらんと打線が組めん'], '起用しすぎやったんちゃうか', 'ここで代わりの選手が出てきてほしい', '今年はけが人が多いな…', 'トレーナー陣どうなってんの', '若手にはチャンスや']
-              : [if (name.isNotEmpty) ...['$nameお大事に', '$name、また元気な姿見せてくれ'], if (t.isNotEmpty) '$tにとっては痛いな', 'これはチャンスかもしれん', '主力の離脱はきついな', 'けがだけはどうしようもない'];
+              ? [
+                  if (name.isNotEmpty) ...['$name早く戻ってきて…', '$nameの離脱は痛すぎる', '$nameには無理せず治してほしい', '$nameおらんと戦力が落ちる'],
+                  '起用しすぎやったんちゃうか',
+                  'ここで代わりの選手が出てきてほしい',
+                  '今年はけが人が多いな…',
+                  'トレーナー陣どうなってんの',
+                  '若手にはチャンスや',
+                ]
+              : [
+                  if (name.isNotEmpty) ...['$nameお大事に', '$name、また元気な姿見せてくれ'],
+                  if (t.isNotEmpty) '$tにとっては痛いな',
+                  'これは他球団にとって大きいかもしれん',
+                  '主力の離脱はきついな',
+                  'けがだけはどうしようもない',
+                ];
         case NewsTopic.rumor:
         case NewsTopic.game:
           return const [];
         case NewsTopic.draft:
           return mine
-              ? [if (name.isNotEmpty) ...['$nameようこそ！', '$nameの将来性に期待'], '良い指名できたな', '将来の主軸候補や']
-              : [if (name.isNotEmpty) '$nameいい選手取ったな', '今年のドラフトは豊作やな'];
-        case NewsTopic.release:
-          return mine
-              ? [if (name.isNotEmpty) ...['$name今までありがとう', '$nameには新天地で頑張ってほしい'], '寂しくなるな…', 'フロントの判断を信じるしかない']
-              : [if (name.isNotEmpty) ...['$nameうちで拾ってくれんかな', '$nameはまだやれると思う'], '世代交代やな'];
+              ? [if (name.isNotEmpty) ...['$nameようこそ！', '$nameの将来性に期待', '$nameが1軍でプレーする日が待ち遠しい'], '良い指名できたな', '将来の主軸候補や', 'スカウト陣グッジョブ']
+              : [if (name.isNotEmpty) '$nameいい選手取ったな', '今年のドラフトは豊作やな', '数年後が怖いな'];
         case NewsTopic.record:
           return mine
               ? [if (name.isNotEmpty) ...['$nameすごすぎる！', '$nameおめでとう！', '$nameはうちの誇りや', '$nameの記念グッズ出してくれ'], 'こういうニュースは嬉しい', 'まだまだ記録伸ばしてほしい', '現地で見たかった']
               : [if (name.isNotEmpty) ...['$nameは敵ながらあっぱれ', '$nameはやっぱりすごい', '$nameに打たれる未来しか見えん'], 'うちにも欲しい選手やな', 'おめでとうございます'];
         case NewsTopic.transfer:
-          if (text.contains('外国人') && p != null) {
-            // 新外国人：育成は「今後に期待」「ジャパニーズドリーム」。大リーグの一流選手と比べるコメントも
-            final ik = text.contains('育成') || p.ikusei;
-            String? compare;
-            final traits = p.isPitcher
-                ? [('球速い', (Player x) => x.velocity), ('コントロールいい', (Player x) => x.control)]
-                : [('打球速度速い', (Player x) => x.power), ('足速い', (Player x) => x.run), ('肩強い', (Player x) => x.arm)];
-            for (final (word, get) in traits) {
-              final better = [for (final s in stars) if (s.$1.isPitcher == p.isPitcher && get(s.$1) < get(p)) s];
-              if (better.isEmpty) continue;
-              final s = better[r.nextInt(better.length)];
-              compare = 'メジャートップクラスの${s.$1.registeredName}（${s.$3 == null ? '' : '${s.$3}→'}MLB・${s.$2}）より$wordのマジ？';
-              break;
-            }
-            if (mine) {
-              return ik
-                  ? ['今後に期待', 'ジャパニーズドリームをつかみ取ってくれ', '$nameの伸びしろに賭けたい', '育成からの下克上見たい', '${p.age}歳か、まだまだこれからやな', '支配下登録される日が楽しみ', if (compare != null) compare]
-                  : ['$name当たり助っ人であってくれ', '${p.origin.isEmpty ? '' : '${p.origin}出身か、'}楽しみすぎる', p.isPitcher ? '$nameローテに入ってくれ' : '$name開幕4番いけるやろ', '助っ人ガチャ、今年こそ当たれ', '日本の野球に早く慣れてくれ', if (compare != null) compare];
-            }
-            return ik
-                ? ['育成外国人は化けると怖い', '$nameええ素材らしいな', 'こういう育成外国人が数年後に大化けする', if (compare != null) compare]
-                : ['$nameは嫌な助っ人になりそう', '${t.isEmpty ? '' : '$tの'}外国人補強は当たりが多いからな', '外国人は蓋を開けるまで分からん', if (compare != null) compare];
-          }
-          if (text.contains('ポスティング') || text.contains('海外FA')) {
-            final mlbMove = text.contains('決定') || text.contains('移籍') || text.contains('入団') || text.contains('契約');
-            if (stay || text.contains('見送')) {
-              return mine
-                  ? [if (name.isNotEmpty) ...['$name残ってくれてありがとう！', '$nameが残留してくれるのはデカい'], '来季も全力で応援するぞ']
-                  : [if (name.isNotEmpty) '$name残留か、メジャーで見たい気もしたけどな', 'NPBが盛り上がるから嬉しい'];
-            }
-            if (mlbMove) {
-              return mine
-                  ? [if (name.isNotEmpty) ...['$nameメジャーでも頑張って！', '$nameの穴は痛いが応援するしかない'], '寂しくなるな…日本から応援してるぞ', '若手はこのチャンスを掴んでくれ']
-                  : [if (name.isNotEmpty) '$nameがMLBでどこまで通用するか楽しみ', '流石に日本を代表する選手やな'];
-            }
-            return mine
-                ? [if (name.isNotEmpty) ...['$nameついにメジャー挑戦か', '$nameの夢を応援したい'], '容認するなら見返りも大事やな', '引き留めは難しいやろな']
-                : [if (name.isNotEmpty) '$nameポスティングか、いくらの契約になるんやろ', 'チームとしては痛い流出になりそうやな'];
-          }
-          if (text.contains('FA宣言') || text.contains('FA 宣言')) {
-            return mine
-                ? [if (name.isNotEmpty) ...['$name宣言か…残ってほしいな', '$nameの決断を待ちたい'], '宣言残留もあるからまだ分からん', '全力で引き留めてくれフロント！']
-                : [if (name.isNotEmpty) ...['$nameうちが獲りに行かんかな', '$nameは人気銘柄になりそうやな'], 'FA市場が動き出したな'];
-          }
-          if (text.contains('支配下登録')) {
-            return mine
-                ? [if (name.isNotEmpty) ...['$nameおめでとう！やっと支配下だ！', '${name}1軍で見るの楽しみにしてるぞ'], '育成からの這い上がり最高やな', '2桁背番号がかっこいい']
-                : [if (name.isNotEmpty) '$nameって育成やったんや、いい選手やな', '育成が育つチームは強いな'];
-          }
-          if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得'))) {
-            return mine
-                ? [if (name.isNotEmpty) ...['$nameまだやれるはず、期待してるぞ！', '$name環境が変われば一花咲かせられる'], '良い補強になったな', 'こういう選手の復活劇を見たい']
-                : [if (name.isNotEmpty) '$name拾われたか、頑張ってほしいな', '戦力外からの逆襲なるか注目や'];
-          }
-          if (stay) {
-            return mine
-                ? [if (name.isNotEmpty) ...['$name残ってくれてありがとう！', '$nameの残留は一番の補強', '$nameこれからもよろしく', '$name、生涯${t.isEmpty ? '' : t}でいてくれ'], 'ほっとした…', 'フロントよく引き止めた']
-                : [if (name.isNotEmpty) ...['$name残留か、狙ってたのに', '$nameは移籍すると思ってた'], '大物は動かんかったな'];
-          }
-          if (out) {
-            return mine
-                ? [if (name.isNotEmpty) ...['$name今までありがとう', '$nameの放出は早すぎる気がする', '$nameには新天地で頑張ってほしい', '$nameの思い出が蘇る…'], '寂しくなるな…', 'フロントの判断を信じるしかない']
-                : [if (name.isNotEmpty) ...['$nameうちで拾ってくれんかな', '$nameはまだやれると思う', '$nameを安く取れたら大きい'], '世代交代やな'];
-          }
-          if (inn) {
-            return mine
-                ? [if (name.isNotEmpty) ...['$nameようこそ！', '$nameの活躍に期待', '$nameは補強ポイントにぴったり', '$nameのユニフォーム買う'], 'いい補強や', 'フロントよう動いた']
-                : [if (name.isNotEmpty) ...['$nameいい選手取られたな', '$nameは脅威になりそう'], if (t.isNotEmpty) '$tの補強が本気やな', 'うちも負けてられん'];
-          }
-          return mine
-              ? [if (name.isNotEmpty) ...['$nameの移籍は驚いた', '$nameがどう使われるか楽しみ'], 'このトレードは吉と出るか', 'フロントの狙いが気になる']
-              : ['大きな動きやな', 'このトレードはどっちが得したんやろ', if (name.isNotEmpty) '$nameは新天地で化けそう'];
+        case NewsTopic.release:
+          return _moveFanLines(mc, mine: mine, text: text, p: p, name: name, t: t, r: r, stars: stars);
       }
     }
 
-    final positive = topic == NewsTopic.record || topic == NewsTopic.draft || (topic == NewsTopic.transfer && (inn || stay));
+    final positive = topic == NewsTopic.record || topic == NewsTopic.draft || ((topic == NewsTopic.transfer || topic == NewsTopic.release) && _isPositiveMove(mc));
     List<FanComment> fans(bool mine) {
-      final lines = [...fanLines(mine), if (p != null) ...NewsTalk.fanInsight(p, r), ...(NewsTalk.generic(positive)..shuffle(r)).take(2)];
+      final useInsight = p != null && mc != _MoveCase.retire && mc != _MoveCase.contractHoldout && mc != _MoveCase.contractExpired && mc != _MoveCase.faCompPickOrMoney;
+      final lines = [...fanLines(mine), if (useInsight) ...NewsTalk.fanInsight(p, r), ...(NewsTalk.generic(positive)..shuffle(r)).take(2)];
       final names = mine
-          ? ['名無しの${t.isEmpty ? '' : t}ファン', '${t.isEmpty ? '' : t}一筋30年', 'ライトスタンドの民', '現地組', '${t.isEmpty ? '野球' : t}党']
-          : ['他球団ファン', '野球好きの会社員', '外野自由席', '中立の野球ファン', '昔からの野球ファン'];
+          ? [
+              '名無しの${t.isEmpty ? '野球' : t}ファン',
+              '${t.isEmpty ? '' : t}一筋30年',
+              'ライトスタンドの民',
+              '現地組',
+              '${t.isEmpty ? '野球' : t}党',
+              'シーズンシート勢',
+              '二軍ウォッチャー',
+              '週末観戦組',
+            ]
+          : ['他球団ファン', '野球好きの会社員', '外野自由席', '中立の野球ファン', '昔からの野球ファン', 'セパ両方見る勢', 'データ好きの観戦者', '虎視眈々ファン'];
       return fanList(r, lines, names, positive: positive || !mine);
     }
 
-    final head = _buildHeadline(text, topic, p, t, stay, r);
-    final released = topic == NewsTopic.release && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay && !['契約', 'FA宣言', 'FA 宣言', '育成選手として'].any(text.contains);
-    if (released) {
+    final head = _buildHeadline(text, topic, mc, p, t, r);
+    if (p != null && _needsReleaseExtra(mc)) {
       body.add(p.age <= 28
           ? 'まだ${p.age}歳と若く、伸びしろは十分。'
           : (p.age >= 34 ? 'ベテランの経験は、若手の多い球団にとって貴重な戦力になりうる。' : '働き盛りの年齢で、出番さえあれば力を発揮できる。'));
@@ -214,35 +273,500 @@ class ItemNews {
     return ItemNews(topic, date, text, head, body, p, team, fans(true), fans(false));
   }
 
+  static _MoveCase _classifyMove(String text, NewsTopic topic, Player? p) {
+    if (topic != NewsTopic.transfer && topic != NewsTopic.release) return _MoveCase.other;
+    if (text.contains('ポスティング')) {
+      if (text.contains('認めなかった') || text.contains('認めませんでした')) return _MoveCase.postingStayRejected;
+      if (text.contains('契約に至らず') || text.contains('見送') || text.contains('残留')) return _MoveCase.postingStayNoDeal;
+      if (text.contains('容認') || text.contains('認めました')) return _MoveCase.postingApproved;
+      if (text.contains('大リーグの') || text.contains('MLB') || text.contains('決定') || text.contains('入団') || text.contains('移籍した') || text.contains('へ移籍')) {
+        return _MoveCase.postingMoved;
+      }
+      return _MoveCase.postingWish;
+    }
+    if (text.contains('海外FA')) {
+      if (text.contains('契約に至らず') || text.contains('残留') || text.contains('見送') || text.contains('行使せず')) return _MoveCase.overseasFaStay;
+      if (text.contains('大リーグの') || text.contains('MLB') || text.contains('決定') || text.contains('入団') || text.contains('へ移籍') || text.contains('契約')) {
+        return _MoveCase.overseasFaMoved;
+      }
+      return _MoveCase.overseasFaDeclare;
+    }
+    if (text.contains('FA宣言') || text.contains('FA 宣言')) return _MoveCase.faDeclare;
+    if (text.contains('人的補償')) return _MoveCase.faCompPlayer;
+    if (text.contains('補償') && (text.contains('指名権') || text.contains('金銭'))) return _MoveCase.faCompPickOrMoney;
+    if (text.contains('FA')) {
+      if (text.contains('契約せず') || text.contains('自由契約')) return _MoveCase.faUnsigned;
+      if (text.contains('残留')) return _MoveCase.faStay;
+      if (text.contains('へ移籍') || text.contains('獲得') || text.contains('入団') || text.contains('合意') || text.contains('契約')) {
+        return _MoveCase.faSigned;
+      }
+    }
+    if (text.contains('提携枠') && text.contains('迎え')) return _MoveCase.partnerJoin;
+    if (text.contains('提携期間')) {
+      if (text.contains('残留')) return _MoveCase.partnerStay;
+      if (text.contains('離れて') || text.contains('移ります') || text.contains('自由契約')) return _MoveCase.partnerLeave;
+    }
+    if (text.contains('育成テンダー')) {
+      if (text.contains('自由契約')) return _MoveCase.ikuseiTenderFree;
+      if (text.contains('支配下')) return _MoveCase.ikuseiTenderSigned;
+    }
+    if (text.contains('支配下登録')) return _MoveCase.promote;
+    if (text.contains('日本球界復帰') || RegExp(r'（(?:日本球界復帰・)?[^）]+の[^）]+）と(?:育成)?契約').hasMatch(text)) {
+      return _MoveCase.otherLeagueJoin;
+    }
+    if (text.contains('外国人') && (text.contains('契約') || text.contains('獲得') || text.contains('入団'))) {
+      return _MoveCase.foreignSign;
+    }
+    if (text.contains('育成再契約') || (text.contains('育成') && text.contains('再契約'))) return _MoveCase.reSignIkusei;
+    if (text.contains('再契約')) return _MoveCase.reSignMain;
+    if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得')) && !text.contains('契約せず') && !text.contains('退団') && !text.contains('自由契約となりました') && !text.contains('自由契約になりました')) {
+      return _MoveCase.freeAgentSign;
+    }
+    if (text.contains('引退勧告を拒み')) return _MoveCase.retireRefused;
+    if (text.contains('引退')) return _MoveCase.retire;
+    if (text.contains('合意できず')) return _MoveCase.contractHoldout;
+    if (text.contains('契約満了') && text.contains('自由契約')) return _MoveCase.contractExpired;
+    if (topic == NewsTopic.release) return _MoveCase.released;
+    return _MoveCase.other;
+  }
+
+  static bool _isPositiveMove(_MoveCase mc) => switch (mc) {
+        _MoveCase.postingStayRejected ||
+        _MoveCase.postingStayNoDeal ||
+        _MoveCase.postingApproved ||
+        _MoveCase.overseasFaStay ||
+        _MoveCase.faStay ||
+        _MoveCase.faSigned ||
+        _MoveCase.faCompPlayer ||
+        _MoveCase.faCompPickOrMoney ||
+        _MoveCase.partnerJoin ||
+        _MoveCase.partnerStay ||
+        _MoveCase.ikuseiTenderSigned ||
+        _MoveCase.promote ||
+        _MoveCase.otherLeagueJoin ||
+        _MoveCase.foreignSign ||
+        _MoveCase.reSignIkusei ||
+        _MoveCase.reSignMain ||
+        _MoveCase.freeAgentSign ||
+        _MoveCase.retire ||
+        _MoveCase.other => true,
+        _MoveCase.postingMoved ||
+        _MoveCase.postingWish ||
+        _MoveCase.overseasFaMoved ||
+        _MoveCase.overseasFaDeclare ||
+        _MoveCase.faDeclare ||
+        _MoveCase.faUnsigned ||
+        _MoveCase.partnerLeave ||
+        _MoveCase.ikuseiTenderFree ||
+        _MoveCase.contractHoldout ||
+        _MoveCase.retireRefused ||
+        _MoveCase.contractExpired ||
+        _MoveCase.released => false,
+      };
+
+  static bool _needsReleaseExtra(_MoveCase mc) => switch (mc) {
+        _MoveCase.released ||
+        _MoveCase.faUnsigned ||
+        _MoveCase.ikuseiTenderFree ||
+        _MoveCase.contractHoldout ||
+        _MoveCase.retireRefused => true,
+        _ => false,
+      };
+
+  static List<String> _moveFanLines(_MoveCase mc, {required bool mine, required String text, required Player? p, required String name, required String t, required Random r, required List<MlbStar> stars}) {
+    final teamWord = t.isEmpty ? 'うち' : t;
+    switch (mc) {
+      case _MoveCase.foreignSign:
+      case _MoveCase.otherLeagueJoin:
+        final ik = text.contains('育成') || (p?.ikusei ?? false);
+        String? compare;
+        if (p != null) {
+          final traits = p.isPitcher
+              ? [('球速い', (Player x) => x.velocity), ('コントロールいい', (Player x) => x.control)]
+              : [('打球速度速い', (Player x) => x.power), ('足速い', (Player x) => x.run), ('肩強い', (Player x) => x.arm)];
+          for (final (word, get) in traits) {
+            final better = [for (final s in stars) if (s.$1.isPitcher == p.isPitcher && get(s.$1) < get(p)) s];
+            if (better.isEmpty) continue;
+            final s = better[r.nextInt(better.length)];
+            compare = 'メジャートップクラスの${s.$1.registeredName}（${s.$3 == null ? '' : '${s.$3}→'}MLB・${s.$2}）より$wordのマジ？';
+            break;
+          }
+        }
+        if (mine) {
+          return ik
+              ? ['今後に期待', 'ジャパニーズドリームをつかみ取ってくれ', '$nameの伸びしろに賭けたい', '育成からの下克上見たい', if (p != null) '${p.age}歳か、まだまだこれからやな', '支配下登録される日が楽しみ', '二軍からじっくり育ててほしい', if (compare != null) compare]
+              : ['$name当たり助っ人であってくれ', if (p != null && p.origin.isNotEmpty) '${p.origin}出身か、楽しみすぎる', (p?.isPitcher ?? false) ? '$nameローテに入ってくれ' : '$name開幕4番いけるやろ', '助っ人ガチャ、今年こそ当たれ', '日本の野球に早く慣れてくれ', '前所属での数字も悪くないし期待できる', 'キャンプでの仕上がりが楽しみ', if (compare != null) compare];
+        }
+        return ik
+            ? ['育成外国人は化けると怖い', '$nameええ素材らしいな', 'こういう育成外国人が数年後に大化けする', '安い年俸で夢がある補強やな', if (compare != null) compare]
+            : ['$nameは嫌な助っ人になりそう', '${t.isEmpty ? '' : '$tの'}外国人補強は当たりが多いからな', '外国人は蓋を開けるまで分からん', '対戦するの厄介やな', '日本適応次第でタイトル争い絡みそう', if (compare != null) compare];
+      case _MoveCase.postingStayRejected:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$nameには申し訳ないがチームに不可欠や', '$nameが残ってくれるなら来季も優勝狙える', '$nameの気持ちも分かるけど今は必要なんや'],
+                '球団も簡単に手放せんよな',
+                'まずは今年もう一年タイトル取って海外FAか',
+                '残留が決まったからには全力で応援するで',
+                'フロントの判断は苦渋の決断やろうな',
+                '来オフまた話し合うことになるんかな',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$nameメジャー行かせてやらんの厳しいな', '$nameくらいの選手なら認めるかと思ったのに'],
+                'チーム事情を考えたら認められんのも分かる',
+                '残留したなら$teamWordは来年も手強いぞ',
+                '本人とのしこりが残らんといいな',
+                'ポスティングの可否は球団ごとに基準が違うよな',
+              ];
+      case _MoveCase.postingStayNoDeal:
+      case _MoveCase.overseasFaStay:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$name残ってくれてありがとう！', '$nameの残留はデカすぎる', '$nameが戻ってきてくれるなら来季いけるで！', '$nameにはこのチームでもう一花咲かせてほしい'],
+                'まさか決まらずに残留になるとは…嬉しい誤算や',
+                '来季も全力で応援するぞ',
+                'MLBの条件が厳しかったんかな、でも大歓迎や',
+                'チームにとっても最大の補強になったな',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$name不成立で残留か、メジャーで見たかった気もする', '$nameがNPBに残るのは他球団として厄介やな'],
+                '向こうの市場もシビアなんやな',
+                'NPBのレベルが上がって残る選手も増えたな',
+                '来季も対戦できると思えばファンとしては楽しみ',
+                '年俸とか条件面で折り合わんかったんやろな',
+              ];
+      case _MoveCase.postingApproved:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$nameの夢を球団が認めてくれた！', '$name、メジャーでも暴れてきてくれ！', '$nameの穴は痛いが気持ちよく送り出したい'],
+                '決断してくれた球団も立派や',
+                '譲渡金と提携枠で次の補強に活かしてほしい',
+                'どこからオファーが来るか楽しみやな',
+                '日本での活躍は忘れんぞ！',
+                '若手にとってポジションを掴む大チャンスや',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$nameついにポスティング容認か', '$nameならMLBでも十分通用するはず'],
+                'どの球団と契約するんやろ',
+                '$teamWordから主力が抜けるのはリーグ勢力図に響きそう',
+                '譲渡金がすごい額になりそうやな',
+                '契約決まるまで注目やな',
+              ];
+      case _MoveCase.postingMoved:
+      case _MoveCase.overseasFaMoved:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$nameメジャーでも頑張って！', '$nameの穴は痛いが日本から応援するで', '$name、向こうでタイトル取ってくれ！', '$nameの雄姿をメジャーで見られるの楽しみ'],
+                '寂しくなるな…本当にありがとう',
+                '若手はこのチャンスを絶対に掴んでくれ',
+                '提携枠でいい選手迎えられるといいな',
+                'いつでも帰ってきてええんやで',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$nameがMLBでどこまでやるか楽しみ', '$nameは日本を代表する選手やったからな'],
+                '流石の大型契約やな',
+                '向こうの打線/投手陣でも通用しそう',
+                'これでペナントの行方が変わってくるな',
+                '日本人メジャーリーガーがまた増えて盛り上がるな',
+              ];
+      case _MoveCase.postingWish:
+      case _MoveCase.overseasFaDeclare:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$nameついにメジャー挑戦か', '$nameの夢は応援したいけど寂しさもある'],
+                '球団がどういう判断を下すかやな',
+                'これまでの貢献を考えたら認めてあげたい気持ちもある',
+                '抜けたら痛いのは間違いない',
+                '見返りや来季の編成も含めて慎重に決めてほしい',
+              ]
+            : [
+                if (name.isNotEmpty) '$nameが海を渡るんか、注目やな',
+                '$teamWordとしては痛い流出になりそうやな',
+                'いくらの契約になるんやろ',
+                '認められるかどうかも含めて今オフの目玉やな',
+              ];
+      case _MoveCase.faDeclare:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$name宣言か…残ってほしいな', '$nameの決断を待ちたい', '$name、うちの条件で納得してくれ'],
+                '宣言残留もあるからまだ分からんぞ',
+                '全力で引き留めてくれフロント！',
+                '提示する条件と年数が勝負やな',
+                'もし抜けるなら補償のことも考えなあかんな',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$nameうちが獲りに行かんかな', '$nameは人気銘柄になりそうやな'],
+                'FA市場が動き出したな',
+                '複数球団の争奪戦になりそう',
+                '人的補償のリストどうなるんやろ',
+                '年俸がどこまで跳ね上がるか注目やな',
+              ];
+      case _MoveCase.faUnsigned:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$nameどこも獲らんかったんか…', '$name自由契約になったなら安く再契約できんかな'],
+                'FA宣言したのに決まらんの厳しいな…',
+                '条件面が高すぎたんやろか',
+                'もう一度話してみるのも手かもしれん',
+                '1月までに決まってほしいな',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$nameまだ決まってないならうち狙い目ちゃう？', '$nameが自由契約まで残るとは意外やな'],
+                '補償なし・年俸も落ち着くなら動く球団あるやろ',
+                'FA市場もなかなかシビアやな',
+                'どこの球団が拾うか楽しみや',
+              ];
+      case _MoveCase.faStay:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$name宣言残留ありがとう！！', '$nameの残留は最大の補強や', '$name、これからもずっと応援するで！', '$name生涯$teamWord頼むぞ'],
+                '胃が痛かったけどほっとした…',
+                'フロントよく引き留めてくれた！',
+                'これで来季の軸がブレずに済むな',
+                '愛着を持って残ってくれたのが何より嬉しい',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$name結局残留か、うち来てほしかったのに', '$nameは移籍すると思ってたわ'],
+                '宣言残留を許さない空気はなくなったよな',
+                '大物が動かんかったな、次のターゲットに切り替えるしかない',
+                '$teamWordにとっては最高のオフになったな',
+              ];
+      case _MoveCase.faSigned:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$nameよく来てくれた！！', '$nameの加入で一気に優勝候補や！', '$nameのユニフォーム買いに行くわ', '$name、打線/投手陣の核になってくれ！'],
+                '大型補強に成功やな、フロント本気や！',
+                'あとは人的補償がどうなるかやな…',
+                '来季の開幕オーダー考えるだけでワクワクする',
+                'ファン感謝デーが楽しみになってきた',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$name取られたか…痛すぎる', '$nameは向こうでも厄介な存在になりそう'],
+                'マネーゲーム強いなあそこは',
+                '人的補償で誰か良い若手取れたらええんやけど',
+                'リーグの勢力図がまた変わるな',
+                'うちも補強負けしてられんぞ',
+              ];
+      case _MoveCase.faCompPlayer:
+      case _MoveCase.faCompPickOrMoney:
+        final human = mc == _MoveCase.faCompPlayer;
+        return mine
+            ? human
+                ? [if (name.isNotEmpty) ...['$nameようこそ！期待してるぞ！', '$nameのプロテクト漏れは見事な眼力や'], '良い若手/戦力を取れたな', 'FAの痛手を埋める補強になったぞ', '出番は絶対増えるはずや']
+                : ['ドラフト指名権と金銭か、将来を見据えた良い選択や', '次のドラフトが楽しみになったな', '無理に人的補償取るよりプラスかも', 'この資金を次の補強に活かしてほしい']
+            : human
+                ? [if (name.isNotEmpty) ...['えっ、$nameがプロテクト外れてたんか…', '$nameには向こうでスタメン勝ち取ってほしい'], '人的補償ってほんまドキドキするよな', '惜しい選手を出したな…']
+                : ['金銭・指名権なら主力は守れたってことか', 'ドラフト指名権の譲渡は珍しいな', '堅実な補償の選び方やね'];
+      case _MoveCase.partnerJoin:
+      case _MoveCase.partnerStay:
+        return mine
+            ? [if (name.isNotEmpty) ...['$nameの加入は頼もしい！', '$name、来季も力貸してくれ'], '提携枠をうまく活用できてるな', 'チームの厚みが増す補強や', 'ファンとしても応援しがいがあるわ']
+            : [if (name.isNotEmpty) '$nameなかなか良い選手やん', '提携枠から良い選手見つけてくるよな', '来季マークしないといけんな'];
+      case _MoveCase.partnerLeave:
+        return mine
+            ? [if (name.isNotEmpty) ...['$nameこれまでありがとう！', '$nameがいてくれて助かったで'], '期限付きとはいえ寂しくなるな', '次の場所でも応援してるぞ', 'また機会があれば戻ってきてほしい']
+            : [if (name.isNotEmpty) '$name満了で抜けるんか', '提携期間終了やな、うちで獲れんかな', '外国人市場の動きも慌ただしくなってきた'];
+      case _MoveCase.ikuseiTenderSigned:
+        final stayTeam = !text.contains('移籍');
+        return mine
+            ? stayTeam
+                ? [if (name.isNotEmpty) ...['$name支配下残留よかった！', '$nameの1軍昇格に期待してるぞ'], '他球団に取られずに済んで安心した', '育成3年からの飛躍を見せてくれ']
+                : [if (name.isNotEmpty) ...['$nameようこそ！1軍の舞台で暴れてくれ！', '$nameの獲得はええ目の付け所や'], '育成テンダーからの這い上がり楽しみやな', '即戦力候補になりそう']
+            : [if (name.isNotEmpty) '$nameが支配下契約を掴んだか、頑張れ！', 'こういう育成選手のチャンス増える制度ええな', '2桁背番号でどう伸びるか注目や'];
+      case _MoveCase.promote:
+        return mine
+            ? [if (name.isNotEmpty) ...['$nameおめでとう！やっと支配下や！', '$nameを1軍で見るの楽しみにしてるぞ', '$name努力が報われたな'], '育成からの這い上がり最高や', '2桁背番号がよく似合うな', '1軍定着目指して頑張ってくれ！', 'こういう明るいニュースが一番嬉しい']
+            : [if (name.isNotEmpty) '$nameって育成やったんや、いい選手やな', '育成が育つチームは強いな', 'うちも育成スカウト頑張らんとな'];
+      case _MoveCase.reSignIkusei:
+        return mine
+            ? [if (name.isNotEmpty) ...['$name育成から這い上がってこい！', '$nameもう一回チャンスを掴んでくれ'], 'まずは怪我治して1日も早く支配下復帰や', 'チームに残ってくれて嬉しい', '3桁背番号からの再起を全力で応援するぞ']
+            : [if (name.isNotEmpty) '$name育成で再契約か、応援したくなるな', '戦力外にならず再チャレンジできるのはええことや'];
+      case _MoveCase.reSignMain:
+        return mine
+            ? [if (name.isNotEmpty) ...['$nameおかえり！再契約うれしいぞ', '$nameにはまだまだチームを支えてほしい'], '慣れ親しんだ球団で復活してくれ', '来季はキャリアハイのつもりで頼むで', 'やっぱりこのユニフォームが一番似合う']
+            : [if (name.isNotEmpty) '$name元の球団と再契約か', '一番力を発揮しやすい環境やしな', '来季どこまで戻せるか注目や'];
+      case _MoveCase.freeAgentSign:
+        return mine
+            ? [if (name.isNotEmpty) ...['$nameまだやれるはず、期待してるぞ！', '$name環境が変われば一花咲かせられる'], 'リスクも少なく良い補強になったな', 'こういう選手の復活劇を見たい', '経験豊富な戦力は貴重やで', 'キャンプからアピール頑張ってくれ']
+            : [if (name.isNotEmpty) '$name拾われたか、頑張ってほしいな', '戦力外からの逆襲なるか注目や', '良い選手を安く獲ったかもしれんな'];
+      case _MoveCase.retire:
+        final coach = text.contains('就任');
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$name長い間ほんまにお疲れさまでした！', '$nameのプレーは一生忘れへん', '$nameありがとう、大好きやったで！'],
+                if (coach) ...['コーチとして戻ってきてくれるの嬉しい！', '経験を若手たちにしっかり伝えてほしい', '指導者としての第二の野球人生も応援してるぞ'],
+                if (!coach) '引退試合とかセレモニーでしっかり送り出したい',
+                '一つの時代が終わった感じがして寂しいな…',
+                '本当にお疲れさまでした！',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$name引退か…敵ながらいい選手やった', '$nameとの対戦はいつも楽しみやったな'],
+                if (coach) '良い指導者になりそうやな、頑張ってほしい',
+                'プロの世界でやり切ったんやな、お疲れさまでした',
+                '名選手がまた一人ユニフォームを脱ぐんやな…',
+              ];
+      case _MoveCase.contractHoldout:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['えっ、$nameが更改決裂で退団マジか…', '$nameと折り合いつかんかったんか'],
+                '金額の差が大きかったんやろか、もったいないな',
+                '主力がこんな形で抜けるのはつらいわ',
+                '自由契約になってもどこかがすぐ獲りそう',
+                'フロントの査定基準どうなっとるんや',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$nameが自由契約に出たん！？すぐ狙いに行け！', '$nameは絶対複数球団が興味持つやろ'],
+                '更改合意できずに自由契約って相当珍しいな',
+                '争奪戦になりそうや',
+              ];
+      case _MoveCase.retireRefused:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$nameまだまだ現役への思いが強いんやな', '$name、他球団へ行っても応援してるで'],
+                'チーム事情で引退勧告になったんやろけど寂しいな',
+                '本人が納得いくまでプレーし続けてほしい',
+                'どこかでユニフォーム着られるとええな',
+              ]
+            : [
+                if (name.isNotEmpty) ...['$nameまだ老け込む年ちゃうやろ、うちで見てみたい', '$nameの現役続行への気迫はすごいな'],
+                '見返すような活躍をしてほしい',
+                '代打やワンポイントならまだまだ需要ありそう',
+              ];
+      case _MoveCase.contractExpired:
+        return mine
+            ? [
+                if (name.isNotEmpty) ...['$name一度自由契約か、優先交渉で戻ってきてほしいな', '$nameの交渉うまくまとまりますように'],
+                '年俸とか契約年数の調整中かな',
+                '他球団に持っていかれる前に決着してほしい',
+                '残留が決まれば安心なんやけど',
+              ]
+            : [
+                if (name.isNotEmpty) '$nameが保留者名簿から外れたんやな',
+                '交渉が決裂したらうちも獲得候補に入れたいな',
+                '優先交渉権が切れるタイミングがカギやね',
+              ];
+      case _MoveCase.ikuseiTenderFree:
+      case _MoveCase.released:
+      case _MoveCase.other:
+        return mine
+            ? [if (name.isNotEmpty) ...['$name今までありがとう', '$nameには新天地で頑張ってほしい'], '寂しくなるな…', 'フロントの判断を信じるしかない', 'まだやれるところを見せてほしい', 'トライアウトから這い上がってこい']
+            : [if (name.isNotEmpty) ...['$nameうちで拾ってくれんかな', '$nameはまだやれると思う'], '世代交代やな', '環境が変われば化けそうな選手や', '他球団の補強リストに入りそう'];
+    }
+  }
+
+  /// 現役ドラフトまとめ記事（複数人の移籍で1人だけ顔を出さず一覧で整理）
+  static ItemNews _activeDraft(String date, String text, Team? team, Random r, String critic) {
+    final t = team == null ? '' : _short(team);
+    final k = t.isEmpty ? '' : '【$t】';
+    final idx = text.indexOf('：');
+    final bodyPart = idx >= 0 ? text.substring(idx + 1).trim() : text;
+    final items = bodyPart.split('、').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final head = items.length <= 1
+        ? '${k}現役ドラフトで${items.isEmpty ? '新戦力を獲得' : items.first}'
+        : '現役ドラフト開催！　計${items.length}選手が新天地へ移籍';
+    final body = <String>[
+      '今季の現役ドラフトが行われ、計${items.length}選手の移籍が決まった。',
+      '■移籍決定一覧（${items.length}名）',
+      for (final item in items) '・$item',
+      '野球評論家の$critic氏は「出場機会に恵まれなかった選手にとっては大きな転機。新天地で一軍定着を掴む選手が出てくるか注目だ」と語る。',
+    ];
+    final mineLines = [
+      '現役ドラフトええ制度やな、ワクワクするわ',
+      '新天地で花開いてほしい選手ばかりやな',
+      '1軍でバリバリ活躍する姿を見たい！',
+      '移籍した選手たちの逆襲に期待',
+      '来年この中からブレイク選手が出そう',
+    ];
+    final otherLines = [
+      '今年の現役ドラフトも結構動いたな',
+      '他球団に行った元選手も応援してるで',
+      'どの球団が一番うまく補強したか見ものやな',
+    ];
+    return ItemNews(
+      NewsTopic.transfer,
+      date,
+      body.first,
+      head,
+      body,
+      null,
+      team,
+      fanList(r, mineLines, ['名無しの${t.isEmpty ? '野球' : t}ファン', '現地組', 'ライトスタンドの民', '野球好きの会社員'], positive: true),
+      fanList(r, otherLines, ['他球団ファン', '中立の野球ファン', '昔からの野球ファン'], positive: true),
+    );
+  }
+
   /// 記事本文の1段落目（生のログ文言ではなくニュースらしいリード文に整形）
-  static String _leadBody(String text, NewsTopic topic, String name, String t) {
+  static String _leadBody(String text, NewsTopic topic, _MoveCase mc, String name, String t) {
     final teamLabel = t.isEmpty ? '' : '$tは';
     if (name.isNotEmpty) {
-      if (text.contains('支配下登録')) {
-        final num = RegExp(r'(?:背番号|「)(\d+)').firstMatch(text)?.group(1);
-        return '$teamLabel育成選手の$nameを支配下選手として登録すると発表した${num != null ? '（新背番号は「$num」）' : ''}。';
-      }
-      if (text.contains('FA宣言') || text.contains('FA 宣言')) {
-        final rank = RegExp(r'([A-C]ランク)').firstMatch(text)?.group(1);
-        return '${t.isEmpty ? '' : '$tの'}$nameが今季取得した国内FA権の行使を表明した${rank != null ? '（$rank）' : ''}。';
-      }
-      if (text.contains('ポスティング') && text.contains('容認')) {
-        return '$teamLabel$nameのポスティングシステムを利用したMLB移籍を容認すると発表した。';
-      }
-      if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得'))) {
-        return '$teamLabel自由契約となっていた$nameの獲得を発表した。';
-      }
-      if (text.contains('日本球界復帰')) {
-        final from = RegExp(r'（(?:日本球界復帰・)?([^）]+)）').firstMatch(text)?.group(1);
-        return '$teamLabel${from != null ? '$fromでプレーしていた' : ''}$nameと契約を結び、日本球界復帰が決定した。';
-      }
-      if (text.contains('外国人') && text.contains('契約')) {
-        final ik = text.contains('育成');
-        return '$teamLabel${ik ? '育成' : '新'}外国人選手として$nameと契約を結んだと発表した。';
-      }
-      final otherM = RegExp(r'（([^）]+の[^）]+)）と(育成)?契約').firstMatch(text);
-      if (otherM != null) {
-        return '$teamLabel${otherM.group(1)}でプレーしていた$nameと${otherM.group(2) ?? ''}契約を結んだと発表した。';
+      switch (mc) {
+        case _MoveCase.postingStayRejected:
+          return '$teamLabel$nameからのポスティング移籍の要望を認めず、来季も球団に残留することが決まった。';
+        case _MoveCase.postingStayNoDeal:
+          return 'ポスティングシステムでMLB移籍を目指していた${t.isEmpty ? '' : '$tの'}$nameは、交渉期限までにメジャー球団との契約合意に至らず残留が決まった。';
+        case _MoveCase.postingApproved:
+          return '$teamLabel$nameのポスティングシステムを利用したMLB移籍を容認すると発表した。';
+        case _MoveCase.postingMoved:
+          return text.replaceFirst(RegExp(r'^ポスティング：'), '').replaceFirst('得ました', '得た');
+        case _MoveCase.postingWish:
+          return '${t.isEmpty ? '' : '$tの'}$nameがポスティングシステムを利用したMLB挑戦を球団へ要望した。';
+        case _MoveCase.overseasFaStay:
+          return '海外FA権を行使してメジャー挑戦を目指していた${t.isEmpty ? '' : '$tの'}$nameは、大リーグ球団との契約に至らず残留が決まった。';
+        case _MoveCase.overseasFaMoved:
+          return text.contains('大リーグの')
+              ? text.replaceFirst(RegExp(r'^海外FA：'), '')
+              : '$teamLabel$nameが海外FA権を行使してMLBへ移籍することが決定した。';
+        case _MoveCase.overseasFaDeclare:
+          return '${t.isEmpty ? '' : '$tの'}$nameが海外FA権の行使を表明し、国内外の選択肢を探ることになった。';
+        case _MoveCase.faDeclare:
+          final rank = RegExp(r'([A-C]ランク)').firstMatch(text)?.group(1);
+          return '${t.isEmpty ? '' : '$tの'}$nameが今季取得した国内FA権の行使を表明した${rank != null ? '（$rank）' : ''}。';
+        case _MoveCase.faUnsigned:
+          return 'FA宣言していた${t.isEmpty ? '' : '元$tの'}$nameは期限までに移籍先が決まらず、自由契約となった。';
+        case _MoveCase.faStay:
+          return text.startsWith('FA：') ? text.replaceFirst('FA：', '') : '$teamLabel FA宣言していた$nameの残留が決まった。';
+        case _MoveCase.faSigned:
+          return text.startsWith('FA：') ? text.replaceFirst('FA：', '') : text;
+        case _MoveCase.faCompPlayer:
+          return '$teamLabel FA移籍に伴う人的補償として$nameの獲得を発表した。';
+        case _MoveCase.faCompPickOrMoney:
+          return text.replaceFirst(RegExp(r'^補償：'), '');
+        case _MoveCase.partnerJoin:
+          return text.replaceFirst(RegExp(r'^提携枠：'), '').replaceFirst('迎えました', '迎えた');
+        case _MoveCase.partnerStay:
+          return text;
+        case _MoveCase.partnerLeave:
+          return text.replaceFirst(RegExp(r'^提携期間満了：'), '').replaceFirst('なりました', 'なった');
+        case _MoveCase.ikuseiTenderSigned:
+        case _MoveCase.ikuseiTenderFree:
+          return text.replaceFirst(RegExp(r'^育成テンダー：'), '').replaceFirst('なりました', 'なった');
+        case _MoveCase.promote:
+          final num = RegExp(r'(?:背番号|「)(\d+)').firstMatch(text)?.group(1);
+          return '$teamLabel育成選手の$nameを支配下選手として登録すると発表した${num != null ? '（新背番号は「$num」）' : ''}。';
+        case _MoveCase.otherLeagueJoin:
+          final from = RegExp(r'（(?:日本球界復帰・)?([^）]+)）').firstMatch(text)?.group(1);
+          final ik = text.contains('育成') ? '育成' : '';
+          if (text.contains('日本球界復帰')) {
+            return '$teamLabel${from != null ? '$fromでプレーしていた' : ''}$nameと${ik}契約を結び、日本球界復帰が決定した。';
+          }
+          return '$teamLabel${from != null ? '$fromでプレーしていた' : ''}$nameと${ik}契約を結んだと発表した。';
+        case _MoveCase.foreignSign:
+          final ik = text.contains('育成');
+          return '$teamLabel${ik ? '育成' : '新'}外国人選手として$nameと契約を結んだと発表した。';
+        case _MoveCase.freeAgentSign:
+          return '$teamLabel自由契約となっていた$nameの獲得を発表した。';
+        case _MoveCase.retire:
+          return text.replaceFirst('しました', 'した');
+        case _MoveCase.contractHoldout:
+          return '${t.isEmpty ? '' : '$tの'}$nameは契約更改交渉で球団と合意に至らず、自由契約で退団することとなった。';
+        case _MoveCase.retireRefused:
+          return '${t.isEmpty ? '' : '$tの'}$nameは球団からの引退勧告を拒み、他球団での現役続行を目指して退団した。';
+        case _MoveCase.contractExpired:
+          return '${t.isEmpty ? '' : '$tの'}$nameは今季限りで契約満了となり、自由契約選手となった（球団が優先交渉権を保持）。';
+        case _MoveCase.reSignIkusei:
+        case _MoveCase.reSignMain:
+        case _MoveCase.released:
+        case _MoveCase.other:
+          break;
       }
     }
     return text;
@@ -317,61 +841,17 @@ class ItemNews {
   }
 
   /// ニュース種別・内容に応じたスポーツ紙風の見出し（「【球団】主見出し　副見出し」）を生成
-  static String _buildHeadline(String text, NewsTopic topic, Player? p, String t, bool stay, Random r) {
+  static String _buildHeadline(String text, NewsTopic topic, _MoveCase mc, Player? p, String t, Random r) {
     final name = p?.registeredName ?? '';
     final k = t.isEmpty ? '' : '【$t】';
     String pick(List<String> xs) => xs[r.nextInt(xs.length)];
-
-    // 戦力外・自由契約（退団）
-    final released = topic == NewsTopic.release && p != null && ['自由契約', '戦力外'].any(text.contains) && !stay && !['契約', 'FA宣言', 'FA 宣言', '育成選手として'].any(text.contains);
-    if (released) {
-      return '$k$name、戦力外通告で退団へ　新天地でチャンスをつかみ取れるか';
-    }
 
     // 故障
     if (topic == NewsTopic.injury && p != null && p.injuryName.isNotEmpty) {
       return '$k$nameが${p.injuryName}で痛恨の離脱${p.injuryDays > 0 ? '　全治約${p.injuryDays}日の見込み' : ''}';
     }
 
-    // ポスティング
-    if (text.contains('ポスティング') && name.isNotEmpty) {
-      if (text.contains('決定') || text.contains('入団') || text.contains('契約') || text.contains('移籍した')) {
-        final mlb = RegExp(r'MLB[の・]?([^\s、。]+)').firstMatch(text)?.group(1);
-        return '$k$name、ポスティングで${mlb ?? 'MLB'}へ電撃移籍！　夢の舞台で新たな挑戦';
-      }
-      if (text.contains('容認')) return '$k$nameのポスティング挑戦を球団が容認　今オフMLB移籍へ';
-      if (text.contains('見送') || stay) return '$k$name、ポスティング見送りで残留　来季もチームの柱に';
-      return '$k$nameがポスティングでのMLB挑戦を希望　球団の判断に注目';
-    }
-
-    // 海外FA
-    if (text.contains('海外FA') && name.isNotEmpty) {
-      if (text.contains('決定') || text.contains('移籍') || text.contains('入団') || text.contains('契約')) {
-        return '$k$nameが海外FAでMLB移籍決定！　海を渡り新たなステージへ';
-      }
-      if (stay) return '$k$name、海外FA権行使せず残留　「このチームで優勝したい」';
-      return '$k$nameが海外FA権の行使を表明　メジャー挑戦も視野に動向注目';
-    }
-
-    // 国内FA（宣言・移籍・残留・補償）
-    if ((text.contains('FA宣言') || text.contains('FA 宣言')) && name.isNotEmpty) {
-      final rank = RegExp(r'([A-C]ランク)').firstMatch(text)?.group(1);
-      return '$k$nameが国内FA権行使を表明　${rank != null ? '$rank、' : ''}複数球団の争奪戦必至か';
-    }
-    if (text.contains('人的補償') && name.isNotEmpty) {
-      return '${k}FA人的補償で$nameを獲得！　新天地で飛躍を期す';
-    }
-    if (text.contains('金銭補償')) {
-      return '${k}FA補償は金銭を選択　資金面の補強へ';
-    }
-    if (text.contains('FA') && name.isNotEmpty) {
-      if (stay) return '$k$name、FA宣言の末に残留決定！　ファン歓喜の一報';
-      if (text.contains('獲得') || text.contains('移籍') || text.contains('入団') || text.contains('合意') || text.contains('契約')) {
-        return '$k$nameのFA獲得が決定！　大型補強で戦力大幅アップ';
-      }
-    }
-
-    // 背番号の変更・決定（開幕前日）
+    // 背番号の変更・決定（開幕前日フォールバック）
     if ((text.contains('背番号の変更') || text.contains('背番号の決定')) && name.isNotEmpty) {
       final bodyPart = text.contains('：') ? text.split('：').last : text;
       final items = bodyPart.split('、').where((s) => s.trim().isNotEmpty).toList();
@@ -384,46 +864,91 @@ class ItemNews {
       return '$k新シーズンの背番号${text.contains('背番号の決定') ? '決定' : '変更'}を発表！　$nameら${items.length}選手が新番号に';
     }
 
-    // 育成から支配下昇格
-    if (text.contains('支配下登録') && name.isNotEmpty) {
-      final num = RegExp(r'(?:背番号|「)(\d+)').firstMatch(text)?.group(1);
-      return '$k育成の$nameが支配下登録！　${num != null ? '背番号「$num」を背負い1軍へ' : '念願の2桁背番号を掴み取る'}';
+    if (mc == _MoveCase.faCompPickOrMoney) {
+      return text.contains('金銭のみ') ? '${k}FA補償は金銭を選択　資金面の補強へ' : '${k}FA補償でドラフト指名権と金銭を獲得';
     }
 
-    // 他リーグからの獲得・日本球界復帰（リーグ調査）
-    final otherClub = RegExp(r'（(?:日本球界復帰・)?([^）]+の[^）]+)）と(育成)?契約').firstMatch(text);
-    if ((text.contains('日本球界復帰') || otherClub != null) && name.isNotEmpty) {
-      final ik = text.contains('育成') || (p?.ikusei ?? false);
-      final club = otherClub?.group(1) ?? '海外球団';
-      if (text.contains('日本球界復帰')) {
-        return '$k$nameが日本球界復帰！　$clubを経て${ik ? '育成から再出発' : '大型補強で合流'}';
+    if ((topic == NewsTopic.transfer || topic == NewsTopic.release) && name.isNotEmpty) {
+      switch (mc) {
+        case _MoveCase.postingStayRejected:
+          return '$k$name、球団のポスティング不承認で残留　来季もチームの主軸へ';
+        case _MoveCase.postingStayNoDeal:
+          return '$k$name、MLBとの契約に至らず残留決定　心機一転来季へ挑む';
+        case _MoveCase.postingApproved:
+          return '$k$nameのポスティング挑戦を球団が容認　今オフMLB移籍へ';
+        case _MoveCase.postingMoved:
+          final mlb = RegExp(r'(?:大リーグの|MLB[の・]?)([^\s、。（）]+?)(?=へ|に|と|\s|、|。|$)').firstMatch(text)?.group(1);
+          return '$k$name、ポスティングで${mlb ?? 'MLB'}へ電撃移籍！　夢の舞台で新たな挑戦';
+        case _MoveCase.postingWish:
+          return '$k$nameがポスティングでのMLB挑戦を希望　球団の判断に注目';
+        case _MoveCase.overseasFaStay:
+          return '$k$name、大リーグとの契約に至らず残留　来季もチームの柱に';
+        case _MoveCase.overseasFaMoved:
+          return '$k$nameが海外FAでMLB移籍決定！　海を渡り新たなステージへ';
+        case _MoveCase.overseasFaDeclare:
+          return '$k$nameが海外FA権の行使を表明　メジャー挑戦も視野に動向注目';
+        case _MoveCase.faDeclare:
+          final rank = RegExp(r'([A-C]ランク)').firstMatch(text)?.group(1);
+          return '$k$nameが国内FA権行使を表明　${rank != null ? '$rank、' : ''}複数球団の争奪戦必至か';
+        case _MoveCase.faUnsigned:
+          return '${k}FA宣言の$nameは未契約で自由契約に　今後の去就に注目';
+        case _MoveCase.faStay:
+          return '$k$name、FA宣言の末に残留決定！　ファン歓喜の一報';
+        case _MoveCase.faSigned:
+          return '$k$nameのFA獲得が決定！　大型補強で戦力大幅アップ';
+        case _MoveCase.faCompPlayer:
+          return '${k}FA人的補償で$nameを獲得！　新天地で飛躍を期す';
+        case _MoveCase.faCompPickOrMoney:
+          break;
+        case _MoveCase.partnerJoin:
+          return '$k提携枠で$nameが期限付き加入！　新戦力として期待';
+        case _MoveCase.partnerStay:
+          return '$k$name、提携期間満了後にそのまま残留！　来季も戦力に';
+        case _MoveCase.partnerLeave:
+          return '$k$nameが提携期間満了で退団　次のステージへ';
+        case _MoveCase.ikuseiTenderSigned:
+          return text.contains('移籍') ? '$k$name、育成テンダーで支配下移籍が決定！' : '$k$name、支配下契約で残留決定！　1軍舞台へ';
+        case _MoveCase.ikuseiTenderFree:
+          return '$k$name、育成テンダーで提示なく自由契約に';
+        case _MoveCase.promote:
+          final num = RegExp(r'(?:背番号|「)(\d+)').firstMatch(text)?.group(1);
+          return '$k育成の$nameが支配下登録！　${num != null ? '背番号「$num」を背負い1軍へ' : '念願の2桁背番号を掴み取る'}';
+        case _MoveCase.otherLeagueJoin:
+          final otherClub = RegExp(r'（(?:日本球界復帰・)?([^）]+の[^）]+)）と(?:育成)?契約').firstMatch(text);
+          final ik = text.contains('育成') || (p?.ikusei ?? false);
+          final club = otherClub?.group(1) ?? '海外球団';
+          if (text.contains('日本球界復帰')) {
+            return '$k$nameが日本球界復帰！　$clubを経て${ik ? '育成から再出発' : '大型補強で合流'}';
+          }
+          if (ik) return '$k$clubから$nameを育成で獲得！　原石の覚醒に期待';
+          return '$k$clubの$nameを獲得！　実績十分の助っ人が加入';
+        case _MoveCase.foreignSign:
+          final ik = text.contains('育成') || (p?.ikusei ?? false);
+          final origin = (p != null && p.origin.isNotEmpty) ? '${p.origin}出身の' : '';
+          if (ik) return '$k育成外国人・$nameと契約合意　$origin原石の覚醒に期待';
+          final role = p?.isPitcher == true
+              ? '${p!.throws == 'L' ? '左腕' : '剛腕'}、先発・救援での活躍に期待'
+              : '長打力に期待がかかる助っ人スラッガー';
+          return '$k新外国人$nameを獲得！　$origin$role';
+        case _MoveCase.reSignIkusei:
+          return '$k$nameと育成選手として再契約　支配下復帰へ再スタート';
+        case _MoveCase.reSignMain:
+          return '$k$nameが再契約で残留決定　慣れ親しんだ球団で再起を誓う';
+        case _MoveCase.freeAgentSign:
+          return '$k自由契約の$nameを獲得！　新天地で再起を期す';
+        case _MoveCase.retire:
+          return text.contains('就任') ? '$k$nameが現役引退、指導者へ転身　チーム支えた功労者に拍手' : '$k$nameが今季限りで現役引退　プロ生活に幕';
+        case _MoveCase.contractHoldout:
+          return '$k$nameが契約更改で合意せず退団へ　自由契約で新たな道';
+        case _MoveCase.retireRefused:
+          return '$k$nameが引退勧告を固辞して退団へ　他球団で現役続行を模索';
+        case _MoveCase.contractExpired:
+          return '$k$nameが契約満了で自由契約に　球団は優先交渉権を保持';
+        case _MoveCase.released:
+          return '$k$name、戦力外通告で退団へ　新天地でチャンスをつかみ取れるか';
+        case _MoveCase.other:
+          break;
       }
-      if (ik) return '$k$clubから$nameを育成で獲得！　原石の覚醒に期待';
-      return '$k$clubの$nameを獲得！　実績十分の助っ人が加入';
-    }
-
-    // 新外国人獲得
-    if (text.contains('外国人') && (text.contains('契約') || text.contains('獲得') || text.contains('入団')) && name.isNotEmpty) {
-      final ik = text.contains('育成') || (p?.ikusei ?? false);
-      final origin = (p != null && p.origin.isNotEmpty) ? '${p.origin}出身の' : '';
-      if (ik) {
-        return '$k育成外国人・$nameと契約合意　$origin原石の覚醒に期待';
-      }
-      final role = p?.isPitcher == true
-          ? '${p!.throws == 'L' ? '左腕' : '剛腕'}、先発・救援での活躍に期待'
-          : '長打力に期待がかかる助っ人スラッガー';
-      return '$k新外国人$nameを獲得！　$origin$role';
-    }
-
-    // 育成再契約・再契約・自由契約からの獲得
-    if ((text.contains('育成再契約') || (text.contains('育成') && text.contains('再契約'))) && name.isNotEmpty) {
-      return '$k$nameと育成選手として再契約　支配下復帰へ再スタート';
-    }
-    if (text.contains('再契約') && name.isNotEmpty) {
-      return '$k$nameが再契約で残留決定　慣れ親しんだ球団で再起を誓う';
-    }
-    if (text.contains('自由契約') && (text.contains('契約') || text.contains('獲得')) && name.isNotEmpty) {
-      return '$k自由契約の$nameを獲得！　新天地で再起を期す';
     }
 
     // 記録・表彰
@@ -490,11 +1015,11 @@ class ItemNews {
       text,
       head,
       body,
-      key,
+      null,
       mine,
       fanList(r, lines(gain, lose), nm(mine), positive: true, extra: 2),
       fanList(r, lines(other == ta ? pa : pb, other == ta ? pb : pa), nm(other), positive: true, extra: 1),
-      playerTeam: keyTeam,
+      playerTeam: other,
     );
   }
 
@@ -534,7 +1059,7 @@ class ItemNews {
       body.first,
       head,
       body,
-      lead,
+      players.length == 1 ? lead : null,
       team,
       fanList(r, mineLines, nmMine, positive: false),
       fanList(r, otherLines, nmOther, positive: true),
@@ -572,7 +1097,7 @@ class ItemNews {
       body.first,
       head,
       body,
-      top.player,
+      picks.length == 1 ? top.player : null,
       team,
       fanList(r, mineLines, ['名無しの${t}ファン', '${t}党', 'ライトスタンドの民'], positive: true),
       fanList(r, otherLines, ['他球団ファン', '野球好きの会社員'], positive: true),
