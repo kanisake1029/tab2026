@@ -966,8 +966,8 @@ class _HomeScreenState extends State<HomeScreen> {
       dated.add((d, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
     }
 
-    // 戦力外・自由契約からの獲得（入団の記録から）
-    final faSignRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)と(育成)?契約（自由契約・([^）]+)）');
+    // 戦力外・自由契約からの獲得・再契約（入団の記録から）
+    final faSignRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)と(育成)?(再)?契約（自由契約・([^）]+)）');
     for (final tx in app.transactions.take(500)) {
       final m = faSignRe.firstMatch(tx);
       if (m == null) continue;
@@ -979,8 +979,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
       if (p == null || !seenEvents.add('${p.id}|$md|free_sign')) continue;
       final ik = m.group(6) != null;
+      final re = m.group(7) != null;
       final t = app.teams.where((x) => teamShort(x) == m.group(4)).firstOrNull ?? teamOf(p);
-      final text = '${m.group(4)}が自由契約の$nameと${ik ? '育成' : ''}契約（${m.group(7)}）';
+      final text = '${m.group(4)}が自由契約の$nameと${ik ? '育成' : ''}${re ? '再' : ''}契約（${m.group(8)}）';
       dated.add((d, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
     }
 

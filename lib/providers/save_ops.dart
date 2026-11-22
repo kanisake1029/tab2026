@@ -298,6 +298,29 @@ extension SaveOps on AppState {
       if (rewindToOpeningDay()) needSave = true;
       dirtyKv['rewindOpeningV2'] = '1';
     }
+    if (offAfterSeason && teams.expand((t) => t.players).every((p) => p.prevGames == 0 && p.prevApps == 0)) {
+      try {
+        final rowsPrev = await (db.select(db.seasonRecords)..where((t) => t.season.equals(startYear - 1) & t.kind.equals('player'))).get();
+        if (rowsPrev.isNotEmpty) {
+          final byId = {for (final t in teams) for (final p in t.players) p.id: p};
+          for (final r in rowsPrev) {
+            final p = byId[r.refId];
+            if (p == null) continue;
+            final j = jsonDecode(r.json) as Map<String, dynamic>;
+            final st = j['stats'];
+            if (st is Map) {
+              final g = (st['games'] ?? 0) as int;
+              final pa = (st['pitchApps'] ?? 0) as int;
+              p.prevGames = g;
+              p.prevApps = pa > 0 ? pa : g;
+            }
+          }
+          needSave = true;
+        }
+      } catch (e) {
+        debugPrint('PREV STATS HYDRATE ERROR: $e');
+      }
+    }
     if (needSaveWorld) {
       await _saveAmateur();
       await _saveOther();

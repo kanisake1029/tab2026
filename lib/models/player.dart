@@ -317,6 +317,8 @@ class Player {
   bool ikusei;          // 育成契約（背番号3桁。1軍に上がるには支配下登録が要る）
   int ikuseiYears;      // 育成契約の年数（3年で満了）
   int regDays;          // 今季の1軍登録日数（145日で FA の1年に数える）
+  int prevGames;        // 前季の1軍試合数（現役ドラフト判定用）
+  int prevApps;         // 前季の1軍登板数（現役ドラフト判定用）
   int faService;        // FA の資格年数（8年で国内FA権。FA 移籍すると4に戻り、4年で再取得）
   int faCount;          // FA で移籍した回数（2回目以降は補償の金銭が半分）
   int faShort;          // 志望届の希望球団による国内FA の短縮年数（2・3希望は1年、希望外は2年）
@@ -458,6 +460,8 @@ class Player {
     this.ikusei = false,
     this.ikuseiYears = 0,
     this.regDays = 0,
+    this.prevGames = 0,
+    this.prevApps = 0,
     int? faService,
     this.faCount = 0,
     this.faShort = 0,
@@ -737,6 +741,8 @@ class Player {
       'ikusei': ikusei,
       'ikuseiYears': ikuseiYears,
       'regDays': regDays,
+      if (prevGames > 0) 'prevGames': prevGames,
+      if (prevApps > 0) 'prevApps': prevApps,
       'faService': faService,
       if (faCount > 0) 'faCount': faCount,
       if (faShort > 0) 'faShort': faShort,
@@ -898,6 +904,8 @@ class Player {
       ikusei: json['ikusei'] ?? false,
       ikuseiYears: json['ikuseiYears'] ?? 0,
       regDays: json['regDays'] ?? 0,
+      prevGames: json['prevGames'] ?? 0,
+      prevApps: json['prevApps'] ?? 0,
       faService: json['faService'],
       faCount: json['faCount'] ?? 0,
       faShort: json['faShort'] ?? 0,

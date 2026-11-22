@@ -1441,11 +1441,17 @@ extension OffseasonOps on AppState {
       p.contractYears = years.clamp(1, 12);
     }
     final from = teamById(fa.fromTeamId);
-    if (from != null) midSeasonMove(p, from, t);
-    logMove(p, ikusei ? '自由契約から育成契約' : '自由契約から入団', from, t);
+    final sameTeam = from != null && from.id == t.id;
+    if (from != null && !sameTeam) midSeasonMove(p, from, t);
+    logMove(p, sameTeam ? (ikusei ? '自由契約から育成再契約' : '自由契約から再契約') : (ikusei ? '自由契約から育成契約' : '自由契約から入団'), sameTeam ? null : from, t);
     RosterEngine.addPlayer(t, p);
-    transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}契約（自由契約・${formatSalary(p.salary)}${p.contractYears > 1 ? '・${p.contractYears}年' : ''}・元${teamById(fa.fromTeamId) == null ? '−' : teamShort(teamById(fa.fromTeamId)!)}）');
-    _addNews(['${teamShort(t)}が自由契約の${p.registeredName}と${ikusei ? '育成' : ''}契約（${formatSalary(p.salary)}）']);
+    if (sameTeam) {
+      transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}再契約（自由契約・${formatSalary(p.salary)}${p.contractYears > 1 ? '・${p.contractYears}年' : ''}）');
+      _addNews(['${teamShort(t)}が自由契約の${p.registeredName}と${ikusei ? '育成' : ''}再契約（${formatSalary(p.salary)}）']);
+    } else {
+      transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}契約（自由契約・${formatSalary(p.salary)}${p.contractYears > 1 ? '・${p.contractYears}年' : ''}・元${from == null ? '−' : teamShort(from)}）');
+      _addNews(['${teamShort(t)}が自由契約の${p.registeredName}と${ikusei ? '育成' : ''}契約（${formatSalary(p.salary)}）']);
+    }
   }
 
   /// 自由契約選手の基準希望額

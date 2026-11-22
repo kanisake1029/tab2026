@@ -70,7 +70,7 @@ class _ContractScreenState extends State<ContractScreen> {
         ]),
         const SizedBox(height: 8),
         if (app.priorityForeigns.isNotEmpty) ...[
-          const Text('契約満了・優先交渉（外国人）', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1E3A8A))),
+          const Text('契約満了・優先交渉（外国人：12月14日まで）', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1E3A8A))),
           const SizedBox(height: 4),
           for (final fa in app.priorityForeigns)
             Card(
@@ -79,7 +79,7 @@ class _ContractScreenState extends State<ContractScreen> {
               child: ListTile(
                 title: Text('${fa.player.registeredName}　${fa.player.isPitcher ? '投手' : fa.player.mainPosition}　${fa.player.age}歳', style: const TextStyle(fontWeight: FontWeight.w800)),
                 subtitle: Text(
-                  '前年 ${formatSalary(fa.player.salary)}　希望 ${formatSalary(app.renewAsk(fa.player))}（${app.renewPreferredYears(fa.player)}年）　信頼 ${fa.player.trust}・愛着 ${fa.player.teamLove}',
+                  '前年 ${formatSalary(fa.player.salary)}　希望 ${formatSalary(app.renewAsk(fa.player))}（${app.renewPreferredYears(fa.player)}年）　優先期限 12/14まで　信頼 ${fa.player.trust}・愛着 ${fa.player.teamLove}',
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -144,7 +144,8 @@ class _ContractScreenState extends State<ContractScreen> {
                 label: const Text('選手詳細'),
               ),
             ]),
-            Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳　前年 ${formatSalary(p.salary)}　信頼 ${p.trust}・愛着 ${p.teamLove}', style: const TextStyle(color: _sub, fontSize: 12.5)),
+            Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳　前年 ${formatSalary(p.salary)}　優先期限：12月14日まで（3回保留で自由契約）', style: const TextStyle(color: _sub, fontSize: 12)),
+            Text('信頼 ${p.trust}・愛着 ${p.teamLove}', style: const TextStyle(color: _sub, fontSize: 12)),
             const SizedBox(height: 12),
             Text('希望（$years年なら）：${formatSalary(app.renewAskFor(p, years))}', style: const TextStyle(fontSize: 12.5, color: _sub)),
             const SizedBox(height: 6),
@@ -160,6 +161,16 @@ class _ContractScreenState extends State<ContractScreen> {
                 onChanged: (v) => set(() => years = v ?? 1),
               ),
               const Spacer(),
+              OutlinedButton(
+                onPressed: () {
+                  final msg = app.offerForeignReSign(fa, 600, 1, ikusei: true);
+                  Navigator.pop(c);
+                  _toast(msg);
+                  setState(() {});
+                },
+                child: const Text('育成で再契約'),
+              ),
+              const SizedBox(width: 6),
               FilledButton(
                 onPressed: () {
                   final msg = app.offerForeignReSign(fa, salary, years);
@@ -236,6 +247,17 @@ class _ContractScreenState extends State<ContractScreen> {
             const Text('ほかの打診', style: TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
             Wrap(spacing: 8, runSpacing: 6, children: [
+              if (!p.ikusei && app.canReSignIkusei)
+                OutlinedButton(
+                  onPressed: () async {
+                    if (!await _confirm('${p.registeredName}と育成選手として再契約しますか？（年俸上限600万円・背番号3桁）')) return;
+                    final err = app.reSignIkusei(p);
+                    if (c.mounted) Navigator.pop(c);
+                    _toast(err ?? '${p.registeredName}と育成再契約しました');
+                    setState(() {});
+                  },
+                  child: const Text('育成で再契約'),
+                ),
               OutlinedButton(onPressed: () => _role(c, p, coach: true), child: const Text('コーチに転任')),
               OutlinedButton(onPressed: () => _role(c, p, coach: false), child: const Text('スカウトに転任')),
               OutlinedButton(

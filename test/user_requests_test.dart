@@ -460,4 +460,31 @@ void main() {
     expect(g.headline, contains('鈴木'));
     expect(g.headline, isNot(contains('佐藤が劇的サヨナラ')));
   });
+
+  test('現役ドラフトは前季出場数(prevGames/prevApps)で判定し、自球団自由契約の再契約は移籍扱いにならない', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    // 1) 現役ドラフト: 年俸5000万未満・プロ4年目・25歳でも前季40試合出場なら対象外
+    final reg = Player(id: 'ad_reg', lastName: '主力', isPitcher: false, mainPos: '遊撃手', age: 25, proYears: 4, salary: 3000, prevGames: 40);
+    final sub = Player(id: 'ad_sub', lastName: '控え', isPitcher: false, mainPos: '遊撃手', age: 25, proYears: 4, salary: 3000, prevGames: 10);
+    expect(TransferEngine.activeDraftEligible(reg, 2027), isFalse);
+    expect(TransferEngine.activeDraftEligible(sub, 2027), isTrue);
+
+    // 2) 自球団自由契約→再契約（育成含む）は「再契約」になり移籍記事にならない
+    final p = my.players.firstWhere((x) => !x.ikusei);
+    my.players.remove(p);
+    final fa = FreeAgent(p, my.id, '戦力外');
+    app.freeAgents.add(fa);
+    final err = app.signFreeAgent(fa, ikusei: true);
+    expect(err, isNull);
+    expect(p.ikusei, isTrue);
+    expect(app.news.first, contains('再契約'));
+    final newsItem = ItemNews.of('11/15', app.news.first, ItemNews.topicOf(app.news.first)!, player: p, team: my);
+    expect(newsItem.headline, contains('再契約'));
+  });
 }

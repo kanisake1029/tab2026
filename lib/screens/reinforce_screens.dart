@@ -1237,7 +1237,8 @@ class _FreeAgentScreenState extends State<FreeAgentScreen> {
     final prefY = TrustEngine.preferredYears(p).clamp(1, 3);
     var years = prefY;
     var salary = TrustEngine.askForYears(p, baseAsk, years);
-    final res = await showDialog<(int, int)?>(
+    var ikusei = false;
+    final res = await showDialog<(bool, int, int)?>(
       context: context,
       builder: (d) => StatefulBuilder(builder: (d, set) {
         final need = TrustEngine.askForYears(p, baseAsk, years);
@@ -1249,30 +1250,42 @@ class _FreeAgentScreenState extends State<FreeAgentScreen> {
         return AlertDialog(
           title: Text('${p.registeredName}と契約交渉'),
           content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${fa.reason}　目安：${formatSalary(need)}（推奨 $prefY年）', style: const TextStyle(fontSize: 12, color: _sub)),
-            const SizedBox(height: 8),
-            Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 6),
-            Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
-            const SizedBox(height: 8),
-            Row(children: [
-              const Text('契約年数：'),
-              DropdownButton<int>(
-                value: years,
-                items: [for (var y = 1; y <= 12; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
-                onChanged: (v) => set(() => years = v ?? 1),
-              ),
-            ]),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('育成契約にする', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              subtitle: const Text('年俸上限600万円・1年契約', style: TextStyle(fontSize: 11)),
+              value: ikusei,
+              onChanged: (v) => set(() => ikusei = v),
+            ),
+            if (!ikusei) ...[
+              Text('${fa.reason}　目安：${formatSalary(need)}（推奨 $prefY年）', style: const TextStyle(fontSize: 12, color: _sub)),
+              const SizedBox(height: 8),
+              Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
+              const SizedBox(height: 8),
+              Row(children: [
+                const Text('契約年数：'),
+                DropdownButton<int>(
+                  value: years,
+                  items: [for (var y = 1; y <= 12; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
+                  onChanged: (v) => set(() => years = v ?? 1),
+                ),
+              ]),
+            ] else
+              Text('育成契約：年俸 ${formatSalary(p.salary < 600 ? p.salary : 600)}・1年契約', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
           ]),
           actions: [
             TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),
-            FilledButton(onPressed: () => Navigator.pop(d, (salary, years)), child: const Text('提示する')),
+            FilledButton(onPressed: () => Navigator.pop(d, (ikusei, salary, years)), child: const Text('提示する')),
           ],
         );
       }),
     );
     if (res == null || !mounted) return;
-    _toast(context, app.signFreeAgent(fa, ikusei: false, salary: res.$1, years: res.$2), '${p.registeredName}と契約しました（${formatSalary(res.$1)}・${res.$2}年）');
+    _toast(context, app.signFreeAgent(fa, ikusei: res.$1, salary: res.$2, years: res.$3),
+        res.$1 ? '${p.registeredName}と育成契約しました' : '${p.registeredName}と契約しました（${formatSalary(res.$2)}・${res.$3}年）');
     setState(() {});
   }
 
@@ -1298,7 +1311,7 @@ class _FreeAgentScreenState extends State<FreeAgentScreen> {
               PlayerLine(
                 app: app,
                 p: fa.player,
-                note: '${fa.reason}（元${from(fa.fromTeamId)}）　${fa.player.draftInfo}',
+                note: '${fa.reason}（元${from(fa.fromTeamId)}）${fa.priorityTeamId.isNotEmpty ? '　※優先交渉期間中（12/14まで）' : ''}　${fa.player.draftInfo}',
                 trailing: Column(mainAxisSize: MainAxisSize.min, children: [
                   FilledButton(
                     onPressed: () => _negotiate(fa),

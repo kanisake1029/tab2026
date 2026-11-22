@@ -73,12 +73,28 @@ extension ContractOps on AppState {
     return '${p.registeredName}は保留しました（希望は${formatSalary(need)}${years > 1 ? '・$years年' : ''}くらい。信頼 ${p.trust}）';
   }
 
-  /// 契約満了外国人の優先再契約交渉（短い契約を好む傾向はなし、信頼×チーム愛で判定）
-  String offerForeignReSign(FreeAgent fa, int salary, int years) {
+  /// 契約満了外国人の優先再契約交渉（短い契約を好む傾向はなし、信頼×チーム愛で判定。育成再契約も選択可）
+  String offerForeignReSign(FreeAgent fa, int salary, int years, {bool ikusei = false}) {
     final my = myTeam;
     if (my == null) return '球団が選ばれていません';
     final p = fa.player;
     if (fa.priorityTeamId != my.id) return '優先交渉権がありません';
+    if (ikusei) {
+      if (RosterEngine.ikuseiCount(my) >= ikuseiCap(my)) return '育成選手の上限（${ikuseiCap(my)}人）に達しています';
+      freeAgents.remove(fa);
+      p.prevSalary = p.salary;
+      p.salary = min(p.salary, 600);
+      p.contractYears = 1;
+      p.ikusei = true;
+      p.offJoin = offseasonYear;
+      p.uniformNumber = RosterEngine.freeNumber(my, ikusei: true);
+      renewSigned.add(p.id);
+      RosterEngine.addPlayer(my, p);
+      transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 優先交渉で育成再契約（${formatSalary(p.salary)}）');
+      _addNews(['${p.registeredName}が優先交渉で${teamShort(my)}と育成選手として再契約しました（${formatSalary(p.salary)}）']);
+      updateAndSave();
+      return '${p.registeredName}は${formatSalary(p.salary)}で育成再契約しました';
+    }
     if (!p.ikusei && RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
     salary = (salary / 50).round() * 50;
     years = years.clamp(1, 12);
