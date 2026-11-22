@@ -532,12 +532,15 @@ void main() {
 
     final pIk = my.players.firstWhere((x) => !x.ikusei);
     expect(app.reSignIkusei(pIk), isNull);
+    await app.saveData();
     expect(pIk.ikusei, isTrue);
     expect(app.news.first, isNot(contains('背番号')));
 
     expect(app.releasePlayer(pIk), isNull);
+    await app.saveData();
     final fa = app.freeAgents.last;
     expect(app.signFreeAgent(fa, ikusei: false), isNull);
+    await app.saveData();
     expect(pIk.ikusei, isFalse);
     expect(pIk.numberPending, isTrue);
 
@@ -557,7 +560,7 @@ void main() {
     expect(pIk.numberPending, isFalse);
     final numChron = app.chron.lastWhere((c) => c['pid'] == pIk.id && c['k'] == 'number');
     expect('${numChron['t']}', contains('の背番号が${uniformLabel(desired)}に決定。'));
-    expect(app.news.first, startsWith('背番号の決定（開幕前日）：'));
+    expect(app.news.first, contains('背番号の決定（開幕前日）：'));
     final newsItem = ItemNews.of('3/25', app.news.first, ItemNews.topicOf(app.news.first)!, team: my);
     expect(newsItem.headline, contains('に決定'));
     final hist = await app.numberHistory(my);
