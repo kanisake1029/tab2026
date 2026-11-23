@@ -189,6 +189,362 @@ extension RepairOps on AppState {
       if (fixed > 0) debugPrint('FOREIGN PRO YEARS FIX V2: $fixed players');
       await db.setKv('foreignProYearsV2', '1');
     }
+    if (await db.getKv('chronNumberFixV1') != '1') {
+      await migrateChronNumbers();
+      await db.setKv('chronNumberFixV1', '1');
+    }
+  }
+
+  /// 既存セーブ（開発者版スロット1を含む）の年表・背番号変遷を修復する：
+  ///  ・オフシーズン（10/31〜開幕前日）の join / reg に書かれた仮背番号を消し、開幕前日の「決定」として揃える
+  ///  ・leave（移籍・引退・退団）に当時の確定背番号 'num' を補完し、空き番号変遷へ表示されるようにする
+  Future<void> migrateChronNumbers() async {
+    int? parseNum(String s) => s == '00' ? -1 : int.tryParse(s);
+    final playerLineRe = RegExp(r'^(\S+)\s+(.+?)\(\d+\)');
+    final numTagRe = RegExp(r'\s*背番号(?:は)?(00|\d+)。?');
+    final chgRe = RegExp(r'^(\S+)\s+(.+?)の背番号を(00|\d+)から(00|\d+)に変更');
+    final decRe = RegExp(r'^(\S+)\s+(.+?)の背番号が(00|\d+)に決定');
+
+    // 万一「未定(-2)」のまま保存されていた選手がいれば仮番号を与えて修復
+    for (final t in leagueTeams) {
+      for (final p in t.players) {
+        if (p.uniformNumber <= -2) {
+          p.uniformNumber = RosterEngine.freeNumber(t, ikusei: p.ikusei);
+          p.numberPending = true;
+        }
+      }
+    }
+
+    final firstY = min(2025, chronFirstYear > 0 ? chronFirstYear : 2026);
+    final byYear = <int, List<Map<String, dynamic>>>{};
+    for (var y = firstY; y <= startYear; y++) {
+      final list = await chronicleOf(y);
+      if (list.isNotEmpty || chronYears.containsKey(y)) {
+        byYear[y] = [for (final e in list) Map<String, dynamic>.from(e)];
+      }
+    }
+    if (byYear.isEmpty) return;
+
+    DateTime openEveFor(int seasonY) {
+      if (seasonY == startYear) {
+        final fr = _regularRange().$1;
+        if (fr != null && fr.year == startYear) {
+          return DateUtils.dateOnly(fr).subtract(const Duration(days: 1));
+        }
+      }
+      final list = byYear[seasonY];
+      if (list != null) {
+        for (final e in list) {
+          if (e['k'] != 'number') continue;
+          final dt = DateTime.tryParse('${e['d']}');
+          if (dt != null && dt.year == seasonY && dt.month == 3 && dt.day >= 18) {
+            return DateUtils.dateOnly(dt);
+          }
+        }
+      }
+      return DateTime(seasonY, 3, 25);
+    }
+
+    int targetSeasonOf(DateTime dt) =>
+        (dt.month >= 11 || (dt.month == 10 && dt.day >= 31)) ? dt.year + 1 : dt.year;
+
+    bool isOffseasonDate(DateTime dt) {
+      final sY = targetSeasonOf(dt);
+      if (dt.month >= 11 || (dt.month == 10 && dt.day >= 31)) return true;
+      return dt.month <= 3 && DateUtils.dateOnly(dt).isBefore(openEveFor(sY));
+    }
+
+    // 初期選手（2026年開幕前）の初期背番号マップ
+    final initByPid = <String, int>{};
+    final initByName = <String, int>{};
+    for (final t in _initialTeams()) {
+      for (final p in t.players) {
+        initByPid['${t.id}|${p.id}'] = p.uniformNumber;
+        initByName['${t.id}|${p.registeredName}'] = p.uniformNumber;
+        initByName['${t.id}|${p.listName}'] = p.uniformNumber;
+      }
+    }
+
+    final currentByPid = <String, (String tid, Player p)>{
+      for (final t in leagueTeams)
+        for (final p in t.players) p.id: (t.id, p),
+    };
+
+    // 全年度の記録を時系列に並べて処理
+    final flat = <({int year, int order, Map<String, dynamic> e})>[];
+    for (final entry in byYear.entries.toList()..sort((a, b) => a.key.compareTo(b.key))) {
+      for (var i = 0; i < entry.value.length; i++) {
+        flat.add((year: entry.key, order: i, e: entry.value[i]));
+      }
+    }
+    flat.sort((a, b) {
+      final dc = '${a.e['d']}'.compareTo('${b.e['d']}');
+      if (dc != 0) return dc;
+      final yc = a.year.compareTo(b.year);
+      return yc != 0 ? yc : a.order.compareTo(b.order);
+    });
+
+    final toRemove = <Map<String, dynamic>>{};
+    final toAdd = <(int targetY, Map<String, dynamic> ev)>[];
+    final today = DateUtils.dateOnly(currentDate);
+    var changed = false;
+
+    String whoKey(Map<String, dynamic> e) {
+      final pid = e['pid'] as String?;
+      if (pid != null && pid.isNotEmpty) return 'id:$pid';
+      final t = '${e['t'] ?? ''}';
+      final m = playerLineRe.firstMatch(t) ?? chgRe.firstMatch(t) ?? decRe.firstMatch(t);
+      return m == null ? '' : 'nm:${m.group(2)}';
+    }
+
+    bool samePlayerAndTeam(Map<String, dynamic> a, String tid, String wKey, String nm) {
+      if ('${a['team']}' != tid) return false;
+      final k = whoKey(a);
+      if (k.isNotEmpty && wKey.isNotEmpty && k == wKey) return true;
+      final t = '${a['t'] ?? ''}';
+      final m = playerLineRe.firstMatch(t) ?? chgRe.firstMatch(t) ?? decRe.firstMatch(t);
+      return m != null && nm.isNotEmpty && m.group(2) == nm;
+    }
+
+    // Pass 1: オフシーズンの join / reg から仮背番号を取り除き、開幕前日の決定へ整える
+    for (var i = 0; i < flat.length; i++) {
+      final item = flat[i];
+      final e = item.e;
+      final k = '${e['k'] ?? ''}';
+      if (k != 'join' && k != 'reg') continue;
+      final dt = DateTime.tryParse('${e['d']}');
+      if (dt == null || !isOffseasonDate(dt)) continue;
+
+      final tid = '${e['team'] ?? ''}';
+      final pid = e['pid'] as String?;
+      final wKey = whoKey(e);
+      final text0 = '${e['t'] ?? ''}';
+      final pm = playerLineRe.firstMatch(text0);
+      final pos = pm?.group(1) ?? '選手';
+      final nm = pm?.group(2) ?? '';
+
+      int? tempNum;
+      final mTag = numTagRe.firstMatch(text0);
+      if (mTag != null) {
+        tempNum = parseNum(mTag.group(1)!);
+        final stripped = text0.replaceFirst(numTagRe, '').trimRight();
+        e['t'] = stripped.endsWith('。') ? stripped : '$stripped。';
+        final pt0 = e['pt'] as String?;
+        if (pt0 != null && pt0.isNotEmpty) {
+          final strippedPt = pt0.replaceFirst(numTagRe, '').trimRight();
+          e['pt'] = strippedPt.endsWith('。') ? strippedPt : '$strippedPt。';
+        }
+        changed = true;
+      }
+
+      final seasonY = targetSeasonOf(dt);
+      final eve = openEveFor(seasonY);
+      final eveStr = ChronicleOps.ymd(eve);
+
+      var hasDecide = false;
+      final changeItems = <({int year, Map<String, dynamic> e, int from, int to})>[];
+      var leftBeforeEve = false;
+      int? postEveFrom;
+      int? leaveAfterEveNum;
+
+      for (var j = i + 1; j < flat.length; j++) {
+        final je = flat[j].e;
+        if (!samePlayerAndTeam(je, tid, wKey, nm)) continue;
+        final jdt = DateTime.tryParse('${je['d']}');
+        if (jdt == null) continue;
+        final jdOnly = DateUtils.dateOnly(jdt);
+        final jk = '${je['k'] ?? ''}';
+        final jtext = '${je['t'] ?? ''}';
+        if (jk == 'leave') {
+          if (jdOnly.isBefore(eve)) {
+            leftBeforeEve = true;
+          } else {
+            leaveAfterEveNum ??= (je['num'] as num?)?.toInt();
+          }
+          break;
+        }
+        if (jk == 'number') {
+          final dm = decRe.firstMatch(jtext);
+          if (dm != null && !jdOnly.isAfter(eve)) {
+            hasDecide = true;
+            continue;
+          }
+          final cm = chgRe.firstMatch(jtext);
+          if (cm != null) {
+            final f = parseNum(cm.group(3)!), t = parseNum(cm.group(4)!);
+            if (!jdOnly.isAfter(eve) && f != null && t != null) {
+              changeItems.add((year: flat[j].year, e: je, from: f, to: t));
+            } else if (jdOnly.isAfter(eve) && f != null && postEveFrom == null) {
+              postEveFrom = f;
+            }
+          }
+        }
+      }
+
+      if (hasDecide) {
+        // すでに決定があるのに途中の仮変更イベントが残っていれば除去
+        for (final c in changeItems) {
+          toRemove.add(c.e);
+          changed = true;
+        }
+        continue;
+      }
+
+      if (changeItems.isNotEmpty) {
+        final last = changeItems.last;
+        for (var idx = 0; idx < changeItems.length - 1; idx++) {
+          toRemove.add(changeItems[idx].e);
+        }
+        final toLabel = uniformLabel(last.to);
+        last.e['d'] = eveStr;
+        last.e['t'] = '$pos $nmの背番号が$toLabelに決定。';
+        last.e['pt'] = '背番号が$toLabelに決定。';
+        changed = true;
+        continue;
+      }
+
+      if (leftBeforeEve) continue;
+
+      if (!today.isBefore(eve)) {
+        // すでにそのシーズンの開幕前日を通過済み → 開幕前日に決定イベントを補完
+        int? resolved = postEveFrom ?? leaveAfterEveNum;
+        if (resolved == null && pid != null) {
+          final cur = currentByPid[pid];
+          if (cur != null && cur.$1 == tid && !cur.$2.numberPending) {
+            resolved = cur.$2.uniformNumber;
+          }
+        }
+        resolved ??= tempNum;
+        if (resolved != null) {
+          final lbl = uniformLabel(resolved);
+          final targetAddY = byYear.containsKey(eve.year)
+              ? eve.year
+              : (eve.year <= startYear ? eve.year : item.year);
+          toAdd.add((targetAddY, {
+            'd': eveStr,
+            'team': tid,
+            'k': 'number',
+            't': '$pos $nmの背番号が$lblに決定。',
+            if (pid != null && pid.isNotEmpty) 'pid': pid,
+            'pt': '背番号が$lblに決定。',
+          }));
+          changed = true;
+        }
+      } else if (pid != null) {
+        final cur = currentByPid[pid];
+        if (cur != null && cur.$1 == tid) {
+          cur.$2.numberPending = true;
+        }
+      }
+    }
+
+    if (toRemove.isNotEmpty) {
+      for (final list in byYear.values) {
+        list.removeWhere((e) => toRemove.contains(e));
+      }
+    }
+    for (final (y, ev) in toAdd) {
+      byYear.putIfAbsent(y, () => []).add(ev);
+    }
+
+    // Pass 2: 再度並べ替えてから、過去の leave イベントへ確定背番号 'num' を補完
+    final flat2 = <({int year, int order, Map<String, dynamic> e})>[];
+    for (final entry in byYear.entries.toList()..sort((a, b) => a.key.compareTo(b.key))) {
+      for (var i = 0; i < entry.value.length; i++) {
+        flat2.add((year: entry.key, order: i, e: entry.value[i]));
+      }
+    }
+    flat2.sort((a, b) {
+      final dc = '${a.e['d']}'.compareTo('${b.e['d']}');
+      if (dc != 0) return dc;
+      final yc = a.year.compareTo(b.year);
+      return yc != 0 ? yc : a.order.compareTo(b.order);
+    });
+
+    final tracked = <String, int>{}; // tid|who -> number
+    final pendingWho = <String>{}; // tid|who (仮番号で確定前の選手)
+
+    String trackKey(String tid, Map<String, dynamic> e, String nm) {
+      final pid = e['pid'] as String?;
+      return (pid != null && pid.isNotEmpty) ? '$tid|id:$pid' : '$tid|nm:$nm';
+    }
+
+    for (final item in flat2) {
+      final e = item.e;
+      final tid = '${e['team'] ?? ''}';
+      final k = '${e['k'] ?? ''}';
+      final text = '${e['t'] ?? ''}';
+      final pm = playerLineRe.firstMatch(text) ?? chgRe.firstMatch(text) ?? decRe.firstMatch(text);
+      final nm = pm?.group(2) ?? '';
+      final tk = trackKey(tid, e, nm);
+
+      if (k == 'join' || k == 'reg') {
+        final m = RegExp(r'背番号は(00|\d+)').firstMatch(text);
+        if (m != null) {
+          final n = parseNum(m.group(1)!);
+          if (n != null) {
+            tracked[tk] = n;
+            tracked['$tid|nm:$nm'] = n;
+            pendingWho.remove(tk);
+            pendingWho.remove('$tid|nm:$nm');
+          }
+        } else {
+          pendingWho.add(tk);
+          if (nm.isNotEmpty) pendingWho.add('$tid|nm:$nm');
+        }
+      } else if (k == 'number') {
+        final cm = chgRe.firstMatch(text);
+        if (cm != null) {
+          final to = parseNum(cm.group(4)!);
+          if (to != null) {
+            tracked[tk] = to;
+            tracked['$tid|nm:$nm'] = to;
+            pendingWho.remove(tk);
+            pendingWho.remove('$tid|nm:$nm');
+          }
+        } else {
+          final dm = decRe.firstMatch(text);
+          if (dm != null) {
+            final n = parseNum(dm.group(3)!);
+            if (n != null) {
+              tracked[tk] = n;
+              tracked['$tid|nm:$nm'] = n;
+              pendingWho.remove(tk);
+              pendingWho.remove('$tid|nm:$nm');
+            }
+          }
+        }
+      } else if (k == 'leave') {
+        final wasPending = pendingWho.remove(tk) || pendingWho.remove('$tid|nm:$nm');
+        final trackedNum = tracked.remove(tk) ?? tracked.remove('$tid|nm:$nm');
+        if (!wasPending && e['num'] == null) {
+          final pid = e['pid'] as String?;
+          final n = trackedNum ??
+              (pid != null ? initByPid['$tid|$pid'] : null) ??
+              (nm.isNotEmpty ? initByName['$tid|$nm'] : null);
+          if (n != null) {
+            e['num'] = n;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (!changed) return;
+
+    for (final entry in byYear.entries) {
+      final list = entry.value;
+      final indexed = [for (var i = 0; i < list.length; i++) (i, list[i])];
+      indexed.sort((a, b) {
+        final dc = '${a.$2['d']}'.compareTo('${b.$2['d']}');
+        return dc != 0 ? dc : a.$1.compareTo(b.$1);
+      });
+      final sorted = [for (final x in indexed) x.$2];
+      chronYears[entry.key] = sorted;
+      if (chronFirstYear == 0 || entry.key < chronFirstYear) chronFirstYear = entry.key;
+      await db.setKv('chron_${entry.key}', jsonEncode(sorted));
+    }
+    debugPrint('CHRON NUMBER FIX V1: migrated chronicles');
   }
 
   /// a − b（0未満は0。守備位置ごとの値も）

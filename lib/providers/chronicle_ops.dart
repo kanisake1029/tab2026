@@ -9,8 +9,8 @@ extension ChronicleOps on AppState {
   /// 今の年度の出来事
   List<Map<String, dynamic>> get chron => chronYears.putIfAbsent(startYear, () => []);
 
-  void _chron(DateTime d, String teamId, String kind, String text, {String? pid, String? pt}) {
-    chron.add({'d': ymd(d), 'team': teamId, 'k': kind, 't': text, if (pid != null) 'pid': pid, if (pt != null) 'pt': pt});
+  void _chron(DateTime d, String teamId, String kind, String text, {String? pid, String? pt, int? num}) {
+    chron.add({'d': ymd(d), 'team': teamId, 'k': kind, 't': text, if (pid != null) 'pid': pid, if (pt != null) 'pt': pt, if (num != null) 'num': num});
     if (chronFirstYear == 0 || chronFirstYear > startYear) chronFirstYear = startYear;
   }
 
@@ -29,7 +29,7 @@ extension ChronicleOps on AppState {
 
   /// いまの所属を控える（読み込み直後など。ここからの変化を記録する）
   void _snapRosters() {
-    _rosterSnap = {for (final t in teams) for (final p in t.players) p.id: (t.id, p.ikusei, p)};
+    _rosterSnap = {for (final t in teams) for (final p in t.players) p.id: (t.id, p.ikusei, p, p.uniformNumber, p.numberPending)};
     _coachSnap = {
       for (final c in coaches)
         if (c.teamId != null && c.role != null && teams.any((t) => t.id == c.teamId)) c.id: (c.teamId!, c.role!, c),
@@ -48,15 +48,16 @@ extension ChronicleOps on AppState {
     final now = {for (final t in teams) for (final p in t.players) p.id: (t, p)};
     // 退団（ほかの球団へ移った選手は、入団の側で書く）
     for (final e in old.entries) {
-      final (tid, _, p) = e.value;
+      final (tid, _, p, oldNum, oldPending) = e.value;
       final cur = now[e.key];
       if (cur != null && cur.$1.id == tid) continue;
       final t = teamById(tid);
       if (t == null) continue;
+      final leaveNum = (!oldPending && oldNum >= -1) ? oldNum : null;
       if (cur != null) {
         final last = p.moves.isEmpty ? '' : p.moves.last;
         final how = _moveHow(last);
-        _chron(d, tid, 'leave', '${_pos(p)} ${p.registeredName}(${p.age})が${how.isEmpty ? '' : '$howで'}${teamShort(cur.$1)}へ移籍。', pid: p.id);
+        _chron(d, tid, 'leave', '${_pos(p)} ${p.registeredName}(${p.age})が${how.isEmpty ? '' : '$howで'}${teamShort(cur.$1)}へ移籍。', pid: p.id, num: leaveNum);
         continue;
       }
       final fa = freeAgents.where((f) => f.player.id == p.id).firstOrNull;
@@ -70,7 +71,7 @@ extension ChronicleOps on AppState {
               _ when p.nationality == '海外' => ('退団（帰国）', '${t.name}を退団（帰国）。'),
               _ => ('退団', '${t.name}を退団。'),
             };
-      _chron(d, tid, 'leave', '${_pos(p)} ${p.registeredName}(${p.age})が$why。', pid: p.id, pt: pt);
+      _chron(d, tid, 'leave', '${_pos(p)} ${p.registeredName}(${p.age})が$why。', pid: p.id, pt: pt, num: leaveNum);
     }
     // 入団・支配下登録
     final pending = isBeforeOpeningDay(d);

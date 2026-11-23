@@ -626,6 +626,7 @@ extension SaveOps on AppState {
         'fieldGenV3': '1',
         'scoutNetV1': '1',
         'rewindOpeningV2': '1',
+        'chronNumberFixV1': '1',
       },
       'chronFirst': '$chronFirstYear',
       'openingNumbers': openingNumberDay,

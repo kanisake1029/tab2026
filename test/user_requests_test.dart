@@ -572,19 +572,18 @@ void main() {
     expect(app.signFreeAgent(fa, ikusei: false), isNull);
     await app.saveData();
     expect(pIk.ikusei, isFalse);
-    expect(pIk.hasUniform, isFalse);
-    expect(pIk.uniformNumber, kNoUniform);
-    expect(pIk.uniformText, '未定');
+    expect(pIk.uniformNumber, inInclusiveRange(-1, 99));
     expect(pIk.numberPending, isTrue);
 
     final joinChron = app.chron.lastWhere((c) => c['pid'] == pIk.id && c['k'] == 'join');
     expect('${joinChron['t']}', contains('自由契約から再契約'));
     expect('${joinChron['t']}', isNot(contains('背番号は')));
 
-    // 未定選手の予約を設定しても開幕前日までは未定のまま「変更」年表は残らず、開幕前日に決定する
+    // 仮番号を変更予約しても開幕前日までは仮番号のまま「変更」年表は残らず、開幕前日に決定する
+    final tempNum = pIk.uniformNumber;
     final desired = RosterEngine.freeNumber(my, ikusei: false);
     expect(app.setNumber(my, pIk, desired), isNull);
-    expect(pIk.uniformNumber, kNoUniform);
+    expect(pIk.uniformNumber, tempNum);
     expect(pIk.nextNumber, desired);
     expect(pIk.numberPending, isTrue);
     expect(app.chron.where((c) => c['pid'] == pIk.id && c['k'] == 'number'), isEmpty);
@@ -1225,86 +1224,85 @@ void main() {
     expect(find.text('2026(OP)'), findsNothing);
   });
 
-  testWidgets('オフシーズン入団・トレードは背番号未定となり既存選手の変更と同時に開幕前日に決定し、シーズン中は即座に背番号が付与される', (tester) async {
+  test('オフシーズン入団・トレードは仮背番号となり正式決定まで経歴・背番号変遷に残らず開幕前日に一斉決定・移籍は空き番号に記載される', () async {
     SharedPreferences.setMockInitialValues({});
-    late AppState app;
-    await tester.runAsync(() async {
-      app = AppState(AppDatabase(NativeDatabase.memory()));
-      while (!app.loaded) {
-        await Future.delayed(const Duration(milliseconds: 20));
-      }
-    });
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
     final my = app.teams[0];
     final partner = app.teams[1];
     app.myTeamId = my.id;
-    app.draftDoneYear = 2025;
     app.seasonFinished = true;
 
-    // 1. オフシーズン（10/31 ドラフト会議日）にドラフト新人が入団すると背番号は未定のままになる
+    // 1. オフシーズン（10/31 ドラフト会議日）にドラフト新人が入団すると仮背番号を持ちつつ numberPending=true、年表には背番号が出ない
     app.currentDate = DateTime(2026, 10, 31);
     app.draftDoneYear = 2025; // 2026年のドラフトを実施可能にする
     expect(app.isBeforeOpeningDay(), isTrue);
     final beforeIds = {for (final p in my.players) p.id};
     app.runAutoDraft();
+    await app.saveData();
     final rookies = my.players.where((p) => !beforeIds.contains(p.id)).toList();
     expect(rookies, isNotEmpty);
+    final firstRookie = rookies.first;
+    final tempRookieNum = firstRookie.uniformNumber;
     for (final r in rookies) {
-      expect(r.hasUniform, isFalse);
-      expect(r.uniformNumber, kNoUniform);
-      expect(r.uniformText, '未定');
+      expect(r.uniformNumber, r.ikusei ? greaterThanOrEqualTo(100) : inInclusiveRange(-1, 99));
       expect(r.numberPending, isTrue);
     }
+    final rookieJoin = app.chron.lastWhere((c) => c['pid'] == firstRookie.id && c['k'] == 'join');
+    expect('${rookieJoin['t']}', isNot(contains('背番号は')));
+    expect('${rookieJoin['pt']}', isNot(contains('背番号')));
 
-    // 2. オフシーズン（11/15）のトレードで移籍してきた選手も背番号未定になる
+    // 2. オフシーズン（11/15）のトレードで移籍してきた選手も仮背番号になり、元の球団の背番号変遷には「移籍で空き番号に」が出る
     app.currentDate = DateTime(2026, 11, 15);
     expect(app.isBeforeOpeningDay(), isTrue);
-    final giveCands = my.players.where((p) => !p.ikusei && p.hasUniform).toList()
+    final giveCands = my.players.where((p) => !p.ikusei && !p.numberPending).toList()
       ..sort((a, b) => RosterEngine.value(b).compareTo(RosterEngine.value(a)));
     final getCands = partner.players.where((p) => !p.ikusei).toList()
       ..sort((a, b) => RosterEngine.value(a).compareTo(RosterEngine.value(b)));
+    final give0 = giveCands[0];
+    final give0OldNum = give0.uniformNumber;
     final getP = getCands.first;
     final tradeErr = app.proposeTrade(partner, [giveCands[0], giveCands[1]], [getP], 0, givePicks: [(2, my.id)]);
     expect(tradeErr, isNull);
+    await app.saveData();
     expect(my.players.contains(getP), isTrue);
-    expect(getP.hasUniform, isFalse);
-    expect(getP.uniformNumber, kNoUniform);
-    expect(getP.uniformText, '未定');
+    expect(getP.uniformNumber, inInclusiveRange(-1, 99));
     expect(getP.numberPending, isTrue);
 
-    // 3. 既存選手の背番号変更予約（oldNum -> freeNew）と同時に、トレード移籍選手へ oldNum を予約し、ドラフト新人は未予約のままにする
-    final existing = my.players.firstWhere((p) => !p.ikusei && p.hasUniform);
+    final myHistBefore = await app.numberHistory(my);
+    expect(myHistBefore[tempRookieNum]?.any((e) => e.$2 == firstRookie.registeredName) ?? false, isFalse);
+    expect(myHistBefore[give0OldNum]?.any((e) => e.$2 == give0.registeredName && e.$3 == '移籍で空き番号に'), isTrue);
+
+    // 3. 既存選手の背番号変更予約（oldNum -> freeNew）と同時に、ドラフト新人(firstRookie)へ oldNum を予約する
+    final existing = my.players.firstWhere((p) => !p.ikusei && !p.numberPending);
     final oldNum = existing.uniformNumber;
     final freeNew = RosterEngine.freeNumber(my, ikusei: false);
     expect(app.setNumber(my, existing, freeNew), isNull);
-    expect(app.setNumber(my, getP, oldNum), isNull);
+    expect(app.setNumber(my, firstRookie, oldNum), isNull);
     expect(existing.uniformNumber, oldNum);
-    expect(getP.uniformNumber, kNoUniform);
+    expect(firstRookie.uniformNumber, tempRookieNum);
 
-    // NumberBoardScreen でも未定選手が「未定」「背番号未定（開幕前日に決定）」として表示され、空欄のまま保存してもエラーにならない
-    await tester.binding.setSurfaceSize(const Size(400, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(MaterialApp(home: NumberBoardScreen(app: app, team: my)));
-    await tester.pumpAndSettle();
-    expect(find.text('未定'), findsWidgets);
-    expect(find.textContaining('背番号未定（開幕前日に決定）'), findsWidgets);
-    await tester.tap(find.text('決める'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-
-    // 4. 開幕前日の適用で既存選手の変更・予約済み移籍選手・未予約の新人の背番号が一斉に確定する
+    // 4. 開幕前日(2027/3/25)の適用で既存選手の変更と新人の正式決定が一斉に反映され、新人の仮番号は経歴・変遷に残らない
     app.applyNextNumbers(DateTime(2027, 3, 25));
+    await app.saveData();
     expect(existing.uniformNumber, freeNew);
     expect(existing.nextNumber, isNull);
-    expect(getP.uniformNumber, oldNum);
+    expect(firstRookie.uniformNumber, oldNum);
+    expect(firstRookie.numberPending, isFalse);
     expect(getP.numberPending, isFalse);
-    for (final r in rookies) {
-      expect(r.hasUniform, isTrue);
-      expect(r.numberPending, isFalse);
-    }
-    final allNums = [for (final p in my.players) p.uniformNumber];
-    expect(allNums.toSet().length, allNums.length);
 
-    // 5. シーズン中（開幕後〜ドラフト会議前日：6/15）の支配下登録とトレードでは即座に背番号が与えられる
+    final tlRookie = await app.playerTimeline(firstRookie);
+    expect(tlRookie.any((e) => e.$2.contains('入団') && !e.$2.contains('背番号')), isTrue);
+    expect(tlRookie.any((e) => e.$2 == '背番号が${uniformLabel(oldNum)}に決定。'), isTrue);
+    expect(tlRookie.any((e) => e.$2.contains('${uniformLabel(tempRookieNum)}から')), isFalse);
+
+    final myHistAfter = await app.numberHistory(my);
+    expect(myHistAfter[tempRookieNum]?.any((e) => e.$2 == firstRookie.registeredName) ?? false, isFalse);
+    expect(myHistAfter[oldNum]?.any((e) => e.$2.contains(firstRookie.registeredName)), isTrue);
+
+    // 5. シーズン中（開幕後〜ドラフト会議前日：6/15）の支配下登録とトレードでは即座に確定背番号が付与される
     app.seasonFinished = false;
     app.currentDate = DateTime(2026, 6, 15);
     expect(app.isBeforeOpeningDay(), isFalse);
@@ -1312,13 +1310,12 @@ void main() {
     expect(app.isBeforeOpeningDay(DateTime(2026, 10, 31)), isTrue);
 
     while (RosterEngine.freeSlots(my) <= 1) {
-      my.players.removeWhere((p) => p.ikusei == false && p.id != existing.id && p.id != getP.id && p.id != my.players.first.id);
+      my.players.removeWhere((p) => !p.ikusei && p.id != existing.id && p.id != firstRookie.id && p.id != getP.id && p.id != my.players.first.id);
       if (RosterEngine.freeSlots(my) <= 1) my.players.removeLast();
     }
     final ik = my.players.firstWhere((p) => p.ikusei, orElse: () => my.players.last..ikusei = true..uniformNumber = 120);
     expect(app.promoteIkusei(ik), isNull);
     expect(ik.ikusei, isFalse);
-    expect(ik.hasUniform, isTrue);
     expect(ik.uniformNumber, inInclusiveRange(-1, 99));
     expect(ik.numberPending, isFalse);
 
@@ -1329,7 +1326,110 @@ void main() {
     final getInSeason = getSeason.first;
     app.lastTradeWith.remove(partner.id);
     expect(app.proposeTrade(partner, [giveSeason[0], giveSeason[1]], [getInSeason], 0, givePicks: [(3, my.id)]), isNull);
-    expect(getInSeason.hasUniform, isTrue);
     expect(getInSeason.numberPending, isFalse);
+  });
+
+  testWidgets('背番号一括変更画面に仮番号（開幕前日に決定）が表示され保存時に例外が出ない', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+      final my = app.teams[0];
+      app.myTeamId = my.id;
+      app.seasonFinished = true;
+      app.currentDate = DateTime(2026, 10, 31);
+      app.draftDoneYear = 2025;
+      app.runAutoDraft();
+    });
+    final my = app.teams[0];
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(home: NumberBoardScreen(app: app, team: my)));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 40 && find.textContaining('仮番号（開幕前日に決定）').evaluate().isEmpty; i++) {
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(find.textContaining('仮番号（開幕前日に決定）'), findsWidgets);
+    await tester.tap(find.text('決める'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  test('既存セーブ（開発者版スロット1相当）のオフシーズン入団と移籍空き番号がマイグレーションで修復される', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams[0];
+    final partner = app.teams[1];
+    app.myTeamId = my.id;
+    app.startYear = 2026;
+    app.currentDate = DateTime(2026, 5, 1);
+
+    final initOta = partner.players.firstWhere((p) => !p.ikusei);
+    final otaNum = initOta.uniformNumber;
+    final rookie = Player(
+      id: 'slot1_rookie_6',
+      lastName: '新人',
+      firstName: '六位',
+      isPitcher: true,
+      mainPos: '投手',
+      age: 19,
+      proYears: 1,
+      uniformNumber: 23,
+      draftInfo: '2026年ドラフト6位（高校・テスト高）',
+      draftYear: 2026,
+    );
+    my.players.add(rookie);
+
+    // 旧仕様の記録：10/31 ドラフト入団に仮番号25が書かれ、開幕前に25→23へ変更。2/1に太田が移籍（numなし）
+    app.chronYears[2026] = [
+      {
+        'd': '2025-10-31',
+        'team': my.id,
+        'k': 'join',
+        't': '投手 ${rookie.registeredName}(18)がドラフト6位（高校・テスト高）で入団。背番号は25。',
+        'pid': rookie.id,
+        'pt': '高卒ドラフト6位で${my.name}に入団（テスト高）。背番号25。',
+      },
+      {
+        'd': '2026-02-01',
+        'team': my.id,
+        'k': 'number',
+        't': '投手 ${rookie.registeredName}の背番号を25から23に変更。',
+        'pid': rookie.id,
+        'pt': '背番号を25から23に変更。',
+      },
+      {
+        'd': '2026-02-01',
+        'team': partner.id,
+        'k': 'leave',
+        't': '${initOta.isPitcher ? '投手' : initOta.mainPosition} ${initOta.registeredName}(${initOta.age})がトレードで${my.shortName}へ移籍。',
+        'pid': initOta.id,
+      },
+    ];
+    app.chronFirstYear = 2026;
+
+    await app.migrateChronNumbers();
+
+    // 新人の年表が「10/31 入団（背番号なし）」「3/25 背番号が23に決定。」になっていること
+    final tl = await app.playerTimeline(rookie);
+    expect(tl.any((e) => e.$1.month == 10 && e.$1.day == 31 && e.$2.contains('ドラフト6位') && !e.$2.contains('25')), isTrue);
+    expect(tl.any((e) => e.$1.month == 3 && e.$2 == '背番号が23に決定。'), isTrue);
+    expect(tl.any((e) => e.$2.contains('25から')), isFalse);
+
+    // 背番号変遷：25番に仮番号が残らず、23番に決定が記録され、太田の元番号は「移籍で空き番号に」として出ること
+    final myHist = await app.numberHistory(my);
+    expect(myHist[25]?.any((e) => e.$2 == rookie.registeredName) ?? false, isFalse);
+    expect(myHist[23]?.any((e) => e.$2 == rookie.registeredName && e.$3 == '背番号決定'), isTrue);
+
+    final pHist = await app.numberHistory(partner);
+    expect(pHist[otaNum]?.any((e) => e.$1 == '2026-02-01' && e.$2 == initOta.registeredName && e.$3 == '移籍で空き番号に'), isTrue);
   });
 }

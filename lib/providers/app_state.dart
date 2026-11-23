@@ -119,7 +119,7 @@ class AppState extends ChangeNotifier {
   Map<int, List<Map<String, dynamic>>> chronYears = {};
   int chronFirstYear = 0; // 出来事の記録を始めた年度
   String openingNumberDay = ''; // この日だけ、自球団の全員の背番号をすぐ変えられる（初期の背番号の扱い。背番号の変遷には変更として残さない）
-  Map<String, (String, bool, Player)>? _rosterSnap; // 前回の所属（入団・退団の差分を取る）
+  Map<String, (String, bool, Player, int, bool)>? _rosterSnap; // 前回の所属（入団・退団・背番号の差分を取る）
   Map<String, (String, String, Coach)>? _coachSnap;
   /// お知らせの記録（暦年 → 「月/日 内容」新しい順）。過去3年分
   Map<int, List<String>> newsLog = {};
