@@ -163,18 +163,22 @@ class RosterEngine {
     for (var i = 0; i < t.winningPattern.length; i++) {
       if (t.winningPattern[i] == p.id) t.winningPattern[i] = '';
     }
-    // 2軍の手動の打順に穴が空いたら、同じ守備位置に近い2軍の野手で埋める
-    for (final l in t.farmLineup.where((l) => l.playerId == p.id)) {
-      final used = t.farmLineup.map((e) => e.playerId).toSet();
-      final posName = _posKeyToName[l.position];
-      final cands = t.players.where((c) => c.id != p.id && !c.isPitcher && !t.roster1G.contains(c.id) && !used.contains(c.id) && !c.isInjuredOut).toList()
-        ..sort((a, b) => ((b.mainPosition == posName ? 10 : 0) + b.ovr).compareTo((a.mainPosition == posName ? 10 : 0) + a.ovr));
-      if (cands.isNotEmpty) l.playerId = cands.first.id;
+    // 2・3軍の手動の打順に穴が空いたら、同じ守備位置に近い2軍以下の野手で埋める
+    void clearLevel(List<LineupEntry> lu, List<String> rot) {
+      for (final l in lu.where((l) => l.playerId == p.id)) {
+        final used = lu.map((e) => e.playerId).toSet();
+        final posName = _posKeyToName[l.position];
+        final cands = t.players.where((c) => c.id != p.id && !c.isPitcher && !t.roster1G.contains(c.id) && !used.contains(c.id) && !c.isInjuredOut).toList()
+          ..sort((a, b) => ((b.mainPosition == posName ? 10 : 0) + b.ovr).compareTo((a.mainPosition == posName ? 10 : 0) + a.ovr));
+        if (cands.isNotEmpty) l.playerId = cands.first.id;
+      }
+      lu.removeWhere((l) => l.playerId == p.id);
+      for (var i = 0; i < rot.length; i++) {
+        if (rot[i] == p.id) rot[i] = '';
+      }
     }
-    t.farmLineup.removeWhere((l) => l.playerId == p.id);
-    for (var i = 0; i < t.farmRotation.length; i++) {
-      if (t.farmRotation[i] == p.id) t.farmRotation[i] = '';
-    }
+    clearLevel(t.farmLineup, t.farmRotation);
+    clearLevel(t.thirdLineup, t.thirdRotation);
     final hole = t.lineup.where((l) => l.playerId == p.id).toList();
     repairRoster(t);
     for (final l in hole) {

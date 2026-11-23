@@ -177,59 +177,167 @@ extension CampOps on AppState {
     }
   }
 
-  /// 3軍のオーダー（3軍監督が組む）：1軍・今日の2軍戦に出た選手を除いた中から、優先する選手 → 伸ばす価値のある若手の順。
-  ///  野手が9人に足りない分は、今日の2軍戦に出た野手を借りる（2軍から派遣。3人目の値に入れる）。
-  ///  seed が null のときはばらつきなし（オーダー画面の見込み）
-  (List<Player>, List<Player>, Set<String>)? thirdOrder(Team t, {Set<String> used = const {}, int? seed}) {
-    final pool = t.players.where((p) => !t.roster1G.contains(p.id) && !used.contains(p.id) && !p.isInjuredOut).toList();
-    final fielders = pool.where((p) => !p.isPitcher).toList();
-    final pitchers = pool.where((p) => p.isPitcher).toList();
-    if (pitchers.isEmpty) return null; // 投げられる投手がいない日は3軍戦なし
+  static const _thirdMainPos = {'捕': '捕手', '一': '一塁手', '二': '二塁手', '三': '三塁手', '遊': '遊撃手', '左': '左翼手', '中': '中堅手', '右': '右翼手'};
+
+  double _thirdScore(Team t, Player p, {Random? r}) {
     final mgr = staffOf(t)['3軍監督'];
     final skill = mgr == null ? 40 : ((mgr.trueAbil['代打判断'] ?? 50) + (mgr.trueAbil['人望'] ?? 50)) ~/ 2;
+    return (t.thirdPriority.contains(p.id) ? 1000 : 0) +
+        (RosterEngine.potentialOvr(p) - p.ovr) * 1.5 +
+        p.ovr * 0.3 -
+        (p.age - 20).clamp(0, 15) +
+        (r == null ? 0 : r.nextDouble() * (110 - skill) * 0.4);
+  }
+
+  /// 3軍の自動打順（守備位置つき）：1軍と今日の2軍戦に出る選手を除き、育成価値＋適性で9人を選ぶ
+  List<LineupEntry> thirdAutoLineup(Team t, {Set<String> used = const {}, int? seed, Map<String, String> keep = const {}}) {
     final r = seed == null ? null : Random(seed);
-    // 判断力が高い監督ほど、伸ばす価値のある若手（育成選手を含む）を選ぶ。低いと選び方がばらつく
-    double score(Player p) =>
-        (t.thirdPriority.contains(p.id) ? 1000 : 0) + (RosterEngine.potentialOvr(p) - p.ovr) * 1.5 + p.ovr * 0.3 - (p.age - 20).clamp(0, 15) + (r == null ? 0 : r.nextDouble() * (110 - skill) * 0.4);
-    final fs = {for (final p in fielders) p.id: score(p)}, ps = {for (final p in pitchers) p.id: score(p)};
-    fielders.sort((a, b) => fs[b.id]!.compareTo(fs[a.id]!));
-    pitchers.sort((a, b) => ps[b.id]!.compareTo(ps[a.id]!));
-    // 足りない野手は、今日の2軍戦に出た野手から（2軍から派遣）
-    final borrowed = <String>{};
+    final fielders = t.players.where((p) => !p.isPitcher && !t.roster1G.contains(p.id) && !used.contains(p.id) && !p.isInjuredOut).toList();
     if (fielders.length < 9) {
       final extra = t.players.where((p) => !p.isPitcher && !t.roster1G.contains(p.id) && used.contains(p.id) && !p.isInjuredOut).toList()
         ..sort((a, b) => a.ovr.compareTo(b.ovr));
-      for (final p in extra.take(9 - fielders.length)) {
-        borrowed.add(p.id);
-        fielders.add(p);
-      }
-      if (fielders.length < 9) return null;
+      fielders.addAll(extra.take(9 - fielders.length));
+      if (fielders.length < 9) return const [];
     }
-    final nine = fielders.take(9).toList()
-      // 打順：出塁・ミートの高い選手を上位、パワーのある選手を3〜5番に（簡易）
-      ..sort((a, b) => (b.contactRight + b.power + b.eye).compareTo(a.contactRight + a.power + a.eye));
-    var order = [...nine.skip(3).take(2), nine[0], nine[1], nine[2], ...nine.skip(5)];
-    // 自分で組んだ打順：出られる選手はその打順のまま、出られない選手の打順は3軍監督の選んだ選手で埋める
-    if (!t.thirdAuto && t.thirdLineup.isNotEmpty) {
-      final can = {for (final p in [...pool.where((p) => !p.isPitcher), ...fielders]) p.id: p};
-      final mine = [for (final id in t.thirdLineup.take(9)) can[id]];
-      final rest = order.where((p) => !mine.any((m) => m?.id == p.id)).toList();
-      order = [for (final m in mine) m ?? (rest.isEmpty ? null : rest.removeAt(0))].whereType<Player>().toList();
-      while (order.length < 9 && rest.isNotEmpty) {
-        order.add(rest.removeAt(0));
+    final scores = {for (final p in fielders) p.id: _thirdScore(t, p, r: r)};
+    final byId = {for (final p in fielders) p.id: p};
+    final usedIds = <String>{};
+    final byPos = <String, Player>{};
+    keep.forEach((pos, id) {
+      final p = byId[id];
+      if (p != null && !usedIds.contains(id)) {
+        byPos[pos] = p;
+        usedIds.add(id);
+      }
+    });
+    double posFit(Player p, String pos) =>
+        scores[p.id]! + FarmEngine.fieldingAt(p, pos) * 0.5 + (p.mainPosition == _thirdMainPos[pos] ? 15 : 0);
+    for (final pos in const ['捕', '遊', '中', '二', '三', '右', '左', '一']) {
+      if (byPos.containsKey(pos)) continue;
+      Player? best;
+      for (final p in fielders) {
+        if (usedIds.contains(p.id)) continue;
+        if (best == null || posFit(p, pos) > posFit(best, pos)) best = p;
+      }
+      if (best != null) {
+        byPos[pos] = best;
+        usedIds.add(best.id);
       }
     }
-    return (order, pitchers.take(3).toList(), borrowed);
+    if (!byPos.containsKey('DH')) {
+      Player? best;
+      double dhScore(Player p) => scores[p.id]! + (p.contactLeft + p.contactRight + p.power + p.eye) * 0.08;
+      for (final p in fielders) {
+        if (usedIds.contains(p.id)) continue;
+        if (best == null || dhScore(p) > dhScore(best)) best = p;
+      }
+      if (best != null) {
+        byPos['DH'] = best;
+        usedIds.add(best.id);
+      }
+    }
+    final entries = byPos.entries.map((e) => LineupEntry(playerId: e.value.id, position: e.key)).toList();
+    entries.sort((a, b) {
+      final pa = byId[a.playerId]!, pb = byId[b.playerId]!;
+      return (pb.contactRight + pb.power + pb.eye).compareTo(pa.contactRight + pa.power + pa.eye);
+    });
+    return [...entries.skip(3).take(2), ...entries.take(3), ...entries.skip(5)];
   }
 
-  /// 3軍戦：1軍の試合にも2軍の試合にも出ていない選手から、3軍監督がオーダーを組む。
+  /// 3軍の実効打順（手動指定＋欠員補完、2軍と同仕様）
+  List<LineupEntry> effectiveThirdLineup(Team t, {Set<String> used = const {}, int? seed}) {
+    if (t.thirdAuto || t.thirdLineup.length != 9) return thirdAutoLineup(t, used: used, seed: seed);
+    final avail = {
+      for (final p in t.players)
+        if (!p.isPitcher && !t.roster1G.contains(p.id) && !used.contains(p.id) && !p.isInjuredOut) p.id: p,
+    };
+    final validPos = FarmEngine.lineupPositions;
+    final usedPos = <String>{};
+    final rawPos = <String>[];
+    for (final l in t.thirdLineup) {
+      if (validPos.contains(l.position) && usedPos.add(l.position)) {
+        rawPos.add(l.position);
+      } else {
+        rawPos.add('');
+      }
+    }
+    final freePos = [for (final pos in validPos) if (!usedPos.contains(pos)) pos];
+    final order = <String>[];
+    final keep = <String, String>{};
+    for (var i = 0; i < t.thirdLineup.length; i++) {
+      final pos = rawPos[i].isNotEmpty ? rawPos[i] : freePos.removeAt(0);
+      order.add(pos);
+      final id = t.thirdLineup[i].playerId;
+      if (avail.containsKey(id) && !keep.containsValue(id)) keep[pos] = id;
+    }
+    final filled = thirdAutoLineup(t, used: used, seed: seed, keep: keep);
+    final byPos = {for (final e in filled) e.position: e};
+    return [for (final pos in order) if (byPos[pos] != null) byPos[pos]!];
+  }
+
+  /// 3軍の実効先発ローテ（手動枠＋空き枠の自動補完、2軍と同仕様）
+  List<String> effectiveThirdRotation(Team t, {Set<String> used = const {}, int? seed}) {
+    final r = seed == null ? null : Random(seed);
+    final pitchers = t.players.where((p) => p.isPitcher && !t.roster1G.contains(p.id) && !used.contains(p.id) && !p.isInjuredOut).toList();
+    final ps = {for (final p in pitchers) p.id: _thirdScore(t, p, r: r)};
+    pitchers.sort((a, b) => ps[b.id]!.compareTo(ps[a.id]!));
+    final ids = {for (final p in pitchers) p.id};
+    final rot = List<String>.filled(t.thirdRotationCount, '');
+    if (!t.thirdAuto) {
+      for (var i = 0; i < t.thirdRotationCount && i < t.thirdRotation.length; i++) {
+        if (ids.contains(t.thirdRotation[i]) && !rot.contains(t.thirdRotation[i])) rot[i] = t.thirdRotation[i];
+      }
+    }
+    final pool = pitchers.where((p) => !rot.contains(p.id)).iterator;
+    for (var i = 0; i < rot.length; i++) {
+      if (rot[i].isNotEmpty) continue;
+      if (pool.moveNext()) rot[i] = pool.current.id;
+    }
+    return rot;
+  }
+
+  /// 3軍のオーダー（3軍監督が組む／手動時は指定順＋欠員補完）：野手9人・投手3人（先発＋リリーフ2）・2軍から借りた選手
+  (List<Player>, List<Player>, Set<String>)? thirdOrder(Team t, {Set<String> used = const {}, int? seed}) {
+    final entries = effectiveThirdLineup(t, used: used, seed: seed);
+    if (entries.length < 9) return null;
+    final rot = effectiveThirdRotation(t, used: used, seed: seed);
+    final pmap = {for (final p in t.players) p.id: p};
+    final order = [for (final e in entries) pmap[e.playerId]].whereType<Player>().toList();
+    if (order.length < 9) return null;
+    final borrowed = {for (final p in order) if (used.contains(p.id)) p.id};
+    String starterId = '';
+    for (var k = 0; k < rot.length; k++) {
+      final id = rot[(t.thirdRotationIndex + k) % rot.length];
+      if (id.isNotEmpty) {
+        starterId = id;
+        break;
+      }
+    }
+    if (starterId.isEmpty) return null; // 投げられる投手がいない日は3軍戦なし
+    final resting = rot.where((id) => id.isNotEmpty && id != starterId).toSet();
+    final availPitchers = t.players.where((p) => p.isPitcher && !t.roster1G.contains(p.id) && !used.contains(p.id) && !p.isInjuredOut).toList();
+    final relievers = availPitchers.where((p) => p.id != starterId && !resting.contains(p.id)).toList()
+      ..sort((a, b) => _thirdScore(t, b).compareTo(_thirdScore(t, a)));
+    final fallbackPitchers = availPitchers.where((p) => p.id != starterId && !relievers.contains(p)).toList()
+      ..sort((a, b) => _thirdScore(t, b).compareTo(_thirdScore(t, a)));
+    final pitchers = <Player>[
+      pmap[starterId]!,
+      ...relievers.take(2),
+    ];
+    if (pitchers.length < 3) pitchers.addAll(fallbackPitchers.take(3 - pitchers.length));
+    return (order, pitchers, borrowed);
+  }
+
+  /// 3軍戦：1軍の試合にも2軍の試合にも出ていない選手から、オーダーを組む。
   /// 出場した選手に経験値（1軍の ×0.3）。今日の3軍の日程があれば、能力・調子で簡易に試合を計算して成績を残す
   void _playThirdTeam(Map<String, Set<String>> appearedToday) {
     final lineups = <String, (List<Player>, List<Player>)>{};
+    final playedTeams = <Team>[];
     for (final t in teams) {
       final o = thirdOrder(t, used: appearedToday[t.id] ?? const <String>{}, seed: currentDate.millisecondsSinceEpoch ^ t.id.hashCode);
       if (o == null) continue;
       lineups[t.id] = (o.$1, o.$2);
+      playedTeams.add(t);
       for (final p in o.$1.where((p) => !o.$3.contains(p.id))) {
         GrowthEngine.gameExp(p, 0.3, coach: (st) => _gameExpMult(t, p, st));
       }
@@ -245,6 +353,9 @@ extension CampOps on AppState {
         continue;
       }
       _simThird(m, h, a);
+    }
+    for (final t in playedTeams) {
+      t.thirdRotationIndex = (t.thirdRotationIndex + 1) % t.thirdRotationCount;
     }
   }
 

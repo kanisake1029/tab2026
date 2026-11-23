@@ -45,9 +45,12 @@ class Team {
   List<String> protectList;     // FA の人的補償のプロテクト（31人。空なら自動で上位31人）
   List<String> springCamp;      // 春季キャンプ（1軍キャンプ）に連れていく選手（最大50人）。空なら始まるときに自動で選ぶ
   List<String> autumnCamp;      // 秋季キャンプに連れていく選手（最大30人）。空なら始まるときに自動で選ぶ
-  List<String> thirdPriority;   // 3軍戦で優先して出す選手（3軍監督のオーダーより先に入れる）
-  List<String> thirdLineup;     // 3軍の打順（自分で組むとき。出られない選手の分は3軍監督が埋める）
-  bool thirdAuto;               // 3軍の打順を3軍監督にまかせる
+  List<String> thirdPriority;      // 3軍戦で優先して出す選手（3軍監督のオーダーより先に入れる）
+  List<LineupEntry> thirdLineup;   // 3軍の打順（手動時9人。位置は 捕・一・二・三・遊・左・中・右・DH）
+  bool thirdAuto;                  // 3軍の打順を3軍監督にまかせる
+  List<String> thirdRotation;      // 3軍の先発ローテ（手動時）
+  int thirdRotationIndex;          // 次に先発する3軍の枠番号
+  int thirdRotationCount;          // 3軍の先発ローテの人数（4〜12）
 
   // ===== 2軍のオーダー（2軍戦は1軍と同じ日程・同じ対戦チームの2軍と行う。介入できるのはオーダーのみ） =====
   bool farmAuto;                 // true=自動で組む（怪我・疲労を見て毎日組み直す）
@@ -91,8 +94,11 @@ class Team {
     List<String>? springCamp,
     List<String>? autumnCamp,
     List<String>? thirdPriority,
-    List<String>? thirdLineup,
+    List<LineupEntry>? thirdLineup,
     this.thirdAuto = true,
+    List<String>? thirdRotation,
+    this.thirdRotationIndex = 0,
+    this.thirdRotationCount = farmRotationSize,
     this.farmAuto = true,
     List<LineupEntry>? farmLineup,
     List<String>? farmRotation,
@@ -101,6 +107,7 @@ class Team {
   })  : players = players ?? [],
         farmLineup = farmLineup ?? [],
         farmRotation = farmRotation ?? [],
+        thirdRotation = thirdRotation ?? [],
         roster1G = roster1G ?? [],
         _rotation = _fixed(rotation, maxRotation),
         rotationCount = rotationCount.clamp(minRotation, maxRotation),
@@ -288,8 +295,11 @@ class Team {
       'springCamp': springCamp,
       'autumnCamp': autumnCamp,
       'thirdPriority': thirdPriority,
-      'thirdLineup': thirdLineup,
+      'thirdLineup': thirdLineup.map((l) => l.toJson()).toList(),
       'thirdAuto': thirdAuto,
+      'thirdRotation': thirdRotation,
+      'thirdRotationIndex': thirdRotationIndex,
+      if (thirdRotationCount != farmRotationSize) 'thirdRotN': thirdRotationCount,
       'farmAuto': farmAuto,
       'farmLineup': farmLineup.map((l) => l.toJson()).toList(),
       'farmRotation': farmRotation,
@@ -326,8 +336,14 @@ class Team {
       springCamp: List<String>.from(json['springCamp'] ?? []),
       autumnCamp: List<String>.from(json['autumnCamp'] ?? []),
       thirdPriority: List<String>.from(json['thirdPriority'] ?? []),
-      thirdLineup: List<String>.from(json['thirdLineup'] ?? []),
+      thirdLineup: (json['thirdLineup'] as List?)
+              ?.map((l) => l is String ? LineupEntry(playerId: l, position: '') : LineupEntry.fromJson(Map<String, dynamic>.from(l as Map)))
+              .toList() ??
+          [],
       thirdAuto: json['thirdAuto'] ?? true,
+      thirdRotation: List<String>.from(json['thirdRotation'] ?? []),
+      thirdRotationIndex: json['thirdRotationIndex'] ?? 0,
+      thirdRotationCount: ((json['thirdRotN'] ?? farmRotationSize) as num).toInt().clamp(farmRotationMin, farmRotationMax),
       farmAuto: json['farmAuto'] ?? true,
       farmLineup: (json['farmLineup'] as List?)?.map((l) => LineupEntry.fromJson(l)).toList() ?? [],
       farmRotation: List<String>.from(json['farmRotation'] ?? []),

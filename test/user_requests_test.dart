@@ -19,6 +19,8 @@ import 'package:npb_pennant_app/utils/schedule_generator.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
 import 'package:npb_pennant_app/screens/office_screen.dart';
+import 'package:npb_pennant_app/screens/order_tabs/lineup_tab.dart';
+import 'package:npb_pennant_app/screens/order_tabs/pitcher_tab.dart';
 import 'package:npb_pennant_app/screens/reinforce_screens.dart';
 import 'package:npb_pennant_app/screens/title_race.dart';
 import 'package:npb_pennant_app/utils/app_theme.dart';
@@ -788,5 +790,88 @@ void main() {
     await tester.tap(find.text('スカウト陣'));
     await tester.pumpAndSettle();
     expect(find.text('スカウト（ドラフト候補・海外の選手）'), findsOneWidget);
+  });
+
+  test('3軍オーダーは全9守備位置を持ち、新旧セーブ形式で永続化・復元できる', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams.first;
+    final used = thirdUsed(my);
+    final auto = app.effectiveThirdLineup(my, used: used);
+    expect(auto.length, 9);
+    expect(auto.map((e) => e.position).toSet(), {'捕', '一', '二', '三', '遊', '左', '中', '右', 'DH'});
+
+    // 新形式で保存・復元
+    my.thirdAuto = false;
+    my.thirdLineup = [for (final e in auto) LineupEntry(playerId: e.playerId, position: e.position)];
+    my.thirdRotation = app.effectiveThirdRotation(my, used: used);
+    final json = my.toJson();
+    final restored = Team.fromJson(json, (p) => Player.fromJson(Map<String, dynamic>.from(p as Map)));
+    expect(restored.thirdAuto, isFalse);
+    expect(restored.thirdLineup.length, 9);
+    expect(restored.thirdLineup.first.position, auto.first.position);
+    expect(restored.thirdRotation, my.thirdRotation);
+
+    // 旧形式(List<String>)も読み込んで欠けた守備位置を補完できる
+    final legacyJson = Map<String, dynamic>.from(json)..['thirdLineup'] = [for (final e in auto) e.playerId];
+    final legacyTeam = Team.fromJson(legacyJson, (p) => Player.fromJson(Map<String, dynamic>.from(p as Map)));
+    final effLegacy = app.effectiveThirdLineup(legacyTeam, used: used);
+    expect(effLegacy.length, 9);
+    expect(effLegacy.map((e) => e.position).toSet(), {'捕', '一', '二', '三', '遊', '左', '中', '右', 'DH'});
+  });
+
+  testWidgets('3軍オーダー画面は2軍と同じく守備位置の入替・守備フィールド・先発ローテ編集ができる', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    final pmap = {for (final p in my.players) p.id: p};
+    final before = app.effectiveThirdLineup(my, used: thirdUsed(my));
+    final pos0 = before[0].position;
+    final pos1 = before[1].position;
+
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: LineupTab(team: my, appState: app, onRosterChanged: () {}, playerMap: pmap, level: 3),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('守備位置'), findsOneWidget);
+
+    // 1番打者の守備位置をタップし、2番打者の守備位置に変更すると両者が入れ替わる
+    await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
+    await tester.pumpAndSettle();
+    final chipFinder = pos1 == 'DH' ? find.widgetWithText(ChoiceChip, '指') : find.byWidgetPredicate((w) => w is ChoiceChip && (w.label is Text) && ((w.label as Text).data?.startsWith('$pos1 ') ?? false));
+    await tester.tap(chipFinder.first);
+    await tester.pumpAndSettle();
+    expect(my.thirdAuto, isFalse);
+    expect(my.thirdLineup[0].position, pos1);
+    expect(my.thirdLineup[1].position, pos0);
+
+    // 3軍投手タブも2軍と同じ先発ローテ・中継ぎ構成で人数変更できる
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: PitcherTab(team: my, appState: app, onRosterChanged: () {}, playerMap: pmap, level: 3),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('3軍の先発ローテ'), findsOneWidget);
+    expect(find.textContaining('3軍の中継ぎ'), findsOneWidget);
+    final beforeRotCount = my.thirdRotationCount;
+    await tester.tap(find.byTooltip('先発を1人増やす'));
+    await tester.pumpAndSettle();
+    expect(my.thirdRotationCount, beforeRotCount + 1);
   });
 }

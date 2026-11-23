@@ -16,8 +16,7 @@ import 'order_shared.dart';
 ///    （打順同士＝打順の入れ替え／控え⇔スタメン＝交代／守備位置のマーカー＝その位置へ）
 ///  ・タップは「選んだ選手の能力」に表示するだけ（何人もタップして見比べられる）
 ///  ・広い画面：打順表＋守備フィールド。狭い画面：2行のカード型の打順＋守備フィールド＋控え
-///  ・2軍：打順を変えると「自分で組む」になる（出られない選手は自動で代わりが入る）
-///  ・3軍：守備位置は無く（3軍監督が決める）、打順だけを変えられる
+///  ・2・3軍：打順・守備位置を変えると「自分で組む」になる（出られない選手は自動で代わりが入る）
 class LineupTab extends StatefulWidget {
   final Team team;
   final AppState appState;
@@ -55,6 +54,14 @@ void farmToManual(Team team) {
   team.farmAuto = false;
 }
 
+/// 3軍：いま出ている打順・先発ローテ（おまかせ、または代わりの選手が入った手動）を「自分で組む」として固める
+void thirdToManual(Team team, AppState app) {
+  final used = thirdUsed(team);
+  team.thirdLineup = [for (final e in app.effectiveThirdLineup(team, used: used)) LineupEntry(playerId: e.playerId, position: e.position)];
+  if (team.thirdAuto) team.thirdRotation = app.effectiveThirdRotation(team, used: used);
+  team.thirdAuto = false;
+}
+
 /// 3軍戦に出ない選手（2軍の打順と2軍の次の先発）
 Set<String> thirdUsed(Team team) {
   final rot = FarmEngine.effectiveRotation(team);
@@ -76,7 +83,7 @@ class _LineupTabState extends State<LineupTab> {
   String? _picked; // 「選んだ選手の能力」に表示中の選手（色を付けて分かるようにする）
   bool _narrow = false;
   List<LineupEntry> _cur = const []; // 表示中の打順（2軍・3軍は見込み）
-  (List<Player>, List<Player>, Set<String>)? _third;
+  bool _thirdHasPitcher = true;
 
   void _changed() {
     widget.appState.updateAndSave();
@@ -89,28 +96,34 @@ class _LineupTabState extends State<LineupTab> {
   /// その軍の成績
   PlayerStats _st(Player p) => _lv == 2 ? p.farmStats : (_lv == 3 ? p.thirdStats : p.shownStats);
 
-  /// DH を使うか（2軍は常に DH、3軍は守備位置なし）
-  bool get _dh => _lv == 1 ? team.useDH : _lv == 2;
+  /// DH を使うか（2軍・3軍は常に DH あり）
+  bool get _dh => _lv == 1 ? team.useDH : true;
 
   void _load() {
     if (_lv == 2) {
       _cur = FarmEngine.effectiveLineup(team);
     } else if (_lv == 3) {
-      _third = widget.appState.thirdOrder(team, used: thirdUsed(team));
-      _cur = [for (final p in _third?.$1 ?? const <Player>[]) LineupEntry(playerId: p.id, position: '')];
+      final used = thirdUsed(team);
+      _cur = widget.appState.effectiveThirdLineup(team, used: used);
+      _thirdHasPitcher = widget.appState.effectiveThirdRotation(team, used: used).any((e) => e.isNotEmpty);
     } else {
       _cur = team.lineup;
     }
   }
 
   Player? get _sp {
-    if (_lv == 2) {
-      final rot = FarmEngine.effectiveRotation(team);
+    if (_lv == 2 || _lv == 3) {
+      final rot = _lv == 2
+          ? FarmEngine.effectiveRotation(team)
+          : widget.appState.effectiveThirdRotation(team, used: thirdUsed(team));
       if (rot.isEmpty) return null;
-      final id = rot[team.farmRotationIndex % rot.length];
-      return id.isEmpty ? null : _p(id);
+      final start = _lv == 2 ? team.farmRotationIndex : team.thirdRotationIndex;
+      for (var k = 0; k < rot.length; k++) {
+        final id = rot[(start + k) % rot.length];
+        if (id.isNotEmpty) return _p(id);
+      }
+      return null;
     }
-    if (_lv == 3) return _third == null || _third!.$2.isEmpty ? null : _third!.$2.first;
     final id = team.todaysStarterId;
     return id != null && id.isNotEmpty ? widget.playerMap[id] : null;
   }
@@ -127,16 +140,14 @@ class _LineupTabState extends State<LineupTab> {
     return team.active26.map(_p).where((p) => p.canBat && !ids.contains(p.id)).toList()..sort(compareByUniform);
   }
 
-  /// 打順を変える。2軍は「自分で組む」に、3軍は「自分で組む」の打順として保存する
+  /// 打順・守備を変える。2軍・3軍は「自分で組む」の打順として保存する
   void _edit(void Function(List<LineupEntry> l) f) {
     if (_lv == 2) {
       farmToManual(team);
       f(team.farmLineup);
     } else if (_lv == 3) {
-      final l = [for (final e in _cur) LineupEntry(playerId: e.playerId, position: e.position)];
-      f(l);
-      team.thirdLineup = [for (final e in l) e.playerId];
-      team.thirdAuto = false;
+      thirdToManual(team, widget.appState);
+      f(team.thirdLineup);
     } else {
       f(team.lineup);
     }
@@ -235,17 +246,29 @@ class _LineupTabState extends State<LineupTab> {
                   team.farmAuto = false;
                 }
               } else {
-                team.thirdAuto = v.first;
-                if (!v.first) team.thirdLineup = [for (final e in _cur) e.playerId];
+                if (v.first) {
+                  team.thirdAuto = true;
+                } else {
+                  final used = thirdUsed(team);
+                  team.thirdLineup = [for (final e in widget.appState.effectiveThirdLineup(team, used: used)) LineupEntry(playerId: e.playerId, position: e.position)];
+                  team.thirdRotation = widget.appState.effectiveThirdRotation(team, used: used);
+                  team.thirdAuto = false;
+                }
               }
               _changed();
             },
           ),
-          if (_lv == 2 && !auto)
+          if (!auto)
             TextButton.icon(
               onPressed: () {
-                team.farmLineup = FarmEngine.autoLineup(team);
-                team.farmRotation = FarmEngine.effectiveRotation(team);
+                if (_lv == 2) {
+                  team.farmLineup = FarmEngine.autoLineup(team);
+                  team.farmRotation = FarmEngine.effectiveRotation(team);
+                } else {
+                  final used = thirdUsed(team);
+                  team.thirdLineup = widget.appState.thirdAutoLineup(team, used: used);
+                  team.thirdRotation = widget.appState.effectiveThirdRotation(team, used: used);
+                }
                 _changed();
               },
               icon: const Icon(Icons.auto_fix_high, size: 16),
@@ -255,10 +278,14 @@ class _LineupTabState extends State<LineupTab> {
         const SizedBox(height: 6),
         NoteBox(_lv == 2
             ? '2軍の試合は1軍と同じ日程・同じ相手の2軍と行い、試合は自動で進みます。打順を入れ替えると「自分で組む」になります。出られない選手には自動で代わりが入ります。'
-            : '3軍戦は2軍戦のある日に12球団の総当たりで行います（簡易計算）。1軍と、その日の2軍戦に出る選手は出ません。守備位置と投手は3軍監督が決めます。打順を入れ替えると「自分で組む」になります。'),
+            : '3軍戦は2軍戦のある日に12球団の総当たりで行います（簡易計算）。1軍とその日の2軍戦に出る選手は出ません。打順・守備位置・先発ローテを入れ替えると「自分で組む」になります。出られない選手には自動で代わりが入ります。'),
         if (_lv == 2 && _cur.length < 9)
           const Padding(padding: EdgeInsets.only(top: 6), child: Text('出場できる2軍の野手が足りません（この間、2軍の試合は行われません）', style: TextStyle(color: Color(0xFFB91C1C), fontSize: 12))),
-        if (_lv == 3 && _third == null) const Padding(padding: EdgeInsets.only(top: 6), child: Text('投手がいないため、3軍戦は組めません', style: TextStyle(color: _sub, fontSize: 12))),
+        if (_lv == 3 && (_cur.length < 9 || !_thirdHasPitcher))
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(!_thirdHasPitcher ? '投手がいないため、3軍戦は組めません' : '出場できる3軍の野手が足りません（この間、3軍戦は行われません）', style: const TextStyle(color: _sub, fontSize: 12)),
+          ),
       ]),
     );
   }
@@ -290,10 +317,10 @@ class _LineupTabState extends State<LineupTab> {
   Widget build(BuildContext context) {
     _load();
     return LayoutBuilder(builder: (context, c) {
-      final wide = c.maxWidth >= 880 && _lv != 3;
+      final wide = c.maxWidth >= 880;
       _narrow = c.maxWidth < 600;
       final table = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [if (_lv > 1) _levelHeader(), _narrow ? _lineupCards() : _lineupTable()]);
-      final field = _lv == 3 ? const SizedBox.shrink() : _fieldCard();
+      final field = _fieldCard();
       final bench = _benchCard();
       return SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(_narrow ? 10 : 16, 12, _narrow ? 10 : 16, 24),
@@ -356,7 +383,7 @@ class _LineupTabState extends State<LineupTab> {
   String _hand(Player p) => p.bats == 'L' ? '左打' : (p.bats == 'S' ? '両打' : '右打');
   String _avg(Player p) => _st(p).atBats == 0 ? '-' : _st(p).battingAverage.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '');
 
-  List<String> get _posOptions => _lv == 3 ? const [] : ['捕', '一', '二', '三', '遊', '左', '中', '右', if (_dh) 'DH'];
+  List<String> get _posOptions => ['捕', '一', '二', '三', '遊', '左', '中', '右', if (_dh) 'DH'];
 
   /// 守備位置をボトムシートで選ぶ（スマホ向け）
   Future<void> _choosePosition(int index) async {
@@ -490,12 +517,12 @@ class _LineupTabState extends State<LineupTab> {
       _statHeader(0),
       const Divider(height: 1, color: _ink),
       for (int i = 0; i < 9 && i < _cur.length; i++) _cardSlot(i),
-      if ((_dh || _lv == 3) && sp != null)
+      if (_dh && sp != null)
         Container(
           padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
           decoration: const BoxDecoration(color: Color(0xFFFAFAF9), border: Border(bottom: BorderSide(color: _line))),
           child: Row(children: [
-            SizedBox(width: 44, child: Text(_lv == 3 ? '1〜3回' : '先発', style: const TextStyle(fontSize: 11.5, color: _sub))),
+            const SizedBox(width: 44, child: Text('先発', style: TextStyle(fontSize: 11.5, color: _sub))),
             Expanded(child: PitcherLine(p: sp, s: _st(sp), date: widget.appState.currentDate, faceSize: _lv > 1 ? 11 : 14)),
           ]),
         ),
@@ -506,7 +533,7 @@ class _LineupTabState extends State<LineupTab> {
     final entry = _cur[index];
     final p = _p(entry.playerId);
     final picked = _picked == p.id;
-    final pos = _lv == 3 ? _shortPos(p) : entry.position;
+    final pos = entry.position;
     Widget body(bool hovered) => Container(
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -516,7 +543,7 @@ class _LineupTabState extends State<LineupTab> {
           ),
           child: Row(children: [
             SizedBox(width: 18, child: Text('${index + 1}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
-            _posCell(pos, p, onTap: entry.position == '投' || _lv == 3 ? null : () => _choosePosition(index)),
+            _posCell(pos, p, onTap: entry.position == '投' ? null : () => _choosePosition(index)),
             ..._nameCells(p),
             ..._valueCells(p),
           ]),
@@ -555,7 +582,7 @@ class _LineupTabState extends State<LineupTab> {
         ]),
       ),
       for (int i = 0; i < 9 && i < _cur.length; i++) _slot(i),
-      if ((_dh || _lv == 3) && sp != null)
+      if (_dh && sp != null)
         Container(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           decoration: const BoxDecoration(color: Color(0xFFFAFAF9), border: Border(bottom: BorderSide(color: _line))),
@@ -611,8 +638,8 @@ class _LineupTabState extends State<LineupTab> {
             SizedBox(width: 30, child: Text('${index + 1}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
             SizedBox(
               width: 58,
-              child: entry.position == '投' || _lv == 3
-                  ? Text(_lv == 3 ? _shortPos(player) : '投', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700))
+              child: entry.position == '投'
+                  ? const Text('投', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700))
                   : Container(
                       height: 30,
                       padding: const EdgeInsets.only(left: 6),

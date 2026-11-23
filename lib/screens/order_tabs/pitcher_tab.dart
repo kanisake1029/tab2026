@@ -3,7 +3,7 @@ import '../../models/player.dart';
 import '../../models/team.dart';
 import '../../providers/app_state.dart';
 import 'order_shared.dart';
-import 'lineup_tab.dart' show farmToManual, thirdUsed, ageLine;
+import 'lineup_tab.dart' show farmToManual, thirdToManual, thirdUsed, ageLine;
 import '../../engine/farm_engine.dart';
 import '../../widgets/player_row.dart';
 
@@ -86,12 +86,18 @@ class _PitcherTabState extends State<PitcherTab> {
     setState(() => _picked = id);
   }
 
-  /// 2軍の先発ローテの人数（4〜12）
+  /// 2・3軍の先発ローテの人数（4〜12）
   void _changeFarmRotation(int delta) {
     setState(() {
-      team.farmRotationCount = (team.farmRotationCount + delta).clamp(Team.farmRotationMin, Team.farmRotationMax);
-      if (team.farmRotation.length > team.farmRotationCount) team.farmRotation = team.farmRotation.sublist(0, team.farmRotationCount);
-      team.farmRotationIndex %= team.farmRotationCount;
+      if (widget.level == 2) {
+        team.farmRotationCount = (team.farmRotationCount + delta).clamp(Team.farmRotationMin, Team.farmRotationMax);
+        if (team.farmRotation.length > team.farmRotationCount) team.farmRotation = team.farmRotation.sublist(0, team.farmRotationCount);
+        team.farmRotationIndex %= team.farmRotationCount;
+      } else {
+        team.thirdRotationCount = (team.thirdRotationCount + delta).clamp(Team.farmRotationMin, Team.farmRotationMax);
+        if (team.thirdRotation.length > team.thirdRotationCount) team.thirdRotation = team.thirdRotation.sublist(0, team.thirdRotationCount);
+        team.thirdRotationIndex %= team.thirdRotationCount;
+      }
     });
     _save();
   }
@@ -178,11 +184,17 @@ class _PitcherTabState extends State<PitcherTab> {
 
   // ───────── 2軍・3軍 ─────────
 
-  /// 2軍の先発ローテの枠 i に投手を入れる（ほかの枠にいれば入れ替え）。「自分で組む」になる
+  /// 2・3軍の先発ローテの枠 i に投手を入れる（ほかの枠にいれば入れ替え）。「自分で組む」になる
   void _setFarmRotation(String id, int i) {
-    farmToManual(team);
-    final r = team.farmRotation;
-    while (r.length < team.farmRotationCount) {
+    final isFarm = widget.level == 2;
+    if (isFarm) {
+      farmToManual(team);
+    } else {
+      thirdToManual(team, widget.appState);
+    }
+    final r = isFarm ? team.farmRotation : team.thirdRotation;
+    final count = isFarm ? team.farmRotationCount : team.thirdRotationCount;
+    while (r.length < count) {
       r.add('');
     }
     final old = r.indexOf(id);
@@ -227,86 +239,55 @@ class _PitcherTabState extends State<PitcherTab> {
   Widget _farmBuild() {
     return LayoutBuilder(builder: (context, c) {
       _narrow = c.maxWidth < 700;
-      final List<Widget> left, right;
-      if (widget.level == 2) {
-        final rot = FarmEngine.effectiveRotation(team);
-        final n = rot.isEmpty ? 1 : rot.length;
-        final next = team.farmRotationIndex % n;
-        final inRot = rot.where((e) => e.isNotEmpty).toSet();
-        final relievers = FarmEngine.farmPlayers(team).where((p) => p.isPitcher && !inRot.contains(p.id)).toList()..sort((a, b) => b.ovr.compareTo(a.ovr));
-        left = [
-          _section(
-            title: '2軍の先発ローテ',
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(tooltip: '先発を1人減らす', visualDensity: VisualDensity.compact, icon: const Icon(Icons.remove_circle_outline), onPressed: team.farmRotationCount > Team.farmRotationMin ? () => _changeFarmRotation(-1) : null),
-              Text('${team.farmRotationCount}人', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-              IconButton(tooltip: '先発を1人増やす', visualDensity: VisualDensity.compact, icon: const Icon(Icons.add_circle_outline), onPressed: team.farmRotationCount < Team.farmRotationMax ? () => _changeFarmRotation(1) : null),
-            ]),
-            note: '日程順に登板。${team.farmAuto ? '今は自動で組んでいます。' : ''}入れ替えると「自分で組む」になります',
-            children: [
-              for (var i = 0; i < rot.length; i++) _farmSlot(i, _p(rot[i]), i == next ? '次回' : '${(i - next + n) % n}試合後', i == next),
-            ],
-          ),
-        ];
-        right = [
-          _section(
-            title: '2軍の中継ぎ ${relievers.length}人',
-            note: _narrow ? '長押しで先発の枠へドラッグ（タップで能力を表示）' : '先発の枠へドラッグ（タップで能力を表示）',
-            children: [
-              if (relievers.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('中継ぎがいません', style: TextStyle(color: _sub))),
-              for (final p in relievers)
-                orderDraggable(
-                  longPress: _narrow,
-                  data: p.id,
-                  feedback: Material(color: Colors.transparent, child: SizedBox(width: 300, child: Opacity(opacity: 0.9, child: _pitcherRow(p, '', false)))),
-                  childWhenDragging: Opacity(opacity: 0.3, child: _pitcherRow(p, '', false)),
-                  child: _tapArea(p, _pitcherRow(p, '', _picked == p.id)),
-                ),
-            ],
-          ),
-        ];
-      } else {
-        final used = thirdUsed(team);
-        final order = widget.appState.thirdOrder(team, used: used);
-        final planned = order?.$2 ?? const <Player>[];
-        final others = team.players.where((p) => p.isPitcher && !team.roster1G.contains(p.id) && !used.contains(p.id) && !planned.contains(p)).toList()..sort((a, b) => b.ovr.compareTo(a.ovr));
-        Widget prio(Player p) => Row(mainAxisSize: MainAxisSize.min, children: [
-              const Text('優先', style: TextStyle(fontSize: 10.5, color: _sub)),
-              Switch(
-                value: team.thirdPriority.contains(p.id),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                onChanged: (v) {
-                  if (v) {
-                    team.thirdPriority.add(p.id);
-                  } else {
-                    team.thirdPriority.remove(p.id);
-                  }
-                  _save();
-                  setState(() {});
-                },
+      final isFarm = widget.level == 2;
+      final used = isFarm ? const <String>{} : thirdUsed(team);
+      final rot = isFarm
+          ? FarmEngine.effectiveRotation(team)
+          : widget.appState.effectiveThirdRotation(team, used: used);
+      final rotCount = isFarm ? team.farmRotationCount : team.thirdRotationCount;
+      final rotIdx = isFarm ? team.farmRotationIndex : team.thirdRotationIndex;
+      final auto = isFarm ? team.farmAuto : team.thirdAuto;
+      final n = rot.isEmpty ? 1 : rot.length;
+      final next = rotIdx % n;
+      final inRot = rot.where((e) => e.isNotEmpty).toSet();
+      final relievers = (isFarm
+              ? FarmEngine.farmPlayers(team)
+              : team.players.where((p) => !team.roster1G.contains(p.id) && !used.contains(p.id)))
+          .where((p) => p.isPitcher && !inRot.contains(p.id))
+          .toList()
+        ..sort((a, b) => b.ovr.compareTo(a.ovr));
+      final lvName = isFarm ? '2軍' : '3軍';
+      final left = [
+        _section(
+          title: '$lvNameの先発ローテ',
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(tooltip: '先発を1人減らす', visualDensity: VisualDensity.compact, icon: const Icon(Icons.remove_circle_outline), onPressed: rotCount > Team.farmRotationMin ? () => _changeFarmRotation(-1) : null),
+            Text('$rotCount人', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+            IconButton(tooltip: '先発を1人増やす', visualDensity: VisualDensity.compact, icon: const Icon(Icons.add_circle_outline), onPressed: rotCount < Team.farmRotationMax ? () => _changeFarmRotation(1) : null),
+          ]),
+          note: '日程順に登板。${auto ? '今は自動で組んでいます。' : ''}入れ替えると「自分で組む」になります',
+          children: [
+            for (var i = 0; i < rot.length; i++) _farmSlot(i, _p(rot[i]), i == next ? '次回' : '${(i - next + n) % n}試合後', i == next),
+          ],
+        ),
+      ];
+      final right = [
+        _section(
+          title: '$lvNameの中継ぎ ${relievers.length}人',
+          note: _narrow ? '長押しで先発の枠へドラッグ（タップで能力を表示）' : '先発の枠へドラッグ（タップで能力を表示）',
+          children: [
+            if (relievers.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('中継ぎがいません', style: TextStyle(color: _sub))),
+            for (final p in relievers)
+              orderDraggable(
+                longPress: _narrow,
+                data: p.id,
+                feedback: Material(color: Colors.transparent, child: SizedBox(width: 300, child: Opacity(opacity: 0.9, child: _pitcherRow(p, '', false)))),
+                childWhenDragging: Opacity(opacity: 0.3, child: _pitcherRow(p, '', false)),
+                child: _tapArea(p, _pitcherRow(p, '', _picked == p.id)),
               ),
-            ]);
-        left = [
-          _section(
-            title: '次の3軍戦の登板予定',
-            note: '3回ずつ。投手は3軍監督が選びます（「優先」の投手を先に使います）',
-            children: [
-              if (order == null) const Padding(padding: EdgeInsets.all(8), child: Text('投手がいないため、3軍戦は組めません', style: TextStyle(color: _sub))),
-              for (var i = 0; i < planned.length; i++) _tapArea(planned[i], _pitcherRow(planned[i], '${i * 3 + 1}〜${i * 3 + 3}回', _picked == planned[i].id, highlight: i == 0, trailing: prio(planned[i]))),
-            ],
-          ),
-        ];
-        right = [
-          _section(
-            title: '3軍の投手 ${others.length}人',
-            note: '「優先」にすると、3軍監督より先に登板させます',
-            children: [
-              if (others.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('ほかの投手はいません', style: TextStyle(color: _sub))),
-              for (final p in others) _tapArea(p, _pitcherRow(p, '', _picked == p.id, trailing: prio(p))),
-            ],
-          ),
-        ];
-      }
+          ],
+        ),
+      ];
       return SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(_narrow ? 10 : 16, 12, _narrow ? 10 : 16, 24),
         child: _narrow

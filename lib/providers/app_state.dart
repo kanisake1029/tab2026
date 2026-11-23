@@ -1918,6 +1918,7 @@ class AppState extends ChangeNotifier {
       t.draws = 0;
       t.rotationIndex = 0;
       t.farmRotationIndex = 0;
+      t.thirdRotationIndex = 0;
       for (var p in t.players) {
         p.seasonStats = PlayerStats();
         p.farmStats = PlayerStats();

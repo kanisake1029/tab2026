@@ -22,8 +22,8 @@ class ThirdOrderTab extends StatelessWidget {
   static const _sub = Color(0xFF78716C);
 
   /// 打順を入れ替える：いま出ている打順を「自分で組む」の打順として固めてから変える
-  void _edit(AppState app, List<Player> shown, void Function(List<String>) f) {
-    final l = [for (final p in shown) p.id];
+  void _edit(AppState app, List<LineupEntry> shown, void Function(List<LineupEntry>) f) {
+    final l = [for (final e in shown) LineupEntry(playerId: e.playerId, position: e.position)];
     f(l);
     team.thirdLineup = l;
     team.thirdAuto = false;
@@ -44,6 +44,7 @@ class ThirdOrderTab extends StatelessWidget {
       if (rot.isNotEmpty) rot[team.farmRotationIndex % rot.length],
     };
     final order = app.thirdOrder(team, used: used);
+    final orderEntries = order == null ? const <LineupEntry>[] : app.effectiveThirdLineup(team, used: used);
     final pool = team.players.where((p) => !team.roster1G.contains(p.id) && !used.contains(p.id)).toList()
       ..sort((a, b) => a.isPitcher == b.isPitcher ? b.ovr.compareTo(a.ovr) : (a.isPitcher ? 1 : -1));
     final next = app.thirdMatches.where((m) => m.homeScore == null && (m.homeTeamId == team.id || m.awayTeamId == team.id) && !m.date.isBefore(DateUtils.dateOnly(app.currentDate))).firstOrNull;
@@ -125,7 +126,10 @@ class ThirdOrderTab extends StatelessWidget {
             style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
             onSelectionChanged: (v) {
               team.thirdAuto = v.first;
-              if (!team.thirdAuto && order != null) team.thirdLineup = [for (final p in order.$1) p.id];
+              if (!team.thirdAuto && orderEntries.isNotEmpty) {
+                team.thirdLineup = [for (final e in orderEntries) LineupEntry(playerId: e.playerId, position: e.position)];
+                team.thirdRotation = app.effectiveThirdRotation(team, used: used);
+              }
               app.updateAndSave();
               onChanged();
             },
@@ -135,18 +139,18 @@ class ThirdOrderTab extends StatelessWidget {
         if (order == null) const Text('投手がいないため、3軍戦は組めません', style: TextStyle(color: _sub)),
         if (order != null) ...[
           DragLineup(
-            order: [for (final p in order.$1) (p, '')],
+            order: [for (var i = 0; i < order.$1.length; i++) (order.$1[i], i < orderEntries.length ? orderEntries[i].position : '')],
             bench: pool.where((p) => !p.isPitcher && !order.$1.contains(p)).toList(),
             date: app.currentDate,
             stat: (p) => '3軍 ${_avg(p.thirdStats)}　${p.thirdStats.homeRuns}本',
             tagged: order.$3,
             tagText: '2軍から',
-            onSwap: (a, b) => _edit(app, order.$1, (l) {
+            onSwap: (a, b) => _edit(app, orderEntries, (l) {
               final t = l[a];
               l[a] = l[b];
               l[b] = t;
             }),
-            onReplace: (i, id) => _edit(app, order.$1, (l) => l[i] = id),
+            onReplace: (i, id) => _edit(app, orderEntries, (l) => l[i].playerId = id),
           ),
           const Divider(height: 14),
           const Text('投手（3回ずつ。3軍監督が選ぶ）', style: TextStyle(fontSize: 12, color: _sub)),
