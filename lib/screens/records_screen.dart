@@ -511,7 +511,7 @@ class _NumberHistoryViewState extends State<_NumberHistoryView> {
             return ListView(padding: const EdgeInsets.fromLTRB(10, 0, 10, 16), children: [
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 6),
-                child: Text('2026年2月からの記録です（それより前からつけている番号は載せていません）。背番号の変更は毎年2月1日に行われます。', style: TextStyle(fontSize: 11.5, color: _sub)),
+                child: Text('2026年2月からの記録です（それより前からつけている番号は載せていません）。背番号の変更・決定は毎年開幕前日に行われます。', style: TextStyle(fontSize: 11.5, color: _sub)),
               ),
               if (keys.isEmpty) const Text('まだ記録がありません', style: TextStyle(color: _sub)),
               for (final n in keys)
@@ -525,10 +525,18 @@ class _NumberHistoryViewState extends State<_NumberHistoryView> {
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         for (final e in h[n]!)
                           Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 1),
-                            child: Text('${e.$1.replaceAll('-', '/')}　${e.$2}　${e.$3}', style: const TextStyle(fontSize: 12.5, color: _ink)),
+                            padding: const EdgeInsets.symmetric(vertical: 1.5),
+                            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              SizedBox(width: 78, child: Text(e.$1.replaceAll('-', '/'), style: const TextStyle(fontSize: 11.5, color: _sub, fontFeatures: [FontFeature.tabularFigures()]))),
+                              Expanded(
+                                child: Text.rich(TextSpan(children: [
+                                  TextSpan(text: e.$2, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _ink)),
+                                  TextSpan(text: '　${e.$3}', style: const TextStyle(fontSize: 12, color: _sub)),
+                                ])),
+                              ),
+                            ]),
                           ),
-                        if (now[n] != null) Text('いま：${now[n]!.listName}', style: const TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w700)),
+                        if (now[n] != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text('いま：${now[n]!.listName}', style: const TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w700))),
                       ]),
                     ),
                   ]),

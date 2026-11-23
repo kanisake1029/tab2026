@@ -156,13 +156,50 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
             _pitching(d.rows.where((r) => r.st.pitchApps > 0).toList()),
             const SizedBox(height: 12),
             _h('出来事（入団・退団・コーチ・初記録・節目・監督）'),
-            if (d.events.isEmpty) const Text('この年度の出来事の記録はありません（記録はこの機能を入れた後から残ります）', style: TextStyle(color: _sub, fontSize: 12.5)),
-            for (final e in d.events)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SizedBox(width: 44, child: Text(_md(e['d'] as String), style: const TextStyle(fontSize: 12, color: _sub))),
-                  Expanded(child: Text('${e['t']}', style: TextStyle(fontSize: 12.5, height: 1.4, fontWeight: e['k'] == 'manager' || e['k'] == 'milestone' ? FontWeight.w800 : FontWeight.w400))),
+            if (d.events.isEmpty)
+              const Text('この年度の出来事の記録はありません（記録はこの機能を入れた後から残ります）', style: TextStyle(color: _sub, fontSize: 12.5))
+            else
+              Container(
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: _line)),
+                clipBehavior: Clip.antiAlias,
+                child: Column(children: [
+                  Container(
+                    color: const Color(0xFF0F172A),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: const Row(children: [
+                      SizedBox(width: 44, child: Text('日付', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                      SizedBox(width: 54, child: Text('種別', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                      Expanded(child: Text('内容', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                    ]),
+                  ),
+                  for (var i = 0; i < d.events.length; i++)
+                    Builder(builder: (_) {
+                      final e = d.events[i];
+                      final (kLabel, kColor) = _eventKindMeta('${e['k'] ?? ''}');
+                      final bold = e['k'] == 'manager' || e['k'] == 'milestone';
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: i.isOdd ? const Color(0xFFF8FAFC) : Colors.white,
+                          border: Border(top: i == 0 ? BorderSide.none : const BorderSide(color: _line)),
+                        ),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          SizedBox(width: 44, child: Text(_md(e['d'] as String), style: const TextStyle(fontSize: 11.5, color: _sub, fontFeatures: [FontFeature.tabularFigures()]))),
+                          SizedBox(
+                            width: 54,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(color: kColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
+                                child: Text(kLabel, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: kColor)),
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Text('${e['t']}', style: TextStyle(fontSize: 12.5, height: 1.4, fontWeight: bold ? FontWeight.w800 : FontWeight.w400))),
+                        ]),
+                      );
+                    }),
                 ]),
               ),
           ]);
@@ -170,6 +207,18 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
       ),
     );
   }
+
+  static (String, Color) _eventKindMeta(String k) => switch (k) {
+        'join' => ('入団', Color(0xFF2563EB)),
+        'leave' => ('退団', Color(0xFF64748B)),
+        'reg' => ('支配下', Color(0xFF15803D)),
+        'number' => ('背番号', Color(0xFF0284C7)),
+        'coach' => ('コーチ', Color(0xFF7C3AED)),
+        'first' => ('初記録', Color(0xFF0D9488)),
+        'milestone' => ('節目', Color(0xFFD97706)),
+        'manager' => ('監督', Color(0xFFB45309)),
+        _ => ('出来事', _sub),
+      };
 
   static String _md(String ymd) {
     final p = ymd.split('-');

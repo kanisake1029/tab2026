@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../widgets/chip_grid.dart';
 import '../widgets/wheel_picker.dart';
 import 'amateur_screen.dart';
 import 'contract_screen.dart';
+import 'office_screen.dart' show ScoutStaffTab;
 import '../engine/other_league_engine.dart';
 import 'other_leagues_screen.dart' show openOtherPlayer;
 import '../widgets/note_box.dart';
@@ -140,12 +142,14 @@ class ReinforceTab extends StatelessWidget {
 
 class ScoutScreen extends StatefulWidget {
   final AppState app;
-  const ScoutScreen({super.key, required this.app});
+  final int initialTab;
+  const ScoutScreen({super.key, required this.app, this.initialTab = 0});
   @override
   State<ScoutScreen> createState() => _ScoutScreenState();
 }
 
-class _ScoutScreenState extends State<ScoutScreen> {
+class _ScoutScreenState extends State<ScoutScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tab = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
   bool _ikusei = false;
 
   @override
@@ -153,59 +157,89 @@ class _ScoutScreenState extends State<ScoutScreen> {
     super.initState();
     widget.app.preScoutIfNeeded();
   }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
+
   String _pos = '高校'; // 経歴の区分。中は守備位置ごと
 
   @override
   Widget build(BuildContext context) {
     final app = widget.app;
-    final my = app.myTeam;
-    final forecast = app.draftForecast();
-    if (my != null) scoutEyeForDetail = app.scoutEye(my);
-    prospectPlayerName = (id) => app.teams.expand((t) => t.players).where((x) => x.id == id).map((x) => '${x.registeredName}（${app.teams.firstWhere((t) => t.players.contains(x)).shortName}）').firstOrNull;
-    final legacy = app.prospects.any((p) => p.ikuseiTier);
-    final tier = app.prospects.where((p) => (!legacy || p.ikuseiTier == _ikusei) && p.knownTo(app.myTeamId)).toList();
-    final list = tier.where((p) => p.category == _pos).toList()..sort((a, b) => prospectSortKey(b).compareTo(prospectSortKey(a)));
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(title: const Text('ドラフト候補・スカウト')),
-      body: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [
-        _note('候補は、自球団のスカウトが発掘・調査した選手だけです（4〜10月。地区担当が受け持ちの地区の高校・大学・社会人を強い順に回ります。スカウトの人数と眼力で見つかる人数が変わります。チーム→コーチで雇えます）。毎週月曜に調べた結果を報告します。★注目にした候補を優先して調べます。今の能力は±5の幅、潜在能力はスカウト眼力（${my == null ? '-' : app.scoutEye(my)}）が高いほど正確です。'
-            'ドラフト会議は10月31日。長押しで詳しい見立てを見られます。「予想」は他球団が何位で指名しそうかのスカウトの見立てです（眼力が高いほど当たりやすい）。'),
-        if (legacy) Wrap(spacing: 8, runSpacing: 6, children: [
-          SegmentedButton<bool>(
-            segments: const [ButtonSegment(value: false, label: Text('本指名候補')), ButtonSegment(value: true, label: Text('育成候補'))],
-            selected: {_ikusei},
-            showSelectedIcon: false,
-            onSelectionChanged: (v) => setState(() => _ikusei = v.first),
-          ),
-        ]),
-        const SizedBox(height: 6),
-        draftCategoryBar(tier, _pos, (v) => setState(() => _pos = v)),
-        const SizedBox(height: 6),
-        if (tier.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Text('候補はまだいません（4月から、スカウトが高校3年・大学4年・社会人の選手を発掘していきます）', style: TextStyle(color: _sub))),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            ...draftPosSections(
-              list,
-              (p) => ProspectRow(
-                p: p,
-                forecast: forecast[p.id],
-                onTap: () => showProspectDetail(context, p),
-                onWatch: () {
-                  setState(() => p.watched = !p.watched);
-                  app.updateAndSave();
-                },
-              ),
-            ),
-          ]),
+      body: Column(children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: TabGrid(controller: _tab, labels: const ['ドラフト候補', 'スカウト陣'], minWidth: 110),
         ),
-        const SizedBox(height: 14),
-        if (app.scoutLog.isNotEmpty) ...[
-          const Text('スカウトの週報', style: TextStyle(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 6),
-          for (final s in app.scoutLog.take(20)) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(s, style: const TextStyle(fontSize: 12, color: Color(0xFF475569)))),
-        ],
+        Expanded(
+          child: ListenableBuilder(
+            listenable: app,
+            builder: (context, _) {
+              final my = app.myTeam;
+              final forecast = app.draftForecast();
+              if (my != null) scoutEyeForDetail = app.scoutEye(my);
+              prospectPlayerName = (id) => app.teams
+                  .expand((t) => t.players)
+                  .where((x) => x.id == id)
+                  .map((x) => '${x.registeredName}（${app.teams.firstWhere((t) => t.players.contains(x)).shortName}）')
+                  .firstOrNull;
+              final legacy = app.prospects.any((p) => p.ikuseiTier);
+              final tier = app.prospects.where((p) => (!legacy || p.ikuseiTier == _ikusei) && p.knownTo(app.myTeamId)).toList();
+              final list = tier.where((p) => p.category == _pos).toList()..sort((a, b) => prospectSortKey(b).compareTo(prospectSortKey(a)));
+              final candidates = ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [
+                _note('候補は、自球団のスカウトが発掘・調査した選手だけです（4〜10月。地区担当が受け持ちの地区の高校・大学・社会人を強い順に回ります。スカウトの人数と眼力で見つかる人数が変わります。右の「スカウト陣」タブで雇えます）。毎週月曜に調べた結果を報告します。★注目にした候補を優先して調べます。今の能力は±5の幅、潜在能力はスカウト眼力（${my == null ? '-' : app.scoutEye(my)}）が高いほど正確です。'
+                    'ドラフト会議は10月31日。長押しで詳しい見立てを見られます。「予想」は他球団が何位で指名しそうかのスカウトの見立てです（眼力が高いほど当たりやすい）。'),
+                if (legacy)
+                  Wrap(spacing: 8, runSpacing: 6, children: [
+                    SegmentedButton<bool>(
+                      segments: const [ButtonSegment(value: false, label: Text('本指名候補')), ButtonSegment(value: true, label: Text('育成候補'))],
+                      selected: {_ikusei},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (v) => setState(() => _ikusei = v.first),
+                    ),
+                  ]),
+                const SizedBox(height: 6),
+                draftCategoryBar(tier, _pos, (v) => setState(() => _pos = v)),
+                const SizedBox(height: 6),
+                if (tier.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Text('候補はまだいません（4月から、スカウトが高校3年・大学4年・社会人の選手を発掘していきます）', style: TextStyle(color: _sub))),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    ...draftPosSections(
+                      list,
+                      (p) => ProspectRow(
+                        p: p,
+                        forecast: forecast[p.id],
+                        onTap: () => showProspectDetail(context, p),
+                        onWatch: () {
+                          setState(() => p.watched = !p.watched);
+                          app.updateAndSave();
+                        },
+                      ),
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 14),
+                if (app.scoutLog.isNotEmpty) ...[
+                  const Text('スカウトの週報', style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  for (final s in app.scoutLog.take(20)) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(s, style: const TextStyle(fontSize: 12, color: Color(0xFF475569)))),
+                ],
+              ]);
+              return TabBarView(controller: _tab, children: [
+                candidates,
+                my == null ? const SizedBox.shrink() : ScoutStaffTab(app: app, team: my, onChanged: () => setState(() {})),
+              ]);
+            },
+          ),
+        ),
       ]),
     );
   }
@@ -1135,9 +1169,20 @@ class _ForeignScreenState extends State<ForeignScreen> {
     views.sort((x, y) => key(y).compareTo(key(x)));
     return Scaffold(
       backgroundColor: _bg,
-      appBar: AppBar(title: const Text('外国人選手')),
+      appBar: AppBar(
+        title: const Text('外国人選手'),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ScoutScreen(app: app, initialTab: 1))).then((_) {
+              if (mounted) setState(() {});
+            }),
+            icon: const Icon(Icons.groups_outlined, size: 18),
+            label: const Text('スカウト陣'),
+          ),
+        ],
+      ),
       body: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [
-        _note('一覧に出るのは、自球団の海外担当スカウトが発掘した選手だけです（チーム→コーチで、リーグごとに2人まで雇えます。一度見つけた選手は追い続けます）。毎年12月1日に、契約に前向きな選手の一覧が届きます。支配下はシーズン中も7月31日まで契約できます。1軍に登録できる外国人は5人まで、ベンチ入りは4人までです。年俸は希望額です。'
+        _note('一覧に出るのは、自球団の海外担当スカウトが発掘した選手だけです（補強→ドラフト候補・スカウトの「スカウト陣」タブで、リーグごとに2人まで雇えます。一度見つけた選手は追い続けます）。毎年12月1日に、契約に前向きな選手の一覧が届きます。支配下はシーズン中も7月31日まで契約できます。1軍に登録できる外国人は5人まで、ベンチ入りは4人までです。年俸は希望額です。'
             '支配下の今の能力は±5の幅、環境適応力はスカウトの眼力（$eye）に応じた幅で分かります。適応力は入団時に打撃・投球の能力へ倍率としてかかります（C60×1.00・B70×1.05・A80×1.10・90×1.15・S100×1.20）。育成はドラフトと同じく才能・向上心の見立てです。タップで詳しい見立てと海外での成績。'),
         Container(
           margin: const EdgeInsets.only(bottom: 8),
@@ -1433,23 +1478,315 @@ class _RosterManageScreenState extends State<RosterManageScreen> {
 
 // ───────── 記録 ─────────
 
-class TransactionsScreen extends StatelessWidget {
+class TxRow {
+  final String raw;
+  final int? year;
+  final String md;
+  final String kind;
+  final String group;
+  final Color kindColor;
+  final String teamLabel;
+  final Set<String> teamIds;
+  final Team? primaryTeam;
+  final String detail;
+  const TxRow({
+    required this.raw,
+    required this.year,
+    required this.md,
+    required this.kind,
+    required this.group,
+    required this.kindColor,
+    required this.teamLabel,
+    required this.teamIds,
+    required this.primaryTeam,
+    required this.detail,
+  });
+}
+
+TxRow parseTransaction(String raw, List<Team> teams) {
+  int? year;
+  var md = '-';
+  var body = raw.trim();
+  final dm = RegExp(r'^(\d{4})/(\d{1,2})(?:/(\d{1,2}))?\s+').firstMatch(body);
+  if (dm != null) {
+    year = int.tryParse(dm.group(1)!);
+    final mo = dm.group(2)!;
+    final da = dm.group(3);
+    md = da == null ? '$mo月' : '$mo/$da';
+    body = body.substring(dm.end).trim();
+  }
+
+  (String, String, Color) classify(String s) {
+    if (s.contains('現役ドラフト')) return ('現ドラ', '移籍', const Color(0xFF0284C7));
+    if (s.contains('ドラフト')) return ('ドラフト', '入団', const Color(0xFF0D9488));
+    if (s.startsWith('トレード ') || s.contains('⇄')) return ('トレード', '移籍', const Color(0xFF2563EB));
+    if (s.contains('ポスティング')) return ('ポスティング', '海外', const Color(0xFF7C3AED));
+    if (s.contains('海外FA')) return ('海外FA', '海外', const Color(0xFF7C3AED));
+    if (s.contains('FA宣言') || s.contains('FA 宣言')) return ('FA宣言', 'FA', const Color(0xFFD97706));
+    if (s.contains('補償')) return ('補償', 'FA', const Color(0xFFD97706));
+    if (s.contains('FA 移籍') || s.contains('FA移籍')) return ('FA移籍', 'FA', const Color(0xFF2563EB));
+    if (s.contains('FA 残留') || s.contains('FA残留')) return ('FA残留', 'FA', const Color(0xFF15803D));
+    if (s.contains('FA 未契約') || s.contains('FA未契約')) return ('FA自由', 'FA', const Color(0xFF64748B));
+    if (s.contains('FA 権取得')) return ('FA取得', 'FA', const Color(0xFF0D9488));
+    if (s.contains('提携選手') || s.contains('提携期間')) {
+      final leave = s.contains('自由契約') || s.contains('→');
+      return ('提携', leave ? '退団' : '海外', const Color(0xFF0284C7));
+    }
+    if (s.contains('育成テンダー')) {
+      return ('テンダー', s.contains('自由契約') ? '退団' : '移籍', const Color(0xFF0284C7));
+    }
+    if (s.contains('支配下登録')) return ('支配下', '入団', const Color(0xFF15803D));
+    if (s.contains('育成契約満了')) return ('育成満了', '退団', const Color(0xFF64748B));
+    if (s.contains('育成再契約') || (s.contains('育成') && s.contains('再契約'))) {
+      return ('育成再契', '更改', const Color(0xFF0D9488));
+    }
+    if (s.contains('外国人')) return ('外国人', '入団', const Color(0xFF7C3AED));
+    if (s.contains('日本球界復帰') || RegExp(r'（[^）]+の[^）]+から(?:・育成)?）と契約').hasMatch(s)) {
+      return ('他リーグ', '海外', const Color(0xFF7C3AED));
+    }
+    if (s.contains('契約更改')) return ('更改', '更改', const Color(0xFF334155));
+    if (s.contains('再契約')) return ('再契約', '更改', const Color(0xFF15803D));
+    if (s.contains('戦力外通告')) return ('戦力外', '退団', const Color(0xFFDC2626));
+    if (s.contains('契約満了')) return ('契約満了', '退団', const Color(0xFF64748B));
+    if (s.contains('引退勧告を拒んで') || s.contains('契約交渉が決裂')) return ('退団', '退団', const Color(0xFFDC2626));
+    if (s.contains('引退')) return ('引退', '引退', const Color(0xFF475569));
+    if (s.contains('退団')) return ('退団', '退団', const Color(0xFFDC2626));
+    if (s.contains('監督交代')) return ('監督', 'その他', const Color(0xFFB45309));
+    if (s.contains('自由契約')) return ('自由契約', '入団', const Color(0xFF0284C7));
+    return ('記録', 'その他', const Color(0xFF64748B));
+  }
+
+  final (kind, group, kindColor) = classify(body);
+  final byShort = {for (final t in teams) teamShort(t): t};
+  final teamIds = <String>{};
+  Team? primary;
+  var teamLabel = '';
+  var detail = body;
+
+  // トレード：球団A：… ⇄ 球団B：…
+  final trMatch = RegExp(r'^トレード\s+([^：]+)：(.+?)\s*⇄\s*([^：]+)：(.+)$').firstMatch(detail);
+  if (trMatch != null) {
+    final sA = trMatch.group(1)!.trim();
+    final sB = trMatch.group(3)!.trim();
+    final tA = byShort[sA], tB = byShort[sB];
+    if (tA != null) teamIds.add(tA.id);
+    if (tB != null) teamIds.add(tB.id);
+    primary = tA ?? tB;
+    teamLabel = '$sA⇄$sB';
+    detail = '${trMatch.group(2)!.trim()} ⇄ ${trMatch.group(4)!.trim()}';
+  } else {
+    // 先頭トークンが球団略称なら取り出して表示欄へ
+    final sp = detail.indexOf(' ');
+    final headTok = sp > 0 ? detail.substring(0, sp) : '';
+    final headTeam = byShort[headTok];
+    if (headTeam != null) {
+      teamIds.add(headTeam.id);
+      primary = headTeam;
+      teamLabel = headTok;
+      detail = detail.substring(sp + 1).trim();
+    }
+
+    // 球団間の移動「A → B」（年俸「500万円→600万円」は除外）
+    for (final m in RegExp(r'(\S+)\s*→\s*([^\s（]+)').allMatches(detail)) {
+      final sFrom = m.group(1)!, sTo = m.group(2)!;
+      if (byShort.containsKey(sFrom)) {
+        final tFrom = byShort[sFrom]!;
+        final tTo = byShort[sTo];
+        teamIds.add(tFrom.id);
+        if (tTo != null) teamIds.add(tTo.id);
+        primary ??= tTo ?? tFrom;
+        if (teamLabel.isEmpty || teamLabel == sFrom) {
+          teamLabel = '$sFrom→$sTo';
+          detail = detail.replaceFirst(m.group(0)!, '').trim();
+        }
+        break;
+      }
+    }
+
+    // 「元〇〇」の球団も絞り込み対象に含める
+    final prevM = RegExp(r'元([^）\s]+)').firstMatch(detail);
+    if (prevM != null) {
+      final prevTeam = byShort[prevM.group(1)!];
+      if (prevTeam != null) {
+        teamIds.add(prevTeam.id);
+        primary ??= prevTeam;
+        if (teamLabel.isEmpty) teamLabel = prevM.group(1)!;
+      }
+    }
+  }
+
+  for (final prefix in const ['現役ドラフト ', '育成テンダー ', 'FA 移籍 ', 'FA ', '補償 ', '提携選手 ', '監督交代 ']) {
+    if (detail.startsWith(prefix)) {
+      detail = detail.substring(prefix.length).trim();
+      break;
+    }
+  }
+  detail = detail.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
+
+  return TxRow(
+    raw: raw,
+    year: year,
+    md: md,
+    kind: kind,
+    group: group,
+    kindColor: kindColor,
+    teamLabel: teamLabel.isEmpty ? '-' : teamLabel,
+    teamIds: teamIds,
+    primaryTeam: primary,
+    detail: detail.isEmpty ? body : detail,
+  );
+}
+
+class TransactionsScreen extends StatefulWidget {
   final AppState app;
   const TransactionsScreen({super.key, required this.app});
 
   @override
+  State<TransactionsScreen> createState() => _TransactionsScreenState();
+}
+
+class _TransactionsScreenState extends State<TransactionsScreen> {
+  int? _year;
+  String? _teamId;
+  String _group = 'すべて';
+
+  static const _groups = ['すべて', '入団', '移籍', 'FA', '海外', '更改', '退団', '引退', 'その他'];
+
+  @override
   Widget build(BuildContext context) {
+    final app = widget.app;
+    final parsed = [for (final s in app.transactions) parseTransaction(s, app.teams)];
+    final years = {for (final r in parsed) if (r.year != null) r.year!}.toList()..sort((a, b) => b.compareTo(a));
+    final filtered = [
+      for (final r in parsed)
+        if ((_year == null || r.year == _year) &&
+            (_teamId == null || r.teamIds.contains(_teamId)) &&
+            (_group == 'すべて' || r.group == _group))
+          r,
+    ];
+    final leagueTeams = app.teams.where((t) => t.league == 'CL' || t.league == 'PL').toList();
+
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(title: const Text('入団・移籍・引退の記録')),
-      body: app.transactions.isEmpty
+      body: parsed.isEmpty
           ? const Center(child: Text('記録はまだありません', style: TextStyle(color: _sub)))
-          : ListView.separated(
-              padding: const EdgeInsets.all(12),
-              itemCount: app.transactions.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Text(app.transactions[i], style: const TextStyle(fontSize: 13))),
-            ),
+          : Column(children: [
+              Container(
+                width: double.infinity,
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    DropdownButtonHideUnderline(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                        child: DropdownButton<int?>(
+                          value: _year,
+                          isDense: true,
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _ink),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('全年度')),
+                            for (final y in years) DropdownMenuItem(value: y, child: Text('$y年')),
+                          ],
+                          onChanged: (v) => setState(() => _year = v),
+                        ),
+                      ),
+                    ),
+                    DropdownButtonHideUnderline(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                        child: DropdownButton<String?>(
+                          value: _teamId,
+                          isDense: true,
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _ink),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('全球団')),
+                            for (final t in leagueTeams) DropdownMenuItem(value: t.id, child: Text(teamShort(t))),
+                          ],
+                          onChanged: (v) => setState(() => _teamId = v),
+                        ),
+                      ),
+                    ),
+                    Text('${filtered.length}件', style: const TextStyle(fontSize: 12, color: _sub, fontWeight: FontWeight.w700)),
+                  ]),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [
+                      for (final g in _groups)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(g),
+                            selected: _group == g,
+                            visualDensity: VisualDensity.compact,
+                            onSelected: (_) => setState(() => _group = g),
+                          ),
+                        ),
+                    ]),
+                  ),
+                ]),
+              ),
+              Container(
+                color: const Color(0xFF0F172A),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: const Row(children: [
+                  SizedBox(width: 46, child: Text('日付', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                  SizedBox(width: 60, child: Text('種別', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                  SizedBox(width: 66, child: Text('球団', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                  Expanded(child: Text('選手・内容', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                ]),
+              ),
+              Expanded(
+                child: filtered.isEmpty
+                    ? const Center(child: Text('条件に合う記録はありません', style: TextStyle(color: _sub)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) {
+                          final r = filtered[i];
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: i.isOdd ? const Color(0xFFF8FAFC) : Colors.white,
+                              border: const Border(bottom: BorderSide(color: _line)),
+                            ),
+                            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              SizedBox(
+                                width: 46,
+                                child: Text(r.md, style: const TextStyle(fontSize: 11.5, color: _sub, fontFeatures: [FontFeature.tabularFigures()])),
+                              ),
+                              SizedBox(
+                                width: 60,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(color: r.kindColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
+                                    child: Text(r.kind, maxLines: 1, overflow: TextOverflow.clip, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: r.kindColor)),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 66,
+                                child: Row(children: [
+                                  if (r.primaryTeam != null) ...[
+                                    Container(width: 3, height: 12, color: teamColor(app.teams, r.primaryTeam!)),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Expanded(child: Text(r.teamLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _ink))),
+                                ]),
+                              ),
+                              Expanded(child: Text(r.detail, style: const TextStyle(fontSize: 12, height: 1.4, color: _ink))),
+                            ]),
+                          );
+                        },
+                      ),
+              ),
+            ]),
     );
   }
 }

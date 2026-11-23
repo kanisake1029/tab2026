@@ -18,6 +18,9 @@ import 'package:npb_pennant_app/models/team.dart';
 import 'package:npb_pennant_app/utils/schedule_generator.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
+import 'package:npb_pennant_app/screens/office_screen.dart';
+import 'package:npb_pennant_app/screens/reinforce_screens.dart';
+import 'package:npb_pennant_app/screens/title_race.dart';
 import 'package:npb_pennant_app/utils/app_theme.dart';
 import 'package:npb_pennant_app/widgets/player_detail_dialog.dart';
 import 'package:npb_pennant_app/widgets/scout_report.dart';
@@ -673,5 +676,117 @@ void main() {
     final holdout = ItemNews.of('12/2', holdoutTxt, ItemNews.topicOf(holdoutTxt)!, player: p, team: team);
     expect(holdout.headline, contains('契約更改で合意せず退団'));
     expect(holdout.headline, isNot(contains('戦力外通告')));
+  });
+
+  test('背番号変遷は同日内でも時系列が逆転せず、空白1日未満は「人 → 人」にまとまる', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final t = app.teams.first;
+    app.startYear = 2027;
+    app.chronYears[2026] = [
+      // #7: 2026年にAが着用開始 → 2027-03-26 にB(25→7)がA(7→1)より先に記録された場合
+      {'d': '2026-04-01', 'team': t.id, 'k': 'join', 't': '内野手 選手A(24)が入団。背番号は7。'},
+      // #8: Cが退団し翌日(gapDays == 1)にDが入団
+      {'d': '2026-04-01', 'team': t.id, 'k': 'join', 't': '外野手 選手C(29)が入団。背番号は8。'},
+      {'d': '2026-11-10', 'team': t.id, 'k': 'leave', 't': '外野手 選手C(29)が戦力外通告を受けて退団。'},
+      {'d': '2026-11-11', 'team': t.id, 'k': 'join', 't': '外野手 選手D(22)がドラフト1位で入団。背番号は8。'},
+      // #9: Eが退団し2日後(gapDays == 2)にFが入団 → 1日以上空白ありなので分かれる
+      {'d': '2026-04-01', 'team': t.id, 'k': 'join', 't': '投手 選手E(31)が入団。背番号は9。'},
+      {'d': '2026-11-10', 'team': t.id, 'k': 'leave', 't': '投手 選手E(31)が戦力外通告を受けて退団。'},
+      {'d': '2026-11-12', 'team': t.id, 'k': 'join', 't': '投手 選手F(25)が自由契約から入団。背番号は9。'},
+    ];
+    app.chronYears[2027] = [
+      {'d': '2027-03-26', 'team': t.id, 'k': 'number', 't': '外野手 選手Bの背番号を25から7に変更。'},
+      {'d': '2027-03-26', 'team': t.id, 'k': 'number', 't': '内野手 選手Aの背番号を7から1に変更。'},
+    ];
+
+    final hist = await app.numberHistory(t);
+    expect(hist[7], [
+      ('2026-04-01', '選手A', '入団'),
+      ('2027-03-26', '選手A → 選手B', '25から変更（選手Aは1へ変更）'),
+    ]);
+    expect(hist[8], [
+      ('2026-04-01', '選手C', '入団'),
+      ('2026-11-11', '選手C → 選手D', 'ドラフト1位で入団（選手Cは退団）'),
+    ]);
+    expect(hist[9], [
+      ('2026-04-01', '選手E', '入団'),
+      ('2026-11-10', '選手E', '退団（空き番号に）'),
+      ('2026-11-12', '選手F', '自由契約から入団'),
+    ]);
+  });
+
+  test('入退団記録パーサが年・日付・種別・球団・内容を正しく分解する', () {
+    final tA = Team(id: 'A', name: '東新', shortName: '東新', league: 'CL', players: []);
+    final tB = Team(id: 'B', name: '西川', shortName: '西川', league: 'PL', players: []);
+    final teams = [tA, tB];
+
+    final rDraft = parseTransaction('2026/10/31 東新 ドラフト1位（大学・甲大） 山田 太郎（投手）', teams);
+    expect(rDraft.year, 2026);
+    expect(rDraft.md, '10/31');
+    expect(rDraft.kind, 'ドラフト');
+    expect(rDraft.teamLabel, '東新');
+    expect(rDraft.detail, 'ドラフト1位（大学・甲大） 山田 太郎（投手）');
+
+    final rTrade = parseTransaction('2027/6/10 トレード 東新：佐藤 ⇄ 西川：鈴木', teams);
+    expect(rTrade.kind, 'トレード');
+    expect(rTrade.teamLabel, '東新⇄西川');
+    expect(rTrade.teamIds, {'A', 'B'});
+    expect(rTrade.detail, '佐藤 ⇄ 鈴木');
+
+    final rFa = parseTransaction('2026/12/5 田中 FA 移籍 東新 → 西川（Aランク・2億円×3年）', teams);
+    expect(rFa.kind, 'FA移籍');
+    expect(rFa.teamLabel, '東新→西川');
+    expect(rFa.teamIds, {'A', 'B'});
+
+    final rRel = parseTransaction('2026/10 東新 高橋（31歳）戦力外通告', teams);
+    expect(rRel.md, '10月');
+    expect(rRel.kind, '戦力外');
+    expect(rRel.teamLabel, '東新');
+
+    final rRet = parseTransaction('2026/10/20 西川 伊藤 現役引退・打撃コーチに就任', teams);
+    expect(rRet.kind, '引退');
+    expect(rRet.group, '引退');
+
+    final rRenew = parseTransaction('2026/11/15 東新 渡辺 契約更改 5,000万円→6,000万円', teams);
+    expect(rRenew.kind, '更改');
+    expect(rRenew.teamLabel, '東新');
+  });
+
+  testWidgets('タイトル画面の規定表示が崩れず、コーチとスカウトがタブ分離されている', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(MaterialApp(home: TitleRankingScreen(app: app, league: 'CL', initial: 0)));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('規定打席'), findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: CoachTab(app: app, team: my, onChanged: () {}))));
+    await tester.pumpAndSettle();
+    expect(find.text('1軍スタッフ'), findsOneWidget);
+    expect(find.text('スカウト（ドラフト候補・海外の選手）'), findsNothing);
+
+    await tester.pumpWidget(MaterialApp(home: ScoutScreen(app: app)));
+    await tester.pumpAndSettle();
+    expect(find.text('ドラフト候補'), findsOneWidget);
+    expect(find.text('スカウト陣'), findsOneWidget);
+    await tester.tap(find.text('スカウト陣'));
+    await tester.pumpAndSettle();
+    expect(find.text('スカウト（ドラフト候補・海外の選手）'), findsOneWidget);
   });
 }

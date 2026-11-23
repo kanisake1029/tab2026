@@ -164,50 +164,110 @@ extension NumberOps on AppState {
     _chron(d, t.id, 'number', '${_pos(p)} ${p.registeredName}の背番号を${uniformLabel(from)}から${uniformLabel(to)}に変更。', pid: p.id, pt: '背番号を${uniformLabel(from)}から${uniformLabel(to)}に変更。');
   }
 
-  /// 背番号の変遷（2026年2月から）：背番号 → (日付, 選手名, できごと) の古い順
+  /// 背番号の変遷（2026年2月から）：背番号 → (日付, 選手名または引き継ぎ, できごと) の古い順
   Future<Map<int, List<(String, String, String)>>> numberHistory(Team t) async {
-    final out = <int, List<(String, String, String)>>{};
-    void add(int n, String d, String name, String what) => out.putIfAbsent(n, () => []).add((d, name, what));
     int? num(String s) => s == '00' ? -1 : int.tryParse(s);
+    DateTime? parseYmd(String s) => DateTime.tryParse(s);
     final re = RegExp(r'^(\S+) (.+?)\(\d+\)');
+
+    final raw = <(String d, int kindOrder, int seq, String k, String text)>[];
+    var seq = 0;
     for (var y = 2026; y <= startYear; y++) {
       for (final e in await chronicleOf(y)) {
         final d = '${e['d']}';
         if (e['team'] != t.id || d.compareTo(historyFrom) < 0) continue;
-        final text = '${e['t']}';
-        final k = e['k'];
-        if (k == 'join' || k == 'reg') {
-          final m = RegExp(r'背番号は(00|\d+)').firstMatch(text);
-          final n = m == null ? null : num(m.group(1)!);
-          if (n == null) continue;
-          final nm = re.firstMatch(text)?.group(2) ?? '';
-          final how = k == 'reg' ? '支配下登録' : (RegExp(r'\)が(.+?)。').firstMatch(text)?.group(1) ?? '入団');
-          add(n, d, nm, how);
-        } else if (k == 'number') {
-          final m = RegExp(r'^\S+ (.+)の背番号を(00|\d+)から(00|\d+)に変更').firstMatch(text);
-          if (m != null) {
-            final from = num(m.group(2)!), to = num(m.group(3)!);
-            if (to != null) add(to, d, m.group(1)!, '${m.group(2)}から変更');
-            if (from != null) add(from, d, m.group(1)!, '${m.group(3)}へ変更（空き番号に）');
-          } else {
-            final m2 = RegExp(r'^\S+ (.+)の背番号が(00|\d+)に決定').firstMatch(text);
-            final n = m2 == null ? null : num(m2.group(2)!);
-            if (n != null) add(n, d, m2!.group(1)!, '背番号決定');
-          }
-        } else if (k == 'leave') {
-          // 退団した選手の番号は空く（いまの番号はわからないので、その選手が最後につけた番号に印を付ける）
-          final nm = re.firstMatch(text)?.group(2) ?? '';
-          for (final l in out.values) {
-            if (l.isNotEmpty && l.last.$2 == nm && !l.last.$3.contains('空き番号')) {
-              l.add((d, nm, '退団（空き番号に）'));
-              break;
-            }
-          }
-        }
+        final k = '${e['k'] ?? ''}';
+        if (k != 'leave' && k != 'number' && k != 'join' && k != 'reg') continue;
+        final kindOrder = switch (k) {
+          'leave' => 0,
+          'number' => 1,
+          _ => 2,
+        };
+        raw.add((d, kindOrder, seq++, k, '${e['t']}'));
       }
     }
-    for (final l in out.values) {
-      l.sort((a, b) => a.$1.compareTo(b.$1));
+    raw.sort((a, b) {
+      final dc = a.$1.compareTo(b.$1);
+      if (dc != 0) return dc;
+      final kc = a.$2.compareTo(b.$2);
+      if (kc != 0) return kc;
+      return a.$3.compareTo(b.$3);
+    });
+
+    final holderNumber = <String, int>{};
+    final byNum = <int, List<(String d, String name, String what, bool vacate, int seq)>>{};
+    void addEv(int n, String d, String name, String what, bool vacate, int s) =>
+        byNum.putIfAbsent(n, () => []).add((d, name, what, vacate, s));
+
+    for (final e in raw) {
+      final (d, _, s, k, text) = e;
+      if (k == 'join' || k == 'reg') {
+        final m = RegExp(r'背番号は(00|\d+)').firstMatch(text);
+        final n = m == null ? null : num(m.group(1)!);
+        if (n == null) continue;
+        final nm = re.firstMatch(text)?.group(2) ?? '';
+        final how = k == 'reg' ? '支配下登録' : (RegExp(r'\)が(.+?)。').firstMatch(text)?.group(1) ?? '入団');
+        holderNumber[nm] = n;
+        addEv(n, d, nm, how, false, s);
+      } else if (k == 'number') {
+        final m = RegExp(r'^\S+ (.+)の背番号を(00|\d+)から(00|\d+)に変更').firstMatch(text);
+        if (m != null) {
+          final nm = m.group(1)!;
+          final from = num(m.group(2)!), to = num(m.group(3)!);
+          if (from != null) addEv(from, d, nm, '${m.group(3)}へ変更', true, s);
+          if (to != null) {
+            holderNumber[nm] = to;
+            addEv(to, d, nm, '${m.group(2)}から変更', false, s);
+          }
+        } else {
+          final m2 = RegExp(r'^\S+ (.+)の背番号が(00|\d+)に決定').firstMatch(text);
+          final n = m2 == null ? null : num(m2.group(2)!);
+          if (n != null) {
+            final nm = m2!.group(1)!;
+            holderNumber[nm] = n;
+            addEv(n, d, nm, '背番号決定', false, s);
+          }
+        }
+      } else if (k == 'leave') {
+        final nm = re.firstMatch(text)?.group(2) ?? '';
+        final n = holderNumber.remove(nm);
+        if (n != null) addEv(n, d, nm, '退団', true, s);
+      }
+    }
+
+    final out = <int, List<(String, String, String)>>{};
+    for (final entry in byNum.entries) {
+      final events = entry.value;
+      events.sort((a, b) {
+        final dc = a.$1.compareTo(b.$1);
+        if (dc != 0) return dc;
+        // 同日内は必ず「手放す（変更元・退団）」を先、「受け取る（変更先・決定・入団）」を後に並べる
+        final vc = (a.$4 ? 0 : 1).compareTo(b.$4 ? 0 : 1);
+        if (vc != 0) return vc;
+        return a.$5.compareTo(b.$5);
+      });
+      final merged = <(String, String, String)>[];
+      for (var i = 0; i < events.length; i++) {
+        final cur = events[i];
+        if (cur.$4) {
+          if (i + 1 < events.length && !events[i + 1].$4) {
+            final next = events[i + 1];
+            final dtOut = parseYmd(cur.$1), dtIn = parseYmd(next.$1);
+            final gapDays = (dtOut != null && dtIn != null) ? dtIn.difference(dtOut).inDays : 999;
+            if (gapDays <= 1) {
+              final label = cur.$2 == next.$2 ? next.$2 : '${cur.$2} → ${next.$2}';
+              final desc = cur.$2 == next.$2 ? '${next.$3}（${cur.$3}）' : '${next.$3}（${cur.$2}は${cur.$3}）';
+              merged.add((next.$1, label, desc));
+              i++;
+              continue;
+            }
+          }
+          merged.add((cur.$1, cur.$2, '${cur.$3}（空き番号に）'));
+        } else {
+          merged.add((cur.$1, cur.$2, cur.$3));
+        }
+      }
+      out[entry.key] = merged;
     }
     return out;
   }

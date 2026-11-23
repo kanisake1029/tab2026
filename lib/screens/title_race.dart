@@ -101,24 +101,25 @@ class _TitleRankingScreenState extends State<TitleRankingScreen> with SingleTick
       body: Column(children: [
         Container(color: Colors.white, child: TabGrid(controller: _tab, labels: [for (final d in titleDefs) d.title], minWidth: 64)),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: Row(children: [
-            SegmentedButton<String>(
-              segments: const [ButtonSegment(value: 'CL', label: Text('Aリーグ')), ButtonSegment(value: 'PL', label: Text('Bリーグ'))],
-              selected: {_league},
-              showSelectedIcon: false,
-              onSelectionChanged: (v) => setState(() => _league = v.first),
-            ),
-            const SizedBox(width: 6),
-            SegmentedButton<bool>(
-              segments: const [ButtonSegment(value: false, label: Text('公式戦')), ButtonSegment(value: true, label: Text('オープン戦'))],
-              selected: {_open},
-              showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              onSelectionChanged: (v) => setState(() => _open = v.first),
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: Text('規定打席 ${(lgGames * 3.1).floor()}・規定投球回 $lgGames（球団の試合数が基準）', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)))),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              SegmentedButton<String>(
+                segments: const [ButtonSegment(value: 'CL', label: Text('Aリーグ')), ButtonSegment(value: 'PL', label: Text('Bリーグ'))],
+                selected: {_league},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => setState(() => _league = v.first),
+              ),
+              SegmentedButton<bool>(
+                segments: const [ButtonSegment(value: false, label: Text('公式戦')), ButtonSegment(value: true, label: Text('オープン戦'))],
+                selected: {_open},
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                onSelectionChanged: (v) => setState(() => _open = v.first),
+              ),
+            ]),
+            const SizedBox(height: 6),
+            Text('規定打席 ${(lgGames * 3.1).floor()}・規定投球回 $lgGames（球団の試合数が基準）', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
           ]),
         ),
         Expanded(

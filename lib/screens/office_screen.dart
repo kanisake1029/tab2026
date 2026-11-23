@@ -109,18 +109,27 @@ Widget abilityText(Coach c, String key, {double size = 13}) {
   ]));
 }
 
+enum StaffViewMode { coaches, scouts }
+
 class CoachTab extends StatelessWidget {
   final AppState app;
   final Team team;
   final VoidCallback onChanged;
-  const CoachTab({super.key, required this.app, required this.team, required this.onChanged});
+  final StaffViewMode mode;
+  const CoachTab({super.key, required this.app, required this.team, required this.onChanged, this.mode = StaffViewMode.coaches});
 
   @override
   Widget build(BuildContext context) {
     final staff = app.staffOf(team);
-    final total = app.coaches.where((c) => c.teamId == team.id && c.role != null).fold<int>(0, (s, c) => s + c.salary);
+    final total = app.coaches.where((c) => c.teamId == team.id && c.role != null && !CoachEngine.isScout(c.role)).fold<int>(0, (s, c) => s + c.salary);
     return LayoutBuilder(builder: (context, c) {
       final narrow = c.maxWidth < 700;
+      if (mode == StaffViewMode.scouts) {
+        return ListView(
+          padding: EdgeInsets.fromLTRB(narrow ? 10 : 16, 12, narrow ? 10 : 16, 24),
+          children: [_scoutGroup(context, narrow)],
+        );
+      }
       return ListView(
         padding: EdgeInsets.fromLTRB(narrow ? 10 : 16, 12, narrow ? 10 : 16, 24),
         children: [
@@ -139,8 +148,6 @@ class CoachTab extends StatelessWidget {
           _group(context, '2軍スタッフ', CoachEngine.roles2G, staff, narrow),
           const SizedBox(height: 12),
           _thirdGroup(context, narrow),
-          const SizedBox(height: 12),
-          _scoutGroup(context, narrow),
           const SizedBox(height: 12),
           _rivals(context),
         ],
@@ -384,6 +391,17 @@ class CoachTab extends StatelessWidget {
     final m = RegExp(r'合う(\d+)人・合わない(\d+)人').firstMatch(t);
     return m == null ? null : (int.parse(m.group(1)!), int.parse(m.group(2)!));
   }
+}
+
+/// スカウト編成タブ（フロント → 補強 → ドラフト候補・スカウト画面内）
+class ScoutStaffTab extends StatelessWidget {
+  final AppState app;
+  final Team team;
+  final VoidCallback onChanged;
+  const ScoutStaffTab({super.key, required this.app, required this.team, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => CoachTab(app: app, team: team, onChanged: onChanged, mode: StaffViewMode.scouts);
 }
 
 /// OB 一覧（打診する相手を選ぶ）
