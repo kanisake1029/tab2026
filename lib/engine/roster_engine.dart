@@ -145,6 +145,7 @@ class RosterEngine {
     }
     p.lastDemotedDate = null;
     p.retainAsked = false;
+    p.nextNumber = null;
     if (t.players.any((x) => x.uniformNumber == p.uniformNumber) || (p.ikusei != (p.uniformNumber >= 100))) {
       p.uniformNumber = freeNumber(t, ikusei: p.ikusei);
     }

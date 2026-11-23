@@ -4,8 +4,8 @@ import '../models/player.dart';
 import '../models/team.dart';
 import '../providers/app_state.dart';
 
-/// 背番号の一括変更：選手ごとに「来季（開幕前日から）の背番号」を入れる
-///  入団・移籍したばかりの選手は、重ならなければすぐ変わる。支配下は 00・0〜99、育成は 100〜999
+/// 背番号の一括変更：選手ごとに「開幕前日からの背番号」を入れる
+///  変更・決定は入団時期に関わらず一律で開幕前日に行われる。支配下は 00・0〜99、育成は 100〜999
 class NumberBoardScreen extends StatefulWidget {
   final AppState app;
   final Team team;
@@ -56,7 +56,7 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
     }
     final e = widget.app.setNumbersBulk(widget.team, next);
     if (e != null) return setState(() => _err = e);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.isOpeningNumberDay || widget.app.isOffseasonNumberFree ? '背番号を変えました' : '背番号を決めました（開幕前日から。入団・移籍したばかりの選手はすぐ）')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.isOpeningNumberDay ? '背番号を変えました' : '背番号を予約しました（開幕前日に反映されます）')));
     Navigator.of(context).pop(true);
   }
 
@@ -67,8 +67,13 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
     final list = widget.team.players.toList()
       ..sort((a, b) => a.ikusei != b.ikusei ? (a.ikusei ? 1 : -1) : uniformSortKey(a.uniformNumber).compareTo(uniformSortKey(b.uniformNumber)));
     Widget row(Player p) {
-      final free = app.numberFreeNow(p);
       final changed = parseUniform(_ctl[p.id]!.text) != p.uniformNumber;
+      final subColor = p.numberPending
+          ? const Color(0xFF15803D)
+          : (p.nextNumber != null ? const Color(0xFF1D4ED8) : const Color(0xFF78716C));
+      final subNote = p.numberPending
+          ? '　仮番号（開幕前日に決定）'
+          : (p.nextNumber != null ? '　予約 #${uniformLabel(p.nextNumber!)}（開幕前日〜）' : '');
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE7E5E4)))),
@@ -77,8 +82,8 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               Text(p.listName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
-              Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}${p.numberPending ? '　仮番号（開幕前日に決定）' : (free && !app.isOpeningNumberDay && !app.isOffseasonNumberFree ? '　入団直後（すぐ変わる）' : (app.isOffseasonNumberFree ? '　オフ期間（すぐ変わる）' : ''))}',
-                  style: TextStyle(fontSize: 11, color: (free || p.numberPending) ? const Color(0xFF15803D) : const Color(0xFF78716C))),
+              Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}$subNote',
+                  style: TextStyle(fontSize: 11, color: subColor)),
             ]),
           ),
           const Icon(Icons.arrow_forward, size: 16, color: Color(0xFF78716C)),
@@ -113,7 +118,7 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
           child: Text(
               app.isOpeningNumberDay
                   ? '今年だけ特別に、今日（開幕日）は全員の背番号をすぐ変えられます（初期の背番号の扱い。背番号の変遷には変更として残りません）。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。'
-                  : '右の欄が来季の背番号です。変更は毎年開幕前日に行われます（入団・移籍したばかりの選手は、すぐ変わります）。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。',
+                  : '右の欄が開幕前日から適用される背番号です。変更・決定は入団時期に関わらず一律で毎年開幕前日に行われます。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。',
               style: const TextStyle(fontSize: 12, color: Color(0xFF334155))),
         ),
         Expanded(child: ListView(children: [for (final p in list) row(p)])),

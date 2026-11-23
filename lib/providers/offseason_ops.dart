@@ -454,12 +454,15 @@ extension OffseasonOps on AppState {
 
   /// 1日ずつの行事（(from, to] の各日）
   void _dailyEvents(DateTime from, DateTime to) {
-    final (firstReg, lastReg) = _regularRange();
+    var (firstReg, lastReg) = _regularRange();
     var d = from;
     while (d.isBefore(to)) {
       d = d.add(const Duration(days: 1));
       if (firstReg != null && DateUtils.isSameDay(d, firstReg.subtract(const Duration(days: 1)))) applyNextNumbers(d); // 開幕前日：予約した背番号に変える
-      if (d.month == 1 && d.day == 1) _newYearDay(); // 1月1日：月初めのお金の処理より先に（来季からのスポンサー契約の支払いを始める）
+      if (d.month == 1 && d.day == 1) {
+        _newYearDay(); // 1月1日：月初めのお金の処理より先に（来季からのスポンサー契約の支払いを始める）
+        (firstReg, lastReg) = _regularRange();
+      }
       final inSeason = !seasonFinished && firstReg != null && lastReg != null && !d.isBefore(firstReg) && !d.isAfter(lastReg);
       if (inSeason) {
         for (final t in leagueTeams) {
@@ -1499,6 +1502,7 @@ extension OffseasonOps on AppState {
       if (!p.isPitcher && fielders <= 12) return '支配下の野手が足りなくなります';
       RosterEngine.removePlayer(my, p);
       p.ikusei = true;
+      p.nextNumber = null;
       if (isBeforeOpeningDay()) p.numberPending = true;
       RosterEngine.addPlayer(my, p); // 背番号は3桁になる
     }
@@ -1536,6 +1540,7 @@ extension OffseasonOps on AppState {
     if (RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
     if (!tradeOpen) return '支配下登録は7月31日までです';
     p.ikusei = false;
+    p.nextNumber = null;
     p.uniformNumber = RosterEngine.freeNumber(my, ikusei: false);
     if (isBeforeOpeningDay()) p.numberPending = true;
     p.salary = max(p.salary, 450);

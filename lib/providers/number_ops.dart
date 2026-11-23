@@ -1,13 +1,13 @@
 part of 'app_state.dart';
 
-/// 背番号：ふだんの変更は「来季（開幕前日）から」の予約。入団・移籍した直後だけは、すぐに変えられる
+/// 背番号：特別な初期設定日（isOpeningNumberDay）を除き、入団時期・オフ期間を問わず変更・決定は一律で「開幕前日」に反映する
 ///  開幕前日に予約した番号へまとめて変え、球団の記録（背番号の変遷）に残す。記録は2026年2月から（それより前の番号は入れない）
 extension NumberOps on AppState {
   /// 背番号の記録を始めた日
   static const historyFrom = '2026-02-01';
 
-  /// オフシーズン（11/1〜1/31）は背番号をすぐ変えられ、変更は経歴に残さない
-  bool get isOffseasonNumberFree => currentDate.month >= 11 || currentDate.month == 1;
+  /// オフシーズン即時変更は廃止（入団時期・オフ期間を問わず一律で開幕前日に反映する）
+  bool get isOffseasonNumberFree => false;
 
   /// 開幕前日より前か（オフ期間の入団・再契約・支配下登録等は開幕前日に背番号を確定する）
   bool isBeforeOpeningDay([DateTime? at]) {
@@ -18,17 +18,13 @@ extension NumberOps on AppState {
     return d.isBefore(DateUtils.dateOnly(firstReg).subtract(const Duration(days: 1)));
   }
 
-  /// 入団・移籍した直後、またはオフ期間（11/1〜1/31）で背番号をすぐ変えられるか（特別に決めた日は全員）
-  bool numberFreeNow(Player p) =>
-      isOpeningNumberDay ||
-      isOffseasonNumberFree ||
-      p.numberPending ||
-      (p.numberFreeUntil.isNotEmpty && p.numberFreeUntil.compareTo(ChronicleOps.ymd(currentDate)) >= 0);
+  /// 今日は特別な初期設定日（isOpeningNumberDay）のみ即座に変えられる。通常は入団時期・オフ期間を問わず一律で開幕前日反映
+  bool numberFreeNow(Player p) => isOpeningNumberDay;
 
   /// 今日は、全員の背番号をすぐ変えられる特別な日か（初期の背番号の扱い）
   bool get isOpeningNumberDay => openingNumberDay.isNotEmpty && openingNumberDay == ChronicleOps.ymd(currentDate);
 
-  /// すぐ変える。初期の背番号・オフ期間（11/1〜1/31）・入団直後の変更は経歴に残さず、入団・支配下登録の記録の番号を書き換える
+  /// すぐ変える（初期設定日 isOpeningNumberDay 専用）
   void _changeNow(Team t, Player p, int n) {
     if (n == p.uniformNumber) return;
     if (p.numberPending) {
@@ -54,7 +50,7 @@ extension NumberOps on AppState {
     p.uniformNumber = n;
   }
 
-  /// 来季（次の2月1日）の背番号：予約があればそれ、なければ今の番号
+  /// 開幕前日に適用される背番号：予約があればそれ、なければ今の番号
   int numberNextSeason(Player p) => p.nextNumber ?? p.uniformNumber;
 
   /// 背番号の決まり（支配下は 00・0〜99、育成は 100〜999）。守っていなければその文
@@ -63,7 +59,7 @@ extension NumberOps on AppState {
     return n < 100 ? null : '支配下の選手の背番号は00・0〜99です';
   }
 
-  /// 1人の背番号を変える。入団・移籍の直後ならすぐ、それ以外は2月1日からの予約。戻り値はエラーの文（null で成功）
+  /// 1人の背番号を変える。特別な初期設定日以外は一律で開幕前日からの予約。戻り値はエラーの文（null で成功）
   String? setNumber(Team t, Player p, int n) {
     final rule = numberRule(p, n);
     if (rule != null) return rule;
@@ -75,13 +71,12 @@ extension NumberOps on AppState {
       return null;
     }
     final dup = t.players.where((x) => !identical(x, p) && numberNextSeason(x) == n).firstOrNull;
-    if (dup != null) return '来季の背番号${uniformLabel(n)}は${dup.registeredName}がつけます';
+    if (dup != null) return '背番号${uniformLabel(n)}は${dup.registeredName}が予約・使用しています';
     p.nextNumber = n == p.uniformNumber ? null : n;
     return null;
   }
 
-  /// 一括の変更（選手 id → 来季の背番号）。すべて決まりどおりで重ならないときだけ変える。戻り値はエラーの文
-  ///  入団・移籍の直後の選手は、すぐ変える
+  /// 一括の変更（選手 id → 開幕前日からの背番号）。すべて決まりどおりで重ならないときだけ予約する。戻り値はエラーの文
   String? setNumbersBulk(Team t, Map<String, int> next) {
     final finalNum = <Player, int>{for (final p in t.players) p: next[p.id] ?? numberNextSeason(p)};
     for (final e in finalNum.entries) {
@@ -94,7 +89,7 @@ extension NumberOps on AppState {
       if (o != null) return '背番号${uniformLabel(e.value)}が${o.registeredName}と${e.key.registeredName}で重なっています';
       seen[e.value] = e.key;
     }
-    if (isOpeningNumberDay || isOffseasonNumberFree) {
+    if (isOpeningNumberDay) {
       for (final p in t.players) {
         _changeNow(t, p, finalNum[p]!);
         p.nextNumber = null;
@@ -102,15 +97,9 @@ extension NumberOps on AppState {
       updateAndSave();
       return null;
     }
-    // すぐ変えられる選手は、今の番号で重ならないときだけすぐ（重なるときは来季の予約に）
     for (final p in t.players) {
       final n = finalNum[p]!;
-      if (numberFreeNow(p) && n != p.uniformNumber && !t.players.any((x) => !identical(x, p) && x.uniformNumber == n)) {
-        _changeNow(t, p, n);
-        p.nextNumber = null;
-      } else {
-        p.nextNumber = n == p.uniformNumber ? null : n;
-      }
+      p.nextNumber = n == p.uniformNumber ? null : n;
     }
     updateAndSave();
     return null;
@@ -155,9 +144,9 @@ extension NumberOps on AppState {
     }
   }
 
-  /// 入団・移籍した選手（自球団）：しばらくは背番号をすぐ変えられる
+  /// 一律で開幕前日反映となったため、入団直後の即時変更期限は設定しない（既存テスト等との互換用）
   void markNumberFree(Player p, DateTime d) {
-    p.numberFreeUntil = ChronicleOps.ymd(d.add(const Duration(days: 30)));
+    p.numberFreeUntil = '';
   }
 
   void _numberChron(Team t, Player p, int from, int to, DateTime d) {

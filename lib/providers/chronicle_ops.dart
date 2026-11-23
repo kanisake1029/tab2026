@@ -85,7 +85,6 @@ extension ChronicleOps on AppState {
           } else {
             _chron(d, t.id, 'reg', '${_pos(p)} ${p.registeredName}(${p.age})を支配下登録。背番号は${p.uniformText}。', pid: p.id, pt: '支配下登録。背番号${p.uniformText}。');
           }
-          if (t.id == myTeamId) markNumberFree(p, d); // 支配下登録の直後は、背番号をすぐ変えられる
         } else if (!o.$2 && p.ikusei && pending) {
           p.numberPending = true;
         }
@@ -98,7 +97,6 @@ extension ChronicleOps on AppState {
       } else {
         _chron(d, t.id, 'join', '${_pos(p)} ${p.registeredName}(${p.age})が$how。背番号は${p.uniformText}。', pid: p.id, pt: '$pt背番号${p.uniformText}。');
       }
-      if (t.id == myTeamId) markNumberFree(p, d); // 入団・移籍の直後は、背番号をすぐ変えられる
     }
     // コーチ
     final nowC = {

@@ -8,6 +8,7 @@ import 'package:npb_pennant_app/engine/career_path.dart';
 import 'package:npb_pennant_app/engine/condition_engine.dart';
 import 'package:npb_pennant_app/engine/foreign_engine.dart';
 import 'package:npb_pennant_app/engine/game_news.dart';
+import 'package:npb_pennant_app/engine/growth_curve.dart';
 import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/match_simulator.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
@@ -77,7 +78,7 @@ void main() {
     expect(find.textContaining('現役ドラフト'), findsOneWidget);
   });
 
-  test('④ オフシーズン（11/1〜1/31）の背番号変更は即時反映され、経歴に残らず入団時番号を書き換える', () async {
+  test('④ オフシーズン（11/1〜1/31）の背番号変更も予約となり、一律で開幕前日に反映される', () async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState(AppDatabase(NativeDatabase.memory()));
     while (!app.loaded) {
@@ -88,6 +89,7 @@ void main() {
     final oldNum = p.uniformNumber;
     final newNum = [for (var n = 1; n <= 99; n++) if (!t.players.any((x) => x.uniformNumber == n)) n].first;
 
+    app.myTeamId = t.id;
     app.currentDate = DateTime(2026, 11, 15);
     app.chron.add({
       'd': '2026-11-10',
@@ -100,24 +102,28 @@ void main() {
 
     final err = app.setNumber(t, p, newNum);
     expect(err, isNull);
-    expect(p.uniformNumber, newNum);
-    expect(p.nextNumber, isNull);
+    expect(p.uniformNumber, oldNum);
+    expect(p.nextNumber, newNum);
     expect(app.chron.any((c) => c['pid'] == p.id && c['k'] == 'number'), isFalse);
 
+    app.applyNextNumbers(DateTime(2027, 3, 25));
+    expect(p.uniformNumber, newNum);
+    expect(p.nextNumber, isNull);
     final tl = await app.playerTimeline(p);
-    expect(tl.any((e) => e.$2.contains('変更')), isFalse);
-    expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(newNum)}。')), isTrue);
-    expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(oldNum)}。')), isFalse);
+    expect(tl.any((e) => e.$2.contains('背番号を${uniformLabel(oldNum)}から${uniformLabel(newNum)}に変更。')), isTrue);
+    expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(oldNum)}。')), isTrue);
   });
 
-  test('④-2 シーズン途中の入団・来日でも1か月の猶予期間中は即時反映＆経歴に当初番号として残る', () async {
+  test('④-2 シーズン途中の入団・来日や一括入替も一律で予約となり、開幕前日に反映される', () async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState(AppDatabase(NativeDatabase.memory()));
     while (!app.loaded) {
       await Future.delayed(const Duration(milliseconds: 20));
     }
     final t = app.teams.first;
+    app.myTeamId = t.id;
     final p = t.players.firstWhere((x) => !x.ikusei);
+    final q = t.players.firstWhere((x) => !x.ikusei && x.id != p.id);
     final n14 = [for (var n = 14; n <= 99; n++) if (!t.players.any((x) => x.uniformNumber == n)) n].first;
     final n53 = [for (var n = 53; n <= 99; n++) if (n != n14 && !t.players.any((x) => x.uniformNumber == n)) n].first;
     p.uniformNumber = n14;
@@ -136,14 +142,29 @@ void main() {
 
     final err = app.setNumber(t, p, n53);
     expect(err, isNull);
-    expect(p.uniformNumber, n53);
-    expect(p.nextNumber, isNull);
+    expect(p.uniformNumber, n14);
+    expect(p.nextNumber, n53);
     expect(app.chron.any((c) => c['pid'] == p.id && c['k'] == 'number'), isFalse);
 
+    // オフ期間に一括変更で2人の番号を入れ替えても、予約となり開幕前日に同時に切り替わる
+    app.currentDate = DateTime(2026, 11, 15);
+    final qOld = q.uniformNumber;
+    final bulkErr = app.setNumbersBulk(t, {p.id: qOld, q.id: n14});
+    expect(bulkErr, isNull);
+    expect(p.uniformNumber, n14);
+    expect(q.uniformNumber, qOld);
+    expect(p.nextNumber, qOld);
+    expect(q.nextNumber, n14);
+
+    app.applyNextNumbers(DateTime(2027, 3, 25));
+    expect(p.uniformNumber, qOld);
+    expect(q.uniformNumber, n14);
+    expect(p.nextNumber, isNull);
+    expect(q.nextNumber, isNull);
+
     final tl = await app.playerTimeline(p);
-    expect(tl.any((e) => e.$2.contains('変更')), isFalse);
-    expect(tl.any((e) => e.$2.contains('来日して${t.name}に入団。背番号${uniformLabel(n53)}。')), isTrue);
-    expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(n14)}。')), isFalse);
+    expect(tl.any((e) => e.$2.contains('来日して${t.name}に入団。背番号${uniformLabel(n14)}。')), isTrue);
+    expect(tl.any((e) => e.$2.contains('背番号を${uniformLabel(n14)}から${uniformLabel(qOld)}に変更。')), isTrue);
   });
 
   testWidgets('支配下登録: 2027/6/12・支配下65人で選手詳細ダイアログから支配下登録できる', (tester) async {
@@ -554,15 +575,19 @@ void main() {
     expect('${joinChron['t']}', contains('自由契約から再契約'));
     expect('${joinChron['t']}', isNot(contains('背番号は')));
 
-    // 仮番号を変更しても「変更」年表は残らず、開幕前日まで保留のまま
+    // 仮番号を変更しても予約状態となり「変更」年表は残らず、開幕前日に決定する
+    final tempNum = pIk.uniformNumber;
     final desired = RosterEngine.freeNumber(my, ikusei: false);
     expect(app.setNumber(my, pIk, desired), isNull);
-    expect(pIk.uniformNumber, desired);
+    expect(pIk.uniformNumber, tempNum);
+    expect(pIk.nextNumber, desired);
     expect(pIk.numberPending, isTrue);
     expect(app.chron.where((c) => c['pid'] == pIk.id && c['k'] == 'number'), isEmpty);
 
     // 開幕前日で背番号が正式決定し、年表・ニュース・背番号の変遷に「に決定」として記録される
     app.applyNextNumbers(DateTime(2027, 3, 25));
+    expect(pIk.uniformNumber, desired);
+    expect(pIk.nextNumber, isNull);
     expect(pIk.numberPending, isFalse);
     final numChron = app.chron.lastWhere((c) => c['pid'] == pIk.id && c['k'] == 'number');
     expect('${numChron['t']}', contains('の背番号が${uniformLabel(desired)}に決定。'));
@@ -873,5 +898,53 @@ void main() {
     await tester.tap(find.byTooltip('先発を1人増やす'));
     await tester.pumpAndSettle();
     expect(my.thirdRotationCount, beforeRotCount + 1);
+  });
+
+  testWidgets('2軍・3軍の投手オーダー画面で年齢・全盛期・成長率が打者と同じサイズで並列表示され360px幅で溢れない', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    final pmap = {for (final p in my.players) p.id: p};
+
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    for (final lv in [2, 3]) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PitcherTab(team: my, appState: app, onRosterChanged: () {}, playerMap: pmap, level: lv),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      expect(find.text('年'), findsWidgets);
+      expect(find.text('全盛'), findsWidgets);
+      expect(find.text('成長'), findsWidgets);
+      expect(find.text('登'), findsWidgets);
+      expect(find.text('防御'), findsWidgets);
+      expect(find.textContaining('歳・全盛'), findsNothing);
+
+      final rotId = (lv == 2 ? my.farmRotation : my.thirdRotation).firstWhere((id) => pmap[id] != null, orElse: () => '');
+      if (rotId.isNotEmpty) {
+        final p = pmap[rotId]!;
+        final (pa, pb) = GrowthCurve.primeRange(p);
+        final primeFinder = find.text('$pa-$pb');
+        final growthFinder = find.text(p.growthRate.toStringAsFixed(2));
+        expect(primeFinder, findsWidgets);
+        expect(growthFinder, findsWidgets);
+        final primeText = tester.widget<Text>(primeFinder.first);
+        final growthText = tester.widget<Text>(growthFinder.first);
+        expect(primeText.style?.fontSize, 12);
+        expect(growthText.style?.fontSize, 12);
+      }
+    }
   });
 }

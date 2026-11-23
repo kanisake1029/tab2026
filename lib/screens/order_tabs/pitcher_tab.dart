@@ -3,8 +3,10 @@ import '../../models/player.dart';
 import '../../models/team.dart';
 import '../../providers/app_state.dart';
 import 'order_shared.dart';
-import 'lineup_tab.dart' show farmToManual, thirdToManual, thirdUsed, ageLine;
+import 'lineup_tab.dart' show farmToManual, thirdToManual, thirdUsed;
 import '../../engine/farm_engine.dart';
+import '../../engine/growth_curve.dart';
+import '../../widgets/condition_face.dart';
 import '../../widgets/player_row.dart';
 
 /// 投手（先発ローテ・勝利の方程式・中継ぎ）
@@ -37,6 +39,8 @@ const _line = Color(0xFFE7E5E4);
 const _pickBorder = Color(0xFFF59E0B);
 
 class _PitcherTabState extends State<PitcherTab> {
+  static const _farmCols = <(String, double)>[('年', 22), ('全盛', 40), ('成長', 34), ('登', 22), ('防御', 36)];
+
   Team get team => widget.team;
   String? _picked; // 「選んだ選手の能力」に表示中の投手
   bool _narrow = false;
@@ -267,6 +271,8 @@ class _PitcherTabState extends State<PitcherTab> {
           ]),
           note: '日程順に登板。${auto ? '今は自動で組んでいます。' : ''}入れ替えると「自分で組む」になります',
           children: [
+            _farmHeader(withSlot: true),
+            const Divider(height: 1, color: _ink),
             for (var i = 0; i < rot.length; i++) _farmSlot(i, _p(rot[i]), i == next ? '次回' : '${(i - next + n) % n}試合後', i == next),
           ],
         ),
@@ -276,20 +282,25 @@ class _PitcherTabState extends State<PitcherTab> {
           title: '$lvNameの中継ぎ ${relievers.length}人',
           note: _narrow ? '長押しで先発の枠へドラッグ（タップで能力を表示）' : '先発の枠へドラッグ（タップで能力を表示）',
           children: [
-            if (relievers.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('中継ぎがいません', style: TextStyle(color: _sub))),
-            for (final p in relievers)
-              orderDraggable(
-                longPress: _narrow,
-                data: p.id,
-                feedback: Material(color: Colors.transparent, child: SizedBox(width: 300, child: Opacity(opacity: 0.9, child: _pitcherRow(p, '', false)))),
-                childWhenDragging: Opacity(opacity: 0.3, child: _pitcherRow(p, '', false)),
-                child: _tapArea(p, _pitcherRow(p, '', _picked == p.id)),
-              ),
+            if (relievers.isEmpty)
+              const Padding(padding: EdgeInsets.all(8), child: Text('中継ぎがいません', style: TextStyle(color: _sub)))
+            else ...[
+              _farmHeader(withSlot: false),
+              const Divider(height: 1, color: _ink),
+              for (final p in relievers)
+                orderDraggable(
+                  longPress: _narrow,
+                  data: p.id,
+                  feedback: Material(color: Colors.transparent, child: SizedBox(width: 300, child: Opacity(opacity: 0.9, child: _pitcherRow(p, '', false)))),
+                  childWhenDragging: Opacity(opacity: 0.3, child: _pitcherRow(p, '', false)),
+                  child: _tapArea(p, _pitcherRow(p, '', _picked == p.id)),
+                ),
+            ],
           ],
         ),
       ];
       return SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(_narrow ? 10 : 16, 12, _narrow ? 10 : 16, 24),
+        padding: EdgeInsets.fromLTRB(_narrow ? 6 : 16, 12, _narrow ? 6 : 16, 24),
         child: _narrow
             ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...left, const SizedBox(height: 14), ...right])
             : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -307,7 +318,7 @@ class _PitcherTabState extends State<PitcherTab> {
   }
 
   Widget _section({required String title, String? note, Widget? trailing, required List<Widget> children}) => Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        padding: EdgeInsets.fromLTRB(_narrow ? 8 : 12, 10, _narrow ? 8 : 12, 10),
         decoration: BoxDecoration(color: Colors.white, border: Border.all(color: _line), borderRadius: BorderRadius.circular(10)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900))), if (trailing != null) trailing]),
@@ -322,11 +333,50 @@ class _PitcherTabState extends State<PitcherTab> {
         child: child,
       );
 
+  /// 2・3軍投手の表見出し
+  Widget _farmHeader({bool withSlot = false}) {
+    const h = TextStyle(fontSize: 10.5, color: _sub);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(7, 4, 4, 2),
+      child: Row(children: [
+        if (withSlot) ...[const SizedBox(width: 44, child: Text('枠', style: h)), const SizedBox(width: 4)],
+        const SizedBox(width: 18),
+        const Expanded(child: Text('選手', style: h)),
+        const SizedBox(width: 14),
+        for (final c in _farmCols) SizedBox(width: c.$2, child: Text(c.$1, textAlign: TextAlign.right, style: h)),
+      ]),
+    );
+  }
+
+  /// 2・3軍投手の1行（打者と揃えて年齢・全盛期・成長率・登板・防御率を並べる）
+  Widget _farmPitcherLine(Player p, PlayerStats s) {
+    final (pa, pb) = GrowthCurve.primeRange(p);
+    const st = TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()], color: Color(0xFF292524));
+    return Row(children: [
+      SizedBox(width: 16, child: Align(alignment: Alignment.centerLeft, child: ConditionFace(level: p.conditionAt(widget.appState.currentDate), size: 11))),
+      const SizedBox(width: 2),
+      Expanded(
+        child: Row(children: [
+          Flexible(child: Text(p.listName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: PlayerRow.ink))),
+          PlayerRow.injury(p),
+          if (p.energyRatio < 0.7) Padding(padding: const EdgeInsets.only(left: 2), child: PlayerRow.energy(p, size: 9)),
+        ]),
+      ),
+      SizedBox(width: 14, child: Text(p.throws == 'L' ? '左' : '右', style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8)))),
+      SizedBox(width: 22, child: Align(alignment: Alignment.centerRight, child: Text('${p.age}', style: st))),
+      SizedBox(width: 40, child: Align(alignment: Alignment.centerRight, child: Text('$pa-$pb', style: st.copyWith(color: const Color(0xFF0F766E))))),
+      SizedBox(width: 34, child: Align(alignment: Alignment.centerRight, child: Text(p.growthRate.toStringAsFixed(2), style: st.copyWith(color: const Color(0xFF0F766E))))),
+      SizedBox(width: 22, child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerRight, child: Text('${s.apps}', style: st))),
+      SizedBox(width: 36, child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerRight, child: Text(s.inningsPitched == 0 ? '-' : s.era.toStringAsFixed(2), style: st.copyWith(fontWeight: FontWeight.w700)))),
+    ]);
+  }
+
   /// 投手1人の行（共通の1行。先頭に役割のラベル、2行目は今季成績）
   Widget _pitcherRow(Player p, String label, bool picked, {bool highlight = false, Widget? trailing}) {
     final s = widget.level == 2 ? p.farmStats : (widget.level == 3 ? p.thirdStats : p.shownStats);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+      constraints: widget.level > 1 ? const BoxConstraints(minHeight: 34) : null,
+      padding: widget.level > 1 ? const EdgeInsets.symmetric(horizontal: 4, vertical: 3) : const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
       decoration: BoxDecoration(
         color: picked ? PlayerRow.selBg : Colors.white,
         border: Border(bottom: const BorderSide(color: _line), left: BorderSide(color: picked ? PlayerRow.selBorder : Colors.transparent, width: 3)),
@@ -342,10 +392,9 @@ class _PitcherTabState extends State<PitcherTab> {
           const SizedBox(width: 4),
         ],
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
-            PitcherLine(p: p, s: s, date: widget.appState.currentDate, faceSize: widget.level > 1 ? 11 : 14),
-            if (widget.level > 1) Padding(padding: const EdgeInsets.only(left: 20), child: Text(ageLine(p), style: const TextStyle(fontSize: 9.5, color: Color(0xFF0F766E)))),
-          ]),
+          child: widget.level > 1
+              ? _farmPitcherLine(p, s)
+              : PitcherLine(p: p, s: s, date: widget.appState.currentDate, faceSize: 14),
         ),
         if (trailing != null) trailing,
       ]),
