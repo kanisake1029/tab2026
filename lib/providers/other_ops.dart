@@ -394,7 +394,7 @@ extension OtherOps on AppState {
     p.contractYears = offerY;
     p.offJoin = offseasonYear;
     if (!back) {
-      p.proYears = max(1, p.proYears);
+      p.proYears = 1;
       p.faService = 0;
       p.draftInfo = '${lg.name}の${t.name}から入団（${currentDate.year}年）';
       if (p.nationality == '海外' && !ikusei) ForeignEngine.applyAdapt(p);

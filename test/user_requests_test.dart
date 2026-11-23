@@ -1066,4 +1066,100 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(PlayerDetailDialog), findsOneWidget);
   });
+
+  testWidgets('プロ年数はNPB在籍時はNPB年数・他リーグ在籍時はプロ入りからの総年数になり、成績表は高校・大学卒業後の独立・海外を含むプロ開始年からすべて表示される', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    app.startYear = 2026;
+
+    // 1. 他リーグ在籍選手（2026年時点で25歳 → 19歳プロ入り=2020年開始・プロ7年目）
+    final otherTeam = app.otherWorld!.teams.firstWhere((t) => t.leagueId == 'AAA');
+    final otherBatter = otherTeam.players.firstWhere((p) => !p.isPitcher);
+    otherBatter
+      ..age = 25
+      ..proYears = 3
+      ..abroad = []
+      ..abroadStats = [];
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(child: ScoutReport(player: otherBatter, appState: app, onClose: () {})),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // 他リーグ在籍中はプロ入り（19歳=2020年）からの総年数「7年目」と表示される
+    expect(find.text('7年目'), findsOneWidget);
+
+    // 経歴タブに切り替えるとプロ開始年（2020年）から2025年までの推定成績がすべて並ぶ
+    await tester.tap(find.text('経歴').first);
+    await tester.pumpAndSettle();
+    for (int y = 2020; y <= 2025; y++) {
+      expect(find.text('$y'), findsWidgets);
+    }
+
+    // 2. この他リーグ選手がNPB球団に入団すると、NPBでのプロ年数は1年目になる
+    while (RosterEngine.freeSlots(my) <= 0) {
+      my.players.removeLast();
+    }
+    app.currentDate = DateTime(2026, 5, 1);
+    final hiSal = (app.otherSalary(otherBatter) * 2).clamp(1000, 30000);
+    String? err = 'retry';
+    for (int w = 0; w < 20 && err != null; w++) {
+      app.currentDate = DateTime(2026, 5, 1 + w * 7);
+      err = app.offerOtherPlayer(otherBatter, salary: hiSal, years: 1);
+    }
+    expect(err, isNull);
+    expect(otherBatter.proYears, 1);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(child: ScoutReport(player: otherBatter, appState: app, team: my, onClose: () {})),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    // 能力タブに戻してNPB在籍時はNPB在籍年数の「1年目」と表示されることを確認
+    await tester.tap(find.text('能力').first);
+    await tester.pumpAndSettle();
+    expect(find.text('1年目'), findsOneWidget);
+
+    // 3. 高校・大学卒業後に独立リーグを経てNPB入りした日本人選手も、独立時代のプロ開始年から成績表に推定成績が残る
+    final indieNpb = Player(
+      id: 'indie_npb_test',
+      lastName: '独立',
+      firstName: '太郎',
+      isPitcher: false,
+      mainPos: '遊撃手',
+      age: 24, // 2026年に24歳、NPB 2年目（2025年入団=23歳入団）
+      proYears: 2,
+      amPath: ['高校　明徳義塾高', '独立　四国・徳島'],
+      draftInfo: '2024年 ドラフト4位（独立）',
+    );
+    my.players.add(indieNpb);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(child: ScoutReport(player: indieNpb, appState: app, team: my, onClose: () {})),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    // NPB在籍中なのでプロ年数はNPB年数の「2年目」
+    expect(find.text('2年目'), findsOneWidget);
+
+    // 経歴タブを開くと、高校卒業後（19歳=2021年）から2024年までの独立リーグ（四国・徳島*）推定成績と2025年のNPB成績が表示される
+    await tester.tap(find.text('経歴').first);
+    await tester.pumpAndSettle();
+    for (int y = 2021; y <= 2025; y++) {
+      expect(find.text('$y'), findsWidgets);
+    }
+    expect(find.text('四国・徳島*'), findsWidgets);
+  });
 }

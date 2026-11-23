@@ -169,23 +169,25 @@ extension RepairOps on AppState {
       debugPrint('CAREER FIX: ${bad.length} players joined in game');
     }
     await db.setKv('joinFixV1', '1');
-    if (await db.getKv('foreignProYearsV1') != '1') {
-      final re = RegExp(r'^外国人選手（(\d{4})年');
+    if (await db.getKv('foreignProYearsV2') != '1') {
+      final re1 = RegExp(r'^外国人選手（(\d{4})年');
+      final re2 = RegExp(r'から入団（(\d{4})年）');
       var fixed = 0;
       for (final t in teams) {
         for (final p in t.players) {
           if (!p.joinedInGame) continue;
-          final m = re.firstMatch(p.draftInfo);
+          final m = re1.firstMatch(p.draftInfo) ?? re2.firstMatch(p.draftInfo);
           if (m == null) continue;
           final y = int.parse(m.group(1)!);
-          if (p.proYears == startYear - y + 1) {
-            p.proYears = startYear - y;
+          final expected = max(1, startYear - y + (p.draftInfo.startsWith('外国人選手（') ? 0 : 1));
+          if (p.proYears > expected) {
+            p.proYears = expected;
             fixed++;
           }
         }
       }
-      if (fixed > 0) debugPrint('FOREIGN PRO YEARS FIX: $fixed players');
-      await db.setKv('foreignProYearsV1', '1');
+      if (fixed > 0) debugPrint('FOREIGN PRO YEARS FIX V2: $fixed players');
+      await db.setKv('foreignProYearsV2', '1');
     }
   }
 

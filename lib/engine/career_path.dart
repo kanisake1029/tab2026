@@ -9,6 +9,14 @@ class CareerPath {
   static const _hsSuf = ['', '', '東', '西', '南', '北', '中央', '商業', '工業', '第一', '学園', '学院', '実業', '大附属', '国際', '育英'];
   static const _univSuf = ['大', '学院大', '工業大', '経済大', '国際大', '体育大', '産業大'];
   static const _corp = ['重工', '製鉄', 'ガス', '電機', '自動車', '鉄道', '通運', '生命', '化学', '製紙', '電力', '建設'];
+  static const _jpIndyTeams = [
+    '四国・徳島', '四国・香川', '四国・愛媛', '四国・高知',
+    'BC・新潟', 'BC・信濃', 'BC・富山', 'BC・石川', 'BC・福井', 'BC・群馬', 'BC・埼玉', 'BC・茨城', 'BC・栃木',
+    '関西・兵庫', '関西・大阪', '関西・京都', '関西・奈良', '関西・和歌山',
+    '北海道・札幌', '北海道・旭川', '北海道・函館',
+    '九州・福岡', '九州・熊本', '九州・大分',
+    '日本海・鳥取', '日本海・島根', '日本海・山口',
+  ];
 
   static String prefShort(String p) => p == '北海道' ? '北海道' : (p.isEmpty ? '' : p.substring(0, p.length - 1));
 
@@ -18,19 +26,95 @@ class CareerPath {
     return s.length > 1 ? s : '${prefShort(NameData2.prefectures[pf].$1)}$s';
   }
 
-  /// 経歴の行（古い順）：「高校　枚方商業高（大阪）」「大学　…」「社会人　…」「独立　…」「KBO・ソウル（2019〜2022）」
-  static List<String> of(Player p) {
-    if (p.amPath.isNotEmpty) return [...p.amPath, ..._abroad(p)];
+  /// アマチュア・独立までの経歴（_abroad を除く）
+  static List<String> amateurSteps(Player p) {
+    if (p.amPath.isNotEmpty) return List<String>.from(p.amPath);
     if (p.nationality == '海外') {
-      final ab = _abroad(p);
       final o = p.origin.isEmpty ? '海外' : p.origin;
-      return ['出身　$o', if (ab.isEmpty) '$oのプロリーグ', ...ab];
+      return ['出身　$o'];
     }
-    // 入団の経路：ドラフトの記録（「（高校・青葉高）」）か、入団の型（A 高卒・B 大卒・C 社会人など）
     final m = RegExp(r'（(高校|大学|社会人|独立)・([^）]+)）').firstMatch(p.draftInfo);
     final r = Random(p.id.hashCode ^ 0x1c3);
     final cat = m?.group(1) ?? switch (p.draftType) { 'A' => '高校', 'B' => '大学', _ => r.nextDouble() < 0.75 ? '社会人' : '独立' };
-    return [...derive(p, cat, last: m?.group(2)), ..._abroad(p)];
+    return derive(p, cat, last: m?.group(2));
+  }
+
+  /// 大学を経由しているか
+  static bool hasUniversity(Player p) => amateurSteps(p).any((s) => s.startsWith('大学'));
+
+  /// 独立リーグを経由している場合、その球団ラベル（例：「四国・徳島」「BC・新潟」）。経由していなければ null
+  static String? indieTeamLabel(Player p) {
+    if (p.nationality == '海外') return null;
+    for (final s in amateurSteps(p)) {
+      if (s.startsWith('独立　')) {
+        final raw = s.substring(3).trim();
+        final m = RegExp(r'^(.+?)（(.+?)）$').firstMatch(raw);
+        if (m != null) {
+          final lg = m.group(2)!.replaceAll('リーグ', '');
+          final tm = m.group(1)!;
+          return '$lg・${tm.length > 4 ? tm.substring(0, 2) : tm}';
+        }
+        return raw.replaceAll(' ', '');
+      }
+    }
+    return null;
+  }
+
+  /// 野球人生としてプロ入りした年齢（高卒独立・海外＝19歳、大卒独立＝23歳、その他＝NPB入団年齢）
+  static int proStartAge(Player p, {bool inOtherLeague = false}) {
+    final int npbEntryAge = (p.age - max(1, p.proYears) + 1).clamp(18, max(18, p.age)).toInt();
+    if (p.nationality == '海外') {
+      return min<int>(19, min<int>(p.age, inOtherLeague ? p.age : npbEntryAge));
+    }
+    if (indieTeamLabel(p) != null || (inOtherLeague && p.draftYear == 0 && p.career.games == 0 && p.career.pitchApps == 0)) {
+      final int gradProAge = (hasUniversity(p) && p.age >= 23) ? 23 : 19;
+      return inOtherLeague ? min<int>(gradProAge, p.age) : min<int>(gradProAge, npbEntryAge);
+    }
+    return npbEntryAge;
+  }
+
+  /// 野球人生としてプロが始まった西暦年
+  static int proStartYear(Player p, int currentYear, {bool inOtherLeague = false, Iterable<int> knownProYears = const []}) {
+    final startAge = proStartAge(p, inOtherLeague: inOtherLeague);
+    var y = currentYear - (p.age - startAge);
+    for (final l in p.abroad) {
+      final m = RegExp(r'^(\d{4})\s*[　 ]').firstMatch(l);
+      if (m != null) {
+        final ay = int.parse(m.group(1)!);
+        if (ay < y) y = ay;
+      }
+    }
+    for (final ky in knownProYears) {
+      if (ky < y) y = ky;
+    }
+    if (p.nationality != '海外' && indieTeamLabel(p) != null && knownProYears.isNotEmpty) {
+      final firstNpb = knownProYears.reduce(min);
+      if (y >= firstNpb) y = firstNpb - 1;
+    }
+    return y;
+  }
+
+  /// 野球人生としてプロ入りしてからの通算年数（他リーグ表示用）
+  static int totalProYears(Player p, int currentYear, {bool inOtherLeague = false, Iterable<int> knownProYears = const []}) {
+    final startY = proStartYear(p, currentYear, inOtherLeague: inOtherLeague, knownProYears: knownProYears);
+    return max(1, currentYear - startY + 1);
+  }
+
+  /// 経歴の行（古い順）：「高校　枚方商業高（大阪）」「大学　…」「社会人　…」「独立　…」「KBO・ソウル（2019〜2022）」
+  static List<String> of(Player p) {
+    final ab = _abroad(p);
+    if (p.nationality == '海外') {
+      final o = p.origin.isEmpty ? '海外' : p.origin;
+      return ['出身　$o', if (ab.isEmpty) '$oのプロリーグ', ...ab];
+    }
+    final steps = amateurSteps(p);
+    if (ab.isNotEmpty && steps.isNotEmpty && steps.last.startsWith('独立　')) {
+      final indieName = steps.last.substring(3).trim();
+      if (ab.any((x) => x.startsWith(indieName) || indieName.contains(x.split('（').first))) {
+        steps.removeLast();
+      }
+    }
+    return [...steps, ...ab];
   }
 
   /// 入団の経路（cat）から、高校（＋大学）＋最後の所属の行を作る。last は最後の所属の名前（分かっていれば）
@@ -41,14 +125,16 @@ class CareerPath {
     final out = <String>[];
     final hs = cat == '高校' && last != null ? last : '${_town(r, pf)}${_hsSuf[r.nextInt(_hsSuf.length)]}高';
     out.add('高校　$hs（${prefShort(NameData2.prefectures[pf].$1)}）');
-    // 社会人・独立は、大学を経ていることもある
-    final univ = cat == '大学' || ((cat == '社会人' || cat == '独立') && r.nextDouble() < 0.45);
+    // 社会人・独立は、大学を経ていることもある（23歳以上のみ）
+    final entryAge = p.age - max(1, p.proYears) + 1;
+    final canUniv = p.age >= 23 && (cat != '独立' || entryAge >= 23);
+    final univ = cat == '大学' || ((cat == '社会人' || cat == '独立') && canUniv && r.nextDouble() < 0.45);
     if (univ) {
       final upf = r.nextDouble() < 0.6 ? pf : r.nextInt(NameData2.prefectures.length);
       out.add('大学　${cat == '大学' && last != null ? last : '${_town(r, upf)}${_univSuf[r.nextInt(_univSuf.length)]}'}');
     }
     if (cat == '社会人') out.add('社会人　${last ?? '${_town(r, pf)}${_corp[r.nextInt(_corp.length)]}'}');
-    if (cat == '独立') out.add('独立　${last ?? '独立リーグの球団'}');
+    if (cat == '独立') out.add('独立　${last ?? _jpIndyTeams[r.nextInt(_jpIndyTeams.length)]}');
     return out;
   }
 

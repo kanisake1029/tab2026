@@ -15,6 +15,8 @@ import '../screens/ob_screen.dart' show timelineLine;
 import 'package:flutter/material.dart';
 import 'body_form_editor.dart';
 import '../engine/career_path.dart';
+import '../engine/career_engine.dart';
+import '../engine/foreign_engine.dart';
 import 'pitch_catalog_dialog.dart';
 import '../engine/growth_engine.dart';
 import '../engine/coach_engine.dart';
@@ -59,22 +61,77 @@ class _ScoutReportState extends State<ScoutReport> {
   int _tab = 0; // 0 能力・1 経歴（年度ごとの所属・成績・タイトルと記録、移籍の歩み）・2 フォーム・道具
   late bool _tblPitch = p.isPitcher; // 二刀流：成績の表を投球にするか
   bool get _farm => _mode == '2軍';
-  late final Future<List<(int, String, PlayerStats, PlayerStats)>> _history = widget.appState.playerHistory(p.id) as Future<List<(int, String, PlayerStats, PlayerStats)>>;
+  late Future<List<(int, String, PlayerStats, PlayerStats)>> _history = _loadHistory();
   // ゲーム開始前の年度別の経歴（推定）
-  late final Future<List<PreYear>> _pre = (widget.appState.preCareers() as Future<Map<String, List<PreYear>>>).then((m) => m[p.id] ?? const <PreYear>[]);
+  late Future<List<PreYear>> _pre = _loadPre();
   // 年表（入団・移籍・初記録・節目）
-  late final Future<List<(DateTime, String)>> _timeline = (widget.appState as AppState).playerTimeline(p);
-  late final Future<(List<(int, String, PlayerStats, PlayerStats)>, List<PreYear>)> _both = Future.wait([_history, _pre]).then((v) => (v[0] as List<(int, String, PlayerStats, PlayerStats)>, v[1] as List<PreYear>));
+  late Future<List<(DateTime, String)>> _timeline = _loadTimeline();
+  late Future<(List<(int, String, PlayerStats, PlayerStats)>, List<PreYear>)> _both = _loadBoth();
+
+  Future<List<(int, String, PlayerStats, PlayerStats)>> _loadHistory() =>
+      widget.appState.playerHistory(p.id) as Future<List<(int, String, PlayerStats, PlayerStats)>>;
+  Future<List<PreYear>> _loadPre() =>
+      (widget.appState.preCareers() as Future<Map<String, List<PreYear>>>).then((m) => m[p.id] ?? const <PreYear>[]);
+  Future<List<(DateTime, String)>> _loadTimeline() =>
+      (widget.appState as AppState).playerTimeline(p);
+  Future<(List<(int, String, PlayerStats, PlayerStats)>, List<PreYear>)> _loadBoth() =>
+      Future.wait([_history, _pre]).then((v) => (v[0] as List<(int, String, PlayerStats, PlayerStats)>, v[1] as List<PreYear>));
+
+  @override
+  void didUpdateWidget(covariant ScoutReport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player.id != widget.player.id) {
+      _tblPitch = p.isPitcher;
+      _history = _loadHistory();
+      _pre = _loadPre();
+      _timeline = _loadTimeline();
+      _both = _loadBoth();
+    }
+  }
 
   Player get p => widget.player;
   dynamic get app => widget.appState;
 
   /// 他リーグの選手なら、その球団
-  late final OTeam? _otherTeam = (widget.appState is AppState) ? (widget.appState as AppState).otherPlayer(p.id)?.$1 : null;
+  OTeam? get _otherTeam => (widget.appState is AppState) ? (widget.appState as AppState).otherPlayer(p.id)?.$1 : null;
   String get _otherLabel {
     final t = _otherTeam;
     if (t == null) return '';
     return '${OtherLeagueEngine.leagues[t.leagueId]?.name ?? ''}・${t.short}';
+  }
+
+  String get _otherTableTeam {
+    final t = _otherTeam;
+    if (t == null) return '−';
+    final lg = OtherLeagueEngine.leagues[t.leagueId];
+    if (lg?.group == '日本独立') return '${lg!.name.replaceAll('リーグ', '')}・${t.short}';
+    return '${lg?.name.replaceAll('リーグ', '') ?? t.leagueId}・${OtherLeagueEngine.teamCode(t)}';
+  }
+
+  /// 表示するプロ年数：NPB在籍時はNPBに居た年数、他リーグ在籍時は野球人生としてプロ入りしてからの通算年数
+  int get _displayProYears => _otherTeam != null
+      ? CareerPath.totalProYears(p, app.startYear as int, inOtherLeague: true)
+      : p.proYears;
+
+  void _ensureProHistory([Set<int> extraNpbYears = const {}]) {
+    final int sy = app.startYear as int;
+    final ot = _otherTeam;
+    final int py = max<int>(1, p.proYears);
+    final npbSet = <int>{
+      ...extraNpbYears,
+      if (ot == null)
+        for (int y = sy - py + 1; y <= sy; y++) y,
+    };
+    final indieDefault = (ot != null && OtherLeagueEngine.leagues[ot.leagueId]?.group == '日本独立')
+        ? '${OtherLeagueEngine.leagues[ot.leagueId]!.name.replaceAll('リーグ', '')}・${ot.short}'
+        : null;
+    ForeignEngine.ensureFullProHistory(
+      p,
+      sy,
+      npbYears: npbSet,
+      defaultIndieLabel: indieDefault,
+      inOtherLeague: ot != null,
+    );
   }
 
   Team? get _team {
@@ -250,10 +307,12 @@ class _ScoutReportState extends State<ScoutReport> {
 
   // ---------------- 基本情報 ----------------
   Widget _profile() {
+    _ensureProHistory();
     final t = _team;
     final cond = p.conditionAt(app.currentDate as DateTime);
     const draft = {'A': '高卒', 'B': '大卒', 'C': '社会人等'};
     final grow = GrowthCurve.label(p);
+    final ot = _otherTeam;
     final items = <(String, Widget)>[
       ('年齢', Text('${p.age}歳')),
       ('生年月日', Text(p.birthDate)),
@@ -261,19 +320,19 @@ class _ScoutReportState extends State<ScoutReport> {
       ('タイプ', Text(CoachEngine.playerType(p))),
       ('身長', Text('${p.height}cm')),
       ('体重', Text('${p.weight}kg')),
-      if (_otherTeam == null) ('入団', Text(draft[p.draftType] ?? p.draftType)),
-      if (_otherTeam == null) ('プロ', Text('${p.proYears}年目')),
+      if (ot == null) ('入団', Text(draft[p.draftType] ?? p.draftType)),
+      ('プロ', Text('${_displayProYears}年目')),
       ('出身', Text(p.nationality == '海外' ? (p.origin.isEmpty ? '海外' : p.origin) : (p.birthplace.isNotEmpty ? p.birthplace : p.nationality))),
-      if (_otherTeam == null && p.nationality == '海外') ('枠', Text(p.foreignSlot ? '外国人枠' : '日本人扱い')),
-      if (_otherTeam != null) ('リーグ', Text(OtherLeagueEngine.leagues[_otherTeam.leagueId]?.name ?? '')),
-      if (_otherTeam != null) ('球団', Text(_otherTeam.name)),
-      if (_otherTeam != null && ((widget.appState as AppState).otherWorld?.fromNpb[p.id] ?? '').isNotEmpty) ('元NPB', Text((widget.appState as AppState).otherWorld!.fromNpb[p.id]!)),
-      if (_otherTeam == null) ('年俸', Text(formatSalary(p.salary))),
-      if (_otherTeam == null) ('契約', Text('残り${p.contractYears}年${p.ikusei ? '（育成${p.ikuseiYears + 1}年目）' : ''}')),
-      if (_otherTeam == null) ('FA', Text(p.isPartner ? '提携（${p.partnerMlb}）' : (p.hasFA ? '権利あり${p.faService >= Player.overseasFaYears && p.nationality != '海外' ? '（海外も）' : ''}' : '${p.faService}／${p.faNeed}年'))),
-      if (_otherTeam == null) ('所属', Text(t == null ? '−' : (t.roster1G.contains(p.id) ? (t.active26.contains(p.id) ? '1軍' : '1軍ベンチ外') : (p.ikusei ? '育成' : '2軍')))),
-      if (_otherTeam == null) ('監督信頼', Text('${p.trust}')),
-      if (_otherTeam == null) ('チーム愛', Text('${p.teamLove}')),
+      if (ot == null && p.nationality == '海外') ('枠', Text(p.foreignSlot ? '外国人枠' : '日本人扱い')),
+      if (ot != null) ('リーグ', Text(OtherLeagueEngine.leagues[ot.leagueId]?.name ?? '')),
+      if (ot != null) ('球団', Text(ot.name)),
+      if (ot != null && ((widget.appState as AppState).otherWorld?.fromNpb[p.id] ?? '').isNotEmpty) ('元NPB', Text((widget.appState as AppState).otherWorld!.fromNpb[p.id]!)),
+      if (ot == null) ('年俸', Text(formatSalary(p.salary))),
+      if (ot == null) ('契約', Text('残り${p.contractYears}年${p.ikusei ? '（育成${p.ikuseiYears + 1}年目）' : ''}')),
+      if (ot == null) ('FA', Text(p.isPartner ? '提携（${p.partnerMlb}）' : (p.hasFA ? '権利あり${p.faService >= Player.overseasFaYears && p.nationality != '海外' ? '（海外も）' : ''}' : '${p.faService}／${p.faNeed}年'))),
+      if (ot == null) ('所属', Text(t == null ? '−' : (t.roster1G.contains(p.id) ? (t.active26.contains(p.id) ? '1軍' : '1軍ベンチ外') : (p.ikusei ? '育成' : '2軍')))),
+      if (ot == null) ('監督信頼', Text('${p.trust}')),
+      if (ot == null) ('チーム愛', Text('${p.teamLove}')),
       ('調子', Row(mainAxisSize: MainAxisSize.min, children: [ConditionFace(level: cond, size: 13), const SizedBox(width: 3), Text(ConditionFace.labels[cond]!)])),
       ('故障', Text(p.injuryDays > 0 ? '${p.injuryName}（残り${p.injuryDays}日）' : 'なし', style: TextStyle(color: p.injuryDays > 0 ? const Color(0xFFDC2626) : null))),
       ('成長', Text(GrowthEngine.phaseOf(p).label)),
@@ -609,6 +668,8 @@ class _ScoutReportState extends State<ScoutReport> {
         builder: (context, snap) {
           final hist = snap.data?.$1 ?? const [];
           final pre = snap.data?.$2 ?? const <PreYear>[];
+          final sy = app.startYear as int;
+          _ensureProHistory({for (final h in hist) h.$1, for (final y in pre) y.year});
           final rows = <List<String>>[];
           final total = PlayerStats();
           final known = PlayerStats(); // 年度別の記録がある分の1軍成績（通算との差は「それ以前」）
@@ -616,14 +677,14 @@ class _ScoutReportState extends State<ScoutReport> {
             if (_mode == '3軍') continue; // 3軍は今季の分だけ
             final s = _farm ? h.$4 : h.$3;
             known.add(h.$3);
-            if (s.games == 0) continue;
+            if (s.games == 0 && s.pitchApps == 0) continue;
             rows.add(_cells('${h.$1}', _teamName(h.$2, initial: true), s));
             total.add(s);
           }
           final now = _mode == '3軍' ? p.thirdStats : (_farm ? p.farmStats : p.seasonStats);
           final t = _team;
           if (_mode == '1軍' || _mode == '守備') {
-            // ゲーム開始前の経歴：年度別の推定（球団の後ろに＊）。推定が作れないときは「それ以前」としてまとめる
+            // ゲーム開始前の経歴：年度別の推定（球団の後ろに＊）。推定が作れないときは推定年度を生成して埋める
             if (pre.isNotEmpty) {
               rows.insertAll(0, [for (final y in pre) _cells('${y.year}', '${_teamName(y.teamId, initial: true)}*', y.stats)]);
               for (final y in pre) {
@@ -631,30 +692,48 @@ class _ScoutReportState extends State<ScoutReport> {
               }
             } else {
               final all = PlayerStats()..add(p.career);
-              if (all.games > known.games) {
+              if (all.games > known.games || all.pitchApps > known.pitchApps) {
                 final diff = _minus(all, known);
-                rows.insert(0, _cells('〜${hist.isEmpty ? app.startYear - 1 : hist.first.$1 - 1}', '*', diff));
+                rows.insert(0, _cells('〜${hist.isEmpty ? sy - 1 : hist.first.$1 - 1}', '*', diff));
                 total.add(diff);
+              } else if (_otherTeam == null && p.proYears > 1 && hist.isEmpty && !p.joinedInGame && _mode == '1軍') {
+                final estYears = CareerEngine.estimateYears(p);
+                final firstY = sy - estYears.length;
+                final tid = t?.id ?? '';
+                for (var i = 0; i < estYears.length; i++) {
+                  rows.add(_cells('${firstY + i}', '${_teamName(tid, initial: true)}*', estYears[i]));
+                  total.add(estYears[i]);
+                }
               }
             }
           }
           // 今季：他リーグで分けた分は別の行、同じリーグの移籍は「前/今」の球団で1行。
           //  シーズンを締めた後（オフ）は今季の分も年度別の記録にあるので、二重に出さない
-          final closed = _mode != '3軍' && hist.any((h) => h.$1 == app.startYear);
+          final closed = _mode != '3軍' && hist.any((h) => h.$1 == sy);
           for (final sp in _mode == '3軍' || closed ? const <Map>[] : p.seasonSplits) {
             final m = sp[_farm ? 'farm' : 'stats'];
             if (m is! Map) continue;
             final st = PlayerStats.fromJson(Map<String, dynamic>.from(m));
-            if (st.games == 0) continue;
-            rows.add(_cells('${app.startYear}', _teamName('${sp['team']}', initial: true), st));
+            if (st.games == 0 && st.pitchApps == 0) continue;
+            rows.add(_cells('$sy', _teamName('${sp['team']}', initial: true), st));
             total.add(st);
           }
-          if (now.games > 0 && !closed) {
-            rows.add(_cells('${app.startYear}', t == null ? '−' : _teamName([...p.seasonTeams, t.id].join('/'), initial: true), now));
+          if ((now.games > 0 || now.pitchApps > 0) && !closed) {
+            final curTeamLabel = _otherTeam != null
+                ? _otherTableTeam
+                : (t == null ? '−' : _teamName([...p.seasonTeams, t.id].join('/'), initial: true));
+            rows.add(_cells('$sy', curTeamLabel, now));
             total.add(now);
           }
           if (_mode == '1軍' && p.abroad.isNotEmpty) {
-            rows.insertAll(0, _abroadRows());
+            final abRows = _abroadRows();
+            final merged = <(int, int, List<String>)>[
+              for (var i = 0; i < abRows.length; i++) (int.tryParse(abRows[i][0]) ?? 0, i, abRows[i]),
+              for (var i = 0; i < rows.length; i++) (int.tryParse(rows[i][0].replaceAll(RegExp(r'[^0-9]'), '')) ?? 0, 1000 + i, rows[i]),
+            ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+            rows
+              ..clear()
+              ..addAll(merged.map((e) => e.$3));
           }
           final cols = _cols;
           final totalRow = rows.length > 1 || (!_farm && _mode != '3軍') ? _cells('通算', '', total) : null;
@@ -857,7 +936,12 @@ class _ScoutReportState extends State<ScoutReport> {
   /// 入団の経緯。記録が無い選手は、プロ年数・出身から推定（ゲーム開始時の球団に入団したとする）
   String _entryText(List<PreYear> pre, List<(int, String, PlayerStats, PlayerStats)> hist) {
     const draft = {'A': '高校', 'B': '大学', 'C': '社会人など'};
-    final entry = (app.startYear as int) - p.proYears + 1;
+    final sy = app.startYear as int;
+    if (_otherTeam != null) {
+      final startY = CareerPath.proStartYear(p, sy, inOtherLeague: true, knownProYears: [for (final y in pre) y.year, for (final h in hist) h.$1]);
+      return '$startY年 プロ入り　プロ${_displayProYears}年目（$_otherLabel）${p.origin.isNotEmpty ? '　${p.origin}出身' : ''}';
+    }
+    final entry = sy - p.proYears + 1;
     if (p.draftInfo.isNotEmpty) return '${p.draftInfo}　プロ${p.proYears}年目${p.origin.isNotEmpty ? '　${p.origin}出身' : ''}';
     final teamId = pre.isNotEmpty ? pre.first.teamId : (hist.isNotEmpty ? hist.first.$2.split('/').first : (_team?.id ?? ''));
     final tn = _teamName(teamId);
@@ -867,7 +951,9 @@ class _ScoutReportState extends State<ScoutReport> {
     final rnd = Random(p.id.hashCode ^ 0xd4af);
     final round = (1 + ((76 - base) / 6).round() + rnd.nextInt(3) - 1).clamp(1, 8);
     final rank = p.ikusei ? '育成${(round - 2).clamp(1, 6)}位' : '$round位';
-    return '${entry - 1}年 ドラフト$rankで$tnに入団（推定・${draft[p.draftType] ?? p.draftType}から）　プロ${p.proYears}年目${p.origin.isNotEmpty ? '　${p.origin}出身' : ''}';
+    final indie = CareerPath.indieTeamLabel(p);
+    final fromLabel = indie != null ? '独立・$indie' : (draft[p.draftType] ?? p.draftType);
+    return '${entry - 1}年 ドラフト$rankで$tnに入団（推定・${fromLabel}から）　プロ${p.proYears}年目${p.origin.isNotEmpty ? '　${p.origin}出身' : ''}';
   }
 
   // ---------------- フォーム・道具タブ ----------------

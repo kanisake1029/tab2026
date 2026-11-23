@@ -2,6 +2,7 @@ import 'dart:math';
 import '../models/other_league.dart';
 import '../models/player.dart';
 import '../utils/name_pool.dart';
+import 'career_path.dart';
 import 'draft_engine.dart';
 import 'foreign_engine.dart';
 import 'quick_game.dart';
@@ -244,6 +245,11 @@ class OtherLeagueEngine {
       p.age = a;
       _shift(p, m - p.ovr);
       p.nationality = '日本';
+      final cities = _jpTeams[lg.id];
+      final city = (cities != null && cities.isNotEmpty) ? cities[r.nextInt(cities.length)] : lg.name.replaceAll('リーグ', '');
+      final indieLabel = '${lg.name.replaceAll('リーグ', '')}・$city';
+      p.amPath = CareerPath.derive(p, '独立', last: indieLabel);
+      ForeignEngine.ensureFullProHistory(p, year, defaultIndieLabel: indieLabel, inOtherLeague: true);
     } else {
       p = ForeignEngine.make(year, r, ikusei: false, age: a, mean: m, id: id, origin: origin);
       // 投手か野手かを合わせる（作り直し）
@@ -255,7 +261,7 @@ class OtherLeagueEngine {
     }
     p.draftInfo = '';
     p.salary = 0;
-    p.proYears = max(1, a - (lg.group == '日本独立' ? 20 : 19));
+    p.proYears = CareerPath.totalProYears(p, year, inOtherLeague: true);
     setPotential(p, lg, r); // 日本の独立リーグの日本人選手も
     return p;
   }
@@ -444,8 +450,8 @@ class OtherLeagueEngine {
           p.abroad.insert(0, recordLine(p, lg, t, year));
           p.abroadStats.insert(0, PlayerStats.fromJson(s.toJson()));
         }
-        if (p.abroad.length > 12) p.abroad.removeLast();
-        if (p.abroadStats.length > 12) p.abroadStats.removeLast();
+        if (p.abroad.length > 30) p.abroad.removeLast();
+        if (p.abroadStats.length > 30) p.abroadStats.removeLast();
         p.seasonStats = PlayerStats(); // 通算（NPB の1軍）には足さない。他リーグの成績は来歴の行に残る
       }
       t.w = 0;
@@ -477,9 +483,9 @@ class OtherLeagueEngine {
     for (final t in w.teams) {
       final gm = growMult(t.leagueId);
       for (final p in t.players) {
-      p.age++;
-      p.proYears++;
-      var grow = p.age <= 24 ? 2.5 + (p.talent - 50) * 0.06 : (p.age <= 28 ? 1.0 + (p.talent - 50) * 0.03 : (p.age <= 31 ? 0.0 : -(p.age - 31) * 1.2));
+        p.age++;
+        if (!w.fromNpb.containsKey(p.id)) p.proYears++;
+        var grow = p.age <= 24 ? 2.5 + (p.talent - 50) * 0.06 : (p.age <= 28 ? 1.0 + (p.talent - 50) * 0.03 : (p.age <= 31 ? 0.0 : -(p.age - 31) * 1.2));
       if (grow > 0) grow *= gm; // リーグで伸びやすさが違う
       _shift(p, grow + _g(r) * 1.5);
       }

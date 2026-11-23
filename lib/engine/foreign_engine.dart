@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'abroad_stats.dart';
+import 'career_path.dart';
 import 'velo.dart';
 import '../utils/name_data.dart';
 import '../models/player.dart';
@@ -135,16 +136,18 @@ class ForeignEngine {
           }(),
       };
 
-  /// 来日前の成績（新しい順）。lastYear は来日前の最後のシーズン
+  /// 来日前の成績（新しい順）。lastYear は来日前の最後のシーズン（プロ入り年齢19歳からの全シーズンを生成）
   static List<String> abroadRecord(Player p, String origin, int lastYear, Random r, {bool young = false, double? quality}) {
     final q = quality ?? p.ovr.toDouble();
-    final maxSeasons = young ? (p.age - 17).clamp(1, 3) : 3 + r.nextInt(3);
+    final maxSeasons = (p.age - 18).clamp(1, 22);
     final out = <String>[];
     final stats = <PlayerStats>[];
     var org = _usOrgs[r.nextInt(_usOrgs.length)];
     for (var k = 0; k < maxSeasons; k++) {
       if (k > 0 && r.nextDouble() < 0.25) org = _usOrgs[r.nextInt(_usOrgs.length)];
-      final lgs = _leagues(origin, q, k, young, r);
+      final ageAtK = p.age - 1 - k;
+      final isYoungAtK = young || ageAtK <= 21;
+      final lgs = _leagues(origin, q, k, isYoungAtK, r);
       // 2つのレベルを行き来した年は、試合数を分け合う（冬のリーグは別）
       final main = lgs.where((l) => l != 'ドミニカンリーグ' && l != '豪州リーグ').toList();
       final up = 0.25 + r.nextDouble() * 0.4;
@@ -168,6 +171,95 @@ class ForeignEngine {
     }
     p.abroadStats = stats;
     return out;
+  }
+
+  /// プロ入り年（高卒19歳・大卒23歳・海外19歳）から現在までのうち、NPBでも既存abroadでも記録がないプロ年度（独立・海外）を推定で補完する
+  static void ensureFullProHistory(
+    Player p,
+    int currentYear, {
+    Set<int> npbYears = const {},
+    String? defaultIndieLabel,
+    bool inOtherLeague = false,
+  }) {
+    final indieLabel = defaultIndieLabel ?? CareerPath.indieTeamLabel(p);
+    final isForeign = p.nationality == '海外';
+    if (!isForeign && indieLabel == null) return;
+
+    final startY = CareerPath.proStartYear(p, currentYear, inOtherLeague: inOtherLeague, knownProYears: npbYears);
+    final endY = currentYear - 1;
+    if (startY > endY) return;
+
+    final lineRe = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)\s*[　 ]\s*(.+)$');
+    final existingByYear = <int, List<(String, PlayerStats)>>{};
+    for (var i = 0; i < p.abroad.length; i++) {
+      final line = p.abroad[i];
+      final m = lineRe.firstMatch(line);
+      if (m == null) continue;
+      final y = int.parse(m.group(1)!);
+      final st = i < p.abroadStats.length ? p.abroadStats[i] : AbroadStats.fromLine(p, line, isPitcher: p.isPitcher);
+      existingByYear.putIfAbsent(y, () => []).add((line, st));
+    }
+
+    var added = false;
+    final baseR = Random(p.id.hashCode ^ 0x7f4a);
+    final org = _usOrgs[baseR.nextInt(_usOrgs.length)];
+    final origin = p.origin.isNotEmpty ? p.origin : originFor(p, baseR);
+    final lastNonNpbY = [for (var y = endY; y >= startY; y--) if (!npbYears.contains(y)) y].firstOrNull ?? endY;
+
+    for (var y = startY; y <= endY; y++) {
+      if (npbYears.contains(y) || existingByYear.containsKey(y)) continue;
+      final r = Random(p.id.hashCode ^ (y * 9973));
+      if (isForeign) {
+        final seasonsAgo = max(0, lastNonNpbY - y);
+        final ageAtY = p.age - (currentYear - y);
+        final lgs = _leagues(origin, p.ovr.toDouble(), seasonsAgo, ageAtY <= 21, r);
+        final main = lgs.where((l) => l != 'ドミニカンリーグ' && l != '豪州リーグ').toList();
+        final up = 0.25 + r.nextDouble() * 0.4;
+        for (final lg in lgs) {
+          final share = main.length < 2 || !main.contains(lg) ? 1.0 : (lg == main.first ? up : 1.0 - up + 0.1);
+          final res = AbroadStats.generateForeign(
+            p,
+            lg,
+            y,
+            share,
+            r,
+            avgAdj: _avgAdj[lg] ?? 0,
+            eraAdj: _eraAdj[lg] ?? 0,
+            hrMul: _hrMul[lg] ?? 1,
+          );
+          final label = _teamLabel(lg, org, r);
+          final line = res.$1.replaceFirst('　$lg　', '　$label　');
+          existingByYear.putIfAbsent(y, () => []).add((line, res.$2));
+        }
+      } else {
+        final label = indieLabel!;
+        final res = AbroadStats.generateForeign(
+          p,
+          label,
+          y,
+          1.0,
+          r,
+          avgAdj: 0.012,
+          eraAdj: -0.1,
+          hrMul: 0.85,
+        );
+        existingByYear.putIfAbsent(y, () => []).add((res.$1, res.$2));
+      }
+      added = true;
+    }
+
+    if (!added && p.abroadStats.length == p.abroad.length) return;
+    final yearsDesc = existingByYear.keys.toList()..sort((a, b) => b.compareTo(a));
+    final newLines = <String>[];
+    final newStats = <PlayerStats>[];
+    for (final y in yearsDesc) {
+      for (final item in existingByYear[y]!) {
+        newLines.add(item.$1);
+        newStats.add(item.$2);
+      }
+    }
+    p.abroad = newLines;
+    p.abroadStats = newStats;
   }
 
   // ───────── 環境適応力 ─────────
