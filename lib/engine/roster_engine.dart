@@ -121,7 +121,12 @@ class RosterEngine {
   // ───────── 背番号 ─────────
 
   static int freeNumber(Team t, {required bool ikusei}) {
-    final used = {for (final p in t.players) ...[p.uniformNumber, if (p.nextNumber != null) p.nextNumber!]}; // 来季の予約の番号も使わない
+    final used = {
+      for (final p in t.players) ...[
+        if (p.hasUniform) p.uniformNumber,
+        if (p.nextNumber != null && p.nextNumber! > kNoUniform) p.nextNumber!,
+      ],
+    }; // 来季の予約の番号も使わない
     if (ikusei) {
       for (var n = 101; n < 1000; n++) {
         if (!used.contains(n)) return n;
@@ -136,8 +141,10 @@ class RosterEngine {
 
   // ───────── 入団・退団 ─────────
 
-  /// 選手を球団に加える（2軍から）。背番号が重なれば空き番号にする
-  static void addPlayer(Team t, Player p) {
+  /// 選手を球団に加える（2軍から）。
+  ///  assignNumber == false（オフシーズン入団・移籍等）のときは背番号を与えず未定（kNoUniform）にして開幕前日確定にする。
+  ///  assignNumber == true（シーズン中等）のときは空き番号や元の番号が重ならないよう即座に背番号を決める。
+  static void addPlayer(Team t, Player p, {bool assignNumber = true}) {
     // 入団時の能力（経歴タブで今と比べる）。まだ無ければ、入ったときの能力を残す
     if (p.baseline.isEmpty) {
       p.baseline = GrowthEngine.abilities(p);
@@ -146,8 +153,14 @@ class RosterEngine {
     p.lastDemotedDate = null;
     p.retainAsked = false;
     p.nextNumber = null;
-    if (t.players.any((x) => x.uniformNumber == p.uniformNumber) || (p.ikusei != (p.uniformNumber >= 100))) {
-      p.uniformNumber = freeNumber(t, ikusei: p.ikusei);
+    if (!assignNumber) {
+      p.uniformNumber = kNoUniform;
+      p.numberPending = true;
+    } else {
+      if (!p.hasUniform || t.players.any((x) => x.hasUniform && x.uniformNumber == p.uniformNumber) || (p.ikusei != (p.uniformNumber >= 100))) {
+        p.uniformNumber = freeNumber(t, ikusei: p.ikusei);
+      }
+      p.numberPending = false;
     }
     t.players.add(p);
   }

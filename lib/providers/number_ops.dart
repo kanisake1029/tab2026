@@ -9,13 +9,16 @@ extension NumberOps on AppState {
   /// オフシーズン即時変更は廃止（入団時期・オフ期間を問わず一律で開幕前日に反映する）
   bool get isOffseasonNumberFree => false;
 
-  /// 開幕前日より前か（オフ期間の入団・再契約・支配下登録等は開幕前日に背番号を確定する）
+  /// 開幕前日より前（ドラフト会議日10/31〜3月の開幕前日）のオフシーズンか
+  ///  シーズン中（3月の開幕〜ドラフト会議前日10/30）は false
   bool isBeforeOpeningDay([DateTime? at]) {
     final d = DateUtils.dateOnly(at ?? currentDate);
-    if (seasonFinished || seasonOver) return true;
+    if (d.month >= 11 || (d.month == 10 && d.day >= 31)) return true;
     final (firstReg, _) = _regularRange();
-    if (firstReg == null) return d.month >= 10 || d.month <= 3;
-    return d.isBefore(DateUtils.dateOnly(firstReg).subtract(const Duration(days: 1)));
+    if (firstReg == null) return d.month <= 3;
+    final cut = DateUtils.dateOnly(firstReg).subtract(const Duration(days: 1));
+    if (firstReg.year >= d.year) return d.isBefore(cut);
+    return d.month <= 3;
   }
 
   /// 今日は特別な初期設定日（isOpeningNumberDay）のみ即座に変えられる。通常は入団時期・オフ期間を問わず一律で開幕前日反映
@@ -29,6 +32,7 @@ extension NumberOps on AppState {
     if (n == p.uniformNumber) return;
     if (p.numberPending) {
       p.uniformNumber = n;
+      p.numberPending = false;
       return;
     }
     if (numberFreeNow(p)) {
@@ -50,11 +54,12 @@ extension NumberOps on AppState {
     p.uniformNumber = n;
   }
 
-  /// 開幕前日に適用される背番号：予約があればそれ、なければ今の番号
+  /// 開幕前日に適用される背番号：予約があればそれ、なければ今の番号（未定なら kNoUniform）
   int numberNextSeason(Player p) => p.nextNumber ?? p.uniformNumber;
 
   /// 背番号の決まり（支配下は 00・0〜99、育成は 100〜999）。守っていなければその文
   String? numberRule(Player p, int n) {
+    if (n <= kNoUniform) return '背番号は00・0〜999で入れてください';
     if (p.ikusei) return n >= 100 ? null : '育成選手の背番号は100〜999です';
     return n < 100 ? null : '支配下の選手の背番号は00・0〜99です';
   }
@@ -64,74 +69,109 @@ extension NumberOps on AppState {
     final rule = numberRule(p, n);
     if (rule != null) return rule;
     if (numberFreeNow(p)) {
-      final dup = t.players.where((x) => !identical(x, p) && x.uniformNumber == n).firstOrNull;
+      final dup = t.players.where((x) => !identical(x, p) && x.hasUniform && x.uniformNumber == n).firstOrNull;
       if (dup != null) return '背番号${uniformLabel(n)}は${dup.registeredName}がつけています';
       _changeNow(t, p, n);
       p.nextNumber = null;
       return null;
     }
-    final dup = t.players.where((x) => !identical(x, p) && numberNextSeason(x) == n).firstOrNull;
+    final dup = t.players.where((x) => !identical(x, p) && numberNextSeason(x) > kNoUniform && numberNextSeason(x) == n).firstOrNull;
     if (dup != null) return '背番号${uniformLabel(n)}は${dup.registeredName}が予約・使用しています';
-    p.nextNumber = n == p.uniformNumber ? null : n;
+    p.nextNumber = (p.hasUniform && n == p.uniformNumber) ? null : n;
     return null;
   }
 
-  /// 一括の変更（選手 id → 開幕前日からの背番号）。すべて決まりどおりで重ならないときだけ予約する。戻り値はエラーの文
-  String? setNumbersBulk(Team t, Map<String, int> next) {
-    final finalNum = <Player, int>{for (final p in t.players) p: next[p.id] ?? numberNextSeason(p)};
+  /// 一括の変更（選手 id → 開幕前日からの背番号。未定選手のみ null で自動割当可）。すべて決まりどおりで重ならないときだけ予約する。戻り値はエラーの文
+  String? setNumbersBulk(Team t, Map<String, int?> next) {
+    final finalNum = <Player, int?>{};
+    for (final p in t.players) {
+      final hasKey = next.containsKey(p.id);
+      final nxt = numberNextSeason(p);
+      final int? n = hasKey ? next[p.id] : (nxt > kNoUniform ? nxt : null);
+      if (n == null) {
+        if (p.hasUniform) return '${p.registeredName}：背番号を入れてください';
+        finalNum[p] = null;
+      } else {
+        finalNum[p] = n;
+      }
+    }
     for (final e in finalNum.entries) {
-      final r = numberRule(e.key, e.value);
+      final n = e.value;
+      if (n == null) continue;
+      final r = numberRule(e.key, n);
       if (r != null) return '${e.key.registeredName}：$r';
     }
     final seen = <int, Player>{};
     for (final e in finalNum.entries) {
-      final o = seen[e.value];
-      if (o != null) return '背番号${uniformLabel(e.value)}が${o.registeredName}と${e.key.registeredName}で重なっています';
-      seen[e.value] = e.key;
+      final n = e.value;
+      if (n == null) continue;
+      final o = seen[n];
+      if (o != null) return '背番号${uniformLabel(n)}が${o.registeredName}と${e.key.registeredName}で重なっています';
+      seen[n] = e.key;
     }
     if (isOpeningNumberDay) {
       for (final p in t.players) {
-        _changeNow(t, p, finalNum[p]!);
+        final n = finalNum[p];
+        if (n != null) _changeNow(t, p, n);
         p.nextNumber = null;
       }
       updateAndSave();
       return null;
     }
     for (final p in t.players) {
-      final n = finalNum[p]!;
-      p.nextNumber = n == p.uniformNumber ? null : n;
+      final n = finalNum[p];
+      if (n == null) {
+        p.nextNumber = null;
+      } else {
+        p.nextNumber = (p.hasUniform && n == p.uniformNumber) ? null : n;
+      }
     }
     updateAndSave();
     return null;
   }
 
-  /// 開幕前日：予約した背番号に変え、未確定の入団・昇格選手の背番号を確定する（全球団）
+  /// 開幕前日：予約した背番号に変え、未定・未確定の入団・移籍・昇格選手の背番号を一斉に決定する（全球団）
   void applyNextNumbers(DateTime d) {
     final mine = <String>[];
     for (final t in leagueTeams) {
-      final targets = t.players.where((p) => p.nextNumber != null || p.numberPending).toList();
+      final targets = t.players.where((p) => p.nextNumber != null || p.numberPending || !p.hasUniform).toList();
       if (targets.isEmpty) continue;
-      final finalNum = {for (final p in t.players) p: p.nextNumber ?? p.uniformNumber};
+      final finalNum = <Player, int>{
+        for (final p in t.players)
+          if (p.nextNumber != null || p.hasUniform) p: p.nextNumber ?? p.uniformNumber,
+      };
       final count = <int, int>{};
       for (final n in finalNum.values) {
         count[n] = (count[n] ?? 0) + 1;
       }
+      // Pass 1: 予約された背番号の変更・決定を反映（空き番号の移動先が被らないよう先に確定させる）
       for (final p in targets) {
         final next = p.nextNumber;
-        if (next != null) {
-          if ((count[next] ?? 0) > 1 || numberRule(p, next) != null) {
-            if (t.id == myTeamId) mine.add('${p.registeredName}の背番号${uniformLabel(next)}は、ほかの選手と重なるため変えませんでした');
-            p.nextNumber = null;
-          } else {
-            if (!p.numberPending) {
-              _numberChron(t, p, p.uniformNumber, next, d);
-              if (t.id == myTeamId) mine.add('${p.registeredName} ${uniformLabel(p.uniformNumber)}→${uniformLabel(next)}');
-            }
-            p.uniformNumber = next;
-            p.nextNumber = null;
+        if (next == null) continue;
+        if ((count[next] ?? 0) > 1 || numberRule(p, next) != null) {
+          if (t.id == myTeamId) mine.add('${p.registeredName}の背番号${uniformLabel(next)}は、ほかの選手と重なるため変えませんでした');
+          p.nextNumber = null;
+        } else {
+          final hadUniform = p.hasUniform && !p.numberPending;
+          if (hadUniform) {
+            _numberChron(t, p, p.uniformNumber, next, d);
+            if (t.id == myTeamId) mine.add('${p.registeredName} ${uniformLabel(p.uniformNumber)}→${uniformLabel(next)}');
+          }
+          p.uniformNumber = next;
+          p.nextNumber = null;
+          if (!hadUniform) {
+            p.numberPending = false;
+            _chron(d, t.id, 'number', '${_pos(p)} ${p.registeredName}の背番号が${p.uniformText}に決定。', pid: p.id, pt: '背番号が${p.uniformText}に決定。');
+            if (t.id == myTeamId) mine.add('${p.registeredName} 背番号${p.uniformText}に決定');
           }
         }
-        if (p.numberPending) {
+      }
+      // Pass 2: 予約が無く未定・未確定のままの選手へ空き番号を割り当てて確定
+      for (final p in targets) {
+        if (!p.hasUniform || p.numberPending) {
+          if (!p.hasUniform || (p.ikusei != (p.uniformNumber >= 100))) {
+            p.uniformNumber = RosterEngine.freeNumber(t, ikusei: p.ikusei);
+          }
           p.numberPending = false;
           _chron(d, t.id, 'number', '${_pos(p)} ${p.registeredName}の背番号が${p.uniformText}に決定。', pid: p.id, pt: '背番号が${p.uniformText}に決定。');
           if (t.id == myTeamId) mine.add('${p.registeredName} 背番号${p.uniformText}に決定');

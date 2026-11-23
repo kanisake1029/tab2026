@@ -227,12 +227,15 @@ class _ScoutReportState extends State<ScoutReport> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${_otherTeam != null ? _otherLabel : (t == null ? '' : teamShort(t))}　$pos', style: const TextStyle(fontSize: 11, color: _sub), overflow: TextOverflow.ellipsis),
               Row(children: [
-                Flexible(child: Text('${_otherTeam != null ? '' : '#${p.uniformText}　'}${p.listName}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _ink), overflow: TextOverflow.ellipsis)),
+                Flexible(child: Text('${_otherTeam != null ? '' : (p.hasUniform ? '#${p.uniformText}　' : '背番号未定　')}${p.listName}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _ink), overflow: TextOverflow.ellipsis)),
                 if (widget.onEditName != null) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.edit, size: 16, color: _sub)),
               ]),
               if (p.registeredName != p.listName || p.nextNumber != null)
                 Text(
-                  [if (p.registeredName != p.listName) '登録名：${p.registeredName}', if (p.nextNumber != null) '来季（開幕前日〜）#${uniformLabel(p.nextNumber!)}'].join('　'),
+                  [
+                    if (p.registeredName != p.listName) '登録名：${p.registeredName}',
+                    if (p.nextNumber != null) '${p.hasUniform ? '来季' : '予約'}（開幕前日〜）#${uniformLabel(p.nextNumber!)}',
+                  ].join('　'),
                   style: const TextStyle(fontSize: 10.5, color: _sub),
                 ),
             ]),

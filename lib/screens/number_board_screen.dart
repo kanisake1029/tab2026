@@ -18,7 +18,10 @@ class NumberBoardScreen extends StatefulWidget {
 
 class _NumberBoardScreenState extends State<NumberBoardScreen> {
   late final Map<String, TextEditingController> _ctl = {
-    for (final p in widget.team.players) p.id: TextEditingController(text: uniformLabel(widget.app.numberNextSeason(p))),
+    for (final p in widget.team.players)
+      p.id: TextEditingController(
+        text: widget.app.numberNextSeason(p) > kNoUniform ? uniformLabel(widget.app.numberNextSeason(p)) : '',
+      ),
   };
   String? _err;
 
@@ -30,12 +33,14 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
     super.dispose();
   }
 
-  /// 入力のいま（重なり・決まり違いの選手 id）
+  /// 入力のいま（重なり・決まり違いの選手 id。未定選手の空欄は自動割当のためエラーにしない）
   Set<String> _bad() {
     final out = <String>{};
     final by = <int, List<Player>>{};
     for (final p in widget.team.players) {
-      final n = parseUniform(_ctl[p.id]!.text);
+      final raw = _ctl[p.id]!.text.trim();
+      if (!p.hasUniform && raw.isEmpty) continue;
+      final n = parseUniform(raw);
       if (n == null || widget.app.numberRule(p, n) != null) {
         out.add(p.id);
         continue;
@@ -49,9 +54,14 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
   }
 
   void _save() {
-    final next = <String, int>{};
+    final next = <String, int?>{};
     for (final p in widget.team.players) {
-      final n = parseUniform(_ctl[p.id]!.text);
+      final raw = _ctl[p.id]!.text.trim();
+      if (!p.hasUniform && raw.isEmpty) {
+        next[p.id] = null;
+        continue;
+      }
+      final n = parseUniform(raw);
       if (n == null) return setState(() => _err = '${p.registeredName}：背番号は 00・0〜999 で入れてください');
       next[p.id] = n;
     }
@@ -68,13 +78,18 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
     final list = widget.team.players.toList()
       ..sort((a, b) => a.ikusei != b.ikusei ? (a.ikusei ? 1 : -1) : uniformSortKey(a.uniformNumber).compareTo(uniformSortKey(b.uniformNumber)));
     Widget row(Player p) {
-      final changed = parseUniform(_ctl[p.id]!.text) != p.uniformNumber;
-      final subColor = p.numberPending
-          ? const Color(0xFF15803D)
-          : (p.nextNumber != null ? const Color(0xFF1D4ED8) : const Color(0xFF78716C));
-      final subNote = p.numberPending
-          ? '　仮番号（開幕前日に決定）'
-          : (p.nextNumber != null ? '　予約 #${uniformLabel(p.nextNumber!)}（開幕前日〜）' : '');
+      final parsed = parseUniform(_ctl[p.id]!.text);
+      final changed = p.hasUniform ? parsed != p.uniformNumber : parsed != null;
+      final subColor = !p.hasUniform
+          ? (p.nextNumber != null ? const Color(0xFF1D4ED8) : const Color(0xFF15803D))
+          : (p.numberPending
+              ? const Color(0xFF15803D)
+              : (p.nextNumber != null ? const Color(0xFF1D4ED8) : const Color(0xFF78716C)));
+      final subNote = !p.hasUniform
+          ? (p.nextNumber != null ? '　予約 #${uniformLabel(p.nextNumber!)}（開幕前日に決定）' : '　背番号未定（開幕前日に決定）')
+          : (p.numberPending
+              ? '　仮番号（開幕前日に決定）'
+              : (p.nextNumber != null ? '　予約 #${uniformLabel(p.nextNumber!)}（開幕前日〜）' : ''));
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE7E5E4)))),
@@ -89,13 +104,20 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
                 allowActions: widget.team.id == app.myTeamId,
                 onChanged: () {
                   if (!mounted) return;
-                  setState(() => _ctl[p.id]?.text = uniformLabel(app.numberNextSeason(p)));
+                  final nxt = app.numberNextSeason(p);
+                  setState(() => _ctl[p.id]?.text = nxt > kNoUniform ? uniformLabel(nxt) : '');
                 },
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(children: [
-                  SizedBox(width: 44, child: Text('#${p.uniformText}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900))),
+                  SizedBox(
+                    width: 44,
+                    child: Text(
+                      p.hasUniform ? '#${p.uniformText}' : '未定',
+                      style: TextStyle(fontSize: p.hasUniform ? 14 : 12.5, fontWeight: FontWeight.w900, color: p.hasUniform ? const Color(0xFF1C1917) : const Color(0xFF15803D)),
+                    ),
+                  ),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                       Text(p.listName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
@@ -119,6 +141,8 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
               decoration: InputDecoration(
                 isDense: true,
                 prefixText: '#',
+                hintText: !p.hasUniform ? '未定' : null,
+                hintStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
                 border: const OutlineInputBorder(),
                 enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: bad.contains(p.id) ? Colors.red : (changed ? const Color(0xFF1D4ED8) : const Color(0xFFCBD5E1)))),
               ),

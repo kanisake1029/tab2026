@@ -171,8 +171,7 @@ extension OffseasonOps on AppState {
     _removeFromOther(c.id);
     c.partnerUntil = offseasonYear + years; // 次のシーズンから years 年
     c.offJoin = offseasonYear;
-    c.uniformNumber = RosterEngine.freeNumber(t, ikusei: false);
-    RosterEngine.addPlayer(t, c);
+    RosterEngine.addPlayer(t, c, assignNumber: !isBeforeOpeningDay());
     logMove(c, '提携選手（${c.partnerMlb}から$years年）', null, t);
     partnerSlots.remove(slot);
     transactions.insert(0, '${_today()} ${teamShort(t)} 提携選手 ${c.registeredName}（${c.mainPosition}・${c.age}歳・${c.partnerMlb}から$years年）');
@@ -340,8 +339,7 @@ extension OffseasonOps on AppState {
         _money(to.id, '育成テンダー', -comp, '育成テンダー補償 ${p.registeredName}');
         _money(from.id, '育成テンダー', comp, '育成テンダー補償 ${p.registeredName}');
       }
-      p.uniformNumber = RosterEngine.freeNumber(to, ikusei: false);
-      RosterEngine.addPlayer(to, p);
+      RosterEngine.addPlayer(to, p, assignNumber: !isBeforeOpeningDay());
       transactions.insert(0, '${_today()} 育成テンダー ${p.registeredName} ${to.id == from.id ? '${teamShort(from)}で支配下に' : '${teamShort(from)} → ${teamShort(to)}（支配下）'}（${formatSalary(p.salary)}）');
       if (from.id == myTeamId || to.id == myTeamId) {
         _addNews(['育成テンダー：${p.registeredName}は${to.id == from.id ? '${teamShort(from)}で支配下契約' : '${teamShort(from)}から${teamShort(to)}へ支配下で移籍'}（${formatSalary(p.salary)}）']);
@@ -378,7 +376,7 @@ extension OffseasonOps on AppState {
       RosterEngine.removePlayer(from, p);
       logMove(p, '現役ドラフト', from, to);
       p.offJoin = offseasonYear;
-      RosterEngine.addPlayer(to, p);
+      RosterEngine.addPlayer(to, p, assignNumber: !isBeforeOpeningDay());
       lines.add('${teamShort(to)}：${p.registeredName}（${p.mainPosition}・${p.age}歳・元${teamShort(from)}）');
       transactions.insert(0, '${_today()} 現役ドラフト ${p.registeredName} ${teamShort(from)} → ${teamShort(to)}');
     }
@@ -871,8 +869,7 @@ extension OffseasonOps on AppState {
       final wl = DraftWish.wishLabel(pk.prospect, t.id);
       if (wl.isNotEmpty) p.draftInfo = '${p.draftInfo}　$wl${p.faShort > 0 ? '（国内FA ${Player.faYears - p.faShort}年）' : ''}';
       p.regDays = 0;
-      p.uniformNumber = RosterEngine.freeNumber(t, ikusei: pk.ikusei);
-      RosterEngine.addPlayer(t, p);
+      RosterEngine.addPlayer(t, p, assignNumber: false);
       _money(t.id, '契約金', -DraftEngine.signingBonus(pk.payRound, pk.ikusei), '契約金 ${p.registeredName}');
       transactions.insert(0, '${s.year}/10/31 ${teamShort(t)} ${p.draftInfo} ${p.registeredName}（${p.mainPosition}）');
       _amOnDrafted(pk.prospect, t, s.year, pk.label);
@@ -959,7 +956,7 @@ extension OffseasonOps on AppState {
       final rankM = RegExp('${RegExp.escape(faName)} FA 移籍 .+?（([ABC])ランク').firstMatch(transactions.firstWhere((l) => l.contains('$faName FA 移籍'), orElse: () => ''));
       // 元に戻す（選手・お金・記録・お知らせ）
       RosterEngine.removePlayer(from, pick);
-      RosterEngine.addPlayer(to, pick);
+      RosterEngine.addPlayer(to, pick, assignNumber: !isBeforeOpeningDay());
       // FA 選手の年俸（補償の額のもと）：戻したあとに探す（FA 選手そのものが補償で戻されていたこともある）
       final fa = to.players.where((p) => p.registeredName == faName).firstOrNull;
       final c = CompCase(faName, rankM?.group(1) ?? 'B', from.id, to.id, fa?.salary ?? 0);
@@ -1357,7 +1354,7 @@ extension OffseasonOps on AppState {
       p.faCount++;
       logMove(p, 'FA 移籍', from, to);
       p.offJoin = offseasonYear;
-      RosterEngine.addPlayer(to, p);
+      RosterEngine.addPlayer(to, p, assignNumber: !isBeforeOpeningDay());
       transactions.insert(0, '${_today()} ${p.registeredName} FA 移籍 ${teamShort(from)} → ${teamShort(to)}（${f.rank}ランク・${formatSalary(p.salary)}×${p.contractYears}年）');
       _addNews(['FA：${p.registeredName}が${teamShort(from)}から${teamShort(to)}へ移籍（${formatSalary(p.salary)}・${p.contractYears}年）']);
       // 補償の金額は前年の年俸（＝ FA 宣言のときの年俸）がもと
@@ -1457,7 +1454,7 @@ extension OffseasonOps on AppState {
     final sameTeam = from != null && from.id == t.id;
     if (from != null && !sameTeam) midSeasonMove(p, from, t);
     logMove(p, sameTeam ? (ikusei ? '自由契約から育成再契約' : '自由契約から再契約') : (ikusei ? '自由契約から育成契約' : '自由契約から入団'), sameTeam ? null : from, t);
-    RosterEngine.addPlayer(t, p);
+    RosterEngine.addPlayer(t, p, assignNumber: !isBeforeOpeningDay());
     if (sameTeam) {
       transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}再契約（自由契約・${formatSalary(p.salary)}${p.contractYears > 1 ? '・${p.contractYears}年' : ''}）');
       _addNews(['${teamShort(t)}が自由契約の${p.registeredName}と${ikusei ? '育成' : ''}再契約（${formatSalary(p.salary)}）']);
@@ -1510,11 +1507,11 @@ extension OffseasonOps on AppState {
       final pitchers = my.players.where((x) => x.isPitcher && !x.ikusei).length, fielders = my.players.where((x) => !x.isPitcher && !x.ikusei).length;
       if (p.isPitcher && pitchers <= 14) return '支配下の投手が足りなくなります';
       if (!p.isPitcher && fielders <= 12) return '支配下の野手が足りなくなります';
+      final off = isBeforeOpeningDay();
       RosterEngine.removePlayer(my, p);
       p.ikusei = true;
       p.nextNumber = null;
-      if (isBeforeOpeningDay()) p.numberPending = true;
-      RosterEngine.addPlayer(my, p); // 背番号は3桁になる
+      RosterEngine.addPlayer(my, p, assignNumber: !off); // シーズン中なら3桁、オフなら未定
     }
     // 育成の年数は通算で数える（支配下に上げて戻す抜け道を防ぐ。仕様書 6.1）
     p.prevSalary = p.salary;
@@ -1549,12 +1546,18 @@ extension OffseasonOps on AppState {
     if (my == null || !p.ikusei) return null;
     if (RosterEngine.freeSlots(my) <= 0) return '支配下の枠（70人）が空いていません';
     if (!tradeOpen) return '支配下登録は7月31日までです';
+    final off = isBeforeOpeningDay();
     p.ikusei = false;
     p.nextNumber = null;
-    p.uniformNumber = RosterEngine.freeNumber(my, ikusei: false);
-    if (isBeforeOpeningDay()) p.numberPending = true;
+    if (off) {
+      p.uniformNumber = kNoUniform;
+      p.numberPending = true;
+    } else {
+      p.uniformNumber = RosterEngine.freeNumber(my, ikusei: false);
+      p.numberPending = false;
+    }
     p.salary = max(p.salary, 450);
-    final numTag = isBeforeOpeningDay() ? '' : '（背番号${p.uniformNumber}）';
+    final numTag = off ? '' : '（背番号${p.uniformText}）';
     transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 支配下登録$numTag');
     _addNews(['${p.registeredName}を支配下登録しました$numTag']);
     updateAndSave();
@@ -1567,8 +1570,16 @@ extension OffseasonOps on AppState {
       final weakest = sh.isEmpty ? 0 : sh.first.ovr;
       for (final p in t.players.where((p) => p.ikusei).toList()..sort((a, b) => b.ovr.compareTo(a.ovr))) {
         if (RosterEngine.cpuRoom(t) <= 0 || p.ovr < weakest + 4) break;
+        final off = isBeforeOpeningDay();
         p.ikusei = false;
-        p.uniformNumber = RosterEngine.freeNumber(t, ikusei: false);
+        p.nextNumber = null;
+        if (off) {
+          p.uniformNumber = kNoUniform;
+          p.numberPending = true;
+        } else {
+          p.uniformNumber = RosterEngine.freeNumber(t, ikusei: false);
+          p.numberPending = false;
+        }
         p.salary = max(p.salary, 450);
         transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName} 支配下登録');
       }
@@ -1601,7 +1612,7 @@ extension OffseasonOps on AppState {
         p.salary = sal;
         p.contractYears = years;
         p.offJoin = offseasonYear;
-        RosterEngine.addPlayer(t, p);
+        RosterEngine.addPlayer(t, p, assignNumber: !isBeforeOpeningDay());
         transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName} 優先交渉で再契約（${formatSalary(sal)}・$years年）');
       } else {
         fa.priorityTeamId = '';
@@ -1659,7 +1670,7 @@ extension OffseasonOps on AppState {
         p.offJoin = offseasonYear;
         p.contractYears = TrustEngine.preferredYears(p, isInitialForeign: true);
         if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
-        RosterEngine.addPlayer(t, p);
+        RosterEngine.addPlayer(t, p, assignNumber: !isBeforeOpeningDay());
         transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}（外国人・${p.mainPosition}）と契約（${formatSalary(p.salary)}）');
         signed++;
       }
@@ -1674,7 +1685,7 @@ extension OffseasonOps on AppState {
           final p = ik.first;
           foreignPool.remove(p);
           _removeFromOther(p.id);
-          RosterEngine.addPlayer(t, p);
+          RosterEngine.addPlayer(t, p, assignNumber: !isBeforeOpeningDay());
           transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}（外国人・育成・${p.mainPosition}）と契約');
         }
       }
@@ -1708,7 +1719,7 @@ extension OffseasonOps on AppState {
     p.contractYears = offerY;
     p.offJoin = offseasonYear;
     if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
-    RosterEngine.addPlayer(my, p);
+    RosterEngine.addPlayer(my, p, assignNumber: !isBeforeOpeningDay());
     transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（外国人・${p.ikusei ? '育成・' : ''}${p.mainPosition}）と契約（${formatSalary(offerSal)}${offerY > 1 ? '・$offerY年' : ''}）');
     _addNews(['${p.registeredName}（外国人${p.ikusei ? '・育成' : ''}）と${p.ikusei ? '育成' : ''}契約しました（${formatSalary(offerSal)}・$offerY年）']);
     updateAndSave();
@@ -1913,11 +1924,12 @@ extension OffseasonOps on AppState {
     for (final p in bGive) {
       RosterEngine.removePlayer(b, p);
     }
+    final off = isBeforeOpeningDay();
     for (final p in aGive) {
-      RosterEngine.addPlayer(b, p);
+      RosterEngine.addPlayer(b, p, assignNumber: !off);
     }
     for (final p in bGive) {
-      RosterEngine.addPlayer(a, p);
+      RosterEngine.addPlayer(a, p, assignNumber: !off);
     }
     if (money != 0) {
       _money(a.id, 'トレード', -money, 'トレード');

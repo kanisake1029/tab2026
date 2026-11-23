@@ -954,11 +954,14 @@ class Player {
 
 
 
-/// 背番号の表示（-1 は「00」）
-String uniformLabel(int n) => n < 0 ? '00' : '$n';
+/// 背番号未定（オフシーズンの入団・移籍・昇格等で開幕前日に確定するまで未付与）
+const int kNoUniform = -2;
 
-/// 背番号の並び替えキー（00 → 0 → 1 → … → 999）
-int uniformSortKey(int n) => n;
+/// 背番号の表示（-2 は「未定」、-1 は「00」）
+String uniformLabel(int n) => n <= kNoUniform ? '未定' : (n < 0 ? '00' : '$n');
+
+/// 背番号の並び替えキー（00 → 0 → 1 → … → 999、未定は末尾）
+int uniformSortKey(int n) => n <= kNoUniform ? 10000 : n;
 
 /// 入力文字列を背番号に変換する（"00"→-1、"0"〜"999"→数値、不正はnull）
 int? parseUniform(String s) {
@@ -970,6 +973,7 @@ int? parseUniform(String s) {
 }
 
 extension PlayerUniform on Player {
+  bool get hasUniform => uniformNumber > kNoUniform;
   String get uniformText => uniformLabel(uniformNumber);
 }
 

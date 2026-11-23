@@ -128,7 +128,7 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('#${p.uniformText} ${p.registeredName}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+                Text('${p.hasUniform ? '#${p.uniformText}' : '背番号未定'} ${p.registeredName}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
                 IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
               ],
             ),
@@ -230,7 +230,8 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
     final custom = TextEditingController(text: p.customName);
     final app = widget.appState as AppState;
     final free = app.numberFreeNow(p);
-    final number = TextEditingController(text: uniformLabel(app.numberNextSeason(p)));
+    final nextN = app.numberNextSeason(p);
+    final number = TextEditingController(text: nextN > kNoUniform ? uniformLabel(nextN) : '');
     var pos = p.isPitcher ? '投手' : p.mainPosition;
     var twoWay = p.twoWay;
     String? err;
@@ -264,12 +265,17 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
                   controller: number,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    labelText: p.numberPending ? '仮背番号（開幕前日に決定）' : (free ? '背番号（すぐ変わります）' : '背番号（開幕前日に反映）'),
-                    helperText: p.numberPending
-                        ? '現在は仮の番号（#${p.uniformText}）です。開幕前日までは変更でき、開幕前日に正式決定します（変更記録は残りません）'
-                        : (free
-                            ? '今年だけ特別に、今日（開幕日）はすぐ変えられます'
-                            : 'いまは #${p.uniformText}。背番号の変更は入団時期に関わらず一律で開幕前日に行われます（チーム → 全選手 →「背番号」で一括も）'),
+                    labelText: !p.hasUniform
+                        ? '背番号予約（開幕前日に決定）'
+                        : (p.numberPending ? '仮背番号（開幕前日に決定）' : (free ? '背番号（すぐ変わります）' : '背番号（開幕前日に反映）')),
+                    hintText: !p.hasUniform ? '未定（空欄なら自動割当）' : null,
+                    helperText: !p.hasUniform
+                        ? 'オフシーズン入団のため背番号は未定です。予約しておくと開幕前日に確定します（空欄なら自動割当）'
+                        : (p.numberPending
+                            ? '現在は仮の番号（#${p.uniformText}）です。開幕前日までは変更でき、開幕前日に正式決定します（変更記録は残りません）'
+                            : (free
+                                ? '今年だけ特別に、今日（開幕日）はすぐ変えられます'
+                                : 'いまは #${p.uniformText}。背番号の変更は入団時期に関わらず一律で開幕前日に行われます（チーム → 全選手 →「背番号」で一括も）')),
                     helperMaxLines: 2,
                   ),
                 ),
@@ -294,14 +300,20 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
               TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('やめる')),
               FilledButton(
                 onPressed: () {
-                  final n = parseUniform(number.text);
-                  if (n == null) return set(() => err = '背番号は 00・0〜999 で入力してください');
-                  if (type == 'E' && custom.text.trim().isEmpty) return set(() => err = 'オリジナルの登録名を入力してください');
-                  final Team? t = widget.team as Team?;
-                  if (t != null) {
-                    final e = app.setNumber(t, p, n);
-                    if (e != null) return set(() => err = e);
+                  final rawNum = number.text.trim();
+                  if (!p.hasUniform && rawNum.isEmpty) {
+                    final Team? t = widget.team as Team?;
+                    if (t != null) p.nextNumber = null;
+                  } else {
+                    final n = parseUniform(rawNum);
+                    if (n == null) return set(() => err = '背番号は 00・0〜999 で入力してください');
+                    final Team? t = widget.team as Team?;
+                    if (t != null) {
+                      final e = app.setNumber(t, p, n);
+                      if (e != null) return set(() => err = e);
+                    }
                   }
+                  if (type == 'E' && custom.text.trim().isEmpty) return set(() => err = 'オリジナルの登録名を入力してください');
                   Navigator.pop(c, true);
                   p.nameType = type;
                   p.customName = custom.text.trim();
@@ -375,7 +387,9 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
                               return;
                             }
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.registeredName}を支配下登録しました（背番号${p.uniformNumber}）')));
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(p.hasUniform ? '${p.registeredName}を支配下登録しました（背番号${p.uniformText}）' : '${p.registeredName}を支配下登録しました（背番号は開幕前日に決定）'),
+                              ));
                             }
                             setState(() {});
                             if (widget.onRosterChanged != null) widget.onRosterChanged!();

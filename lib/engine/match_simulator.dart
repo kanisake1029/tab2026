@@ -260,7 +260,7 @@ class MatchSimulator {
               final p = t.players.where((q) => q.id == x.playerId).firstOrNull;
               final ss = p?.seasonStats;
               final avg = ss == null || ss.atBats == 0 ? '---' : (ss.hits / ss.atBats).toStringAsFixed(3).replaceFirst('0.', '.');
-              return '${x.position}|${p?.registeredName ?? ''}|${p == null ? '' : (p.uniformNumber < 0 ? '00' : '${p.uniformNumber}')}|$avg|${ss?.homeRuns ?? 0}';
+              return '${x.position}|${p?.registeredName ?? ''}|${p == null ? '' : p.uniformText}|$avg|${ss?.homeRuns ?? 0}';
             }(),
         ];
     e.homeLine = line(s.homeLineup, s.homeTeam);

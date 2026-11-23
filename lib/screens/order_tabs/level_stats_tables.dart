@@ -66,8 +66,8 @@ class _LevelStatsTablesState extends State<LevelStatsTables> {
         x.pitcherStrikeouts, x.pitcherWalks, x.hitsAllowed, x.hrAllowed, x.inningsPitched == 0 ? 999 : _whip(x),
       ];
 
-  /// 背番号順（00 は 0 の前）
-  static int _byNumber(Player a, Player b) => a.uniformNumber.compareTo(b.uniformNumber);
+  /// 背番号順（00 は 0 の前、未定は末尾）
+  static int _byNumber(Player a, Player b) => uniformSortKey(a.uniformNumber).compareTo(uniformSortKey(b.uniformNumber));
 
   void _setBat(int? i) => setState(() => _batSortOf[widget.level] = _batSort == i ? null : i);
   void _setPit(int? i) => setState(() => _pitSortOf[widget.level] = _pitSort == i ? null : i);

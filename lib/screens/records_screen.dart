@@ -523,8 +523,8 @@ class _NumberHistoryViewState extends State<_NumberHistoryView> {
             final h = snap.data;
             if (h == null) return const Center(child: CircularProgressIndicator());
             final keys = h.keys.toList()..sort((a, b) => uniformSortKey(a).compareTo(uniformSortKey(b)));
-            // いまの番号（記録の続き）
-            final now = {for (final p in t.players) p.uniformNumber: p};
+            // いまの番号（記録の続き：未定選手は除く）
+            final now = {for (final p in t.players) if (p.hasUniform) p.uniformNumber: p};
             final byName = <String, Player>{
               for (final tm in app.teams)
                 for (final p in tm.players) ...{p.registeredName: p, p.listName: p},

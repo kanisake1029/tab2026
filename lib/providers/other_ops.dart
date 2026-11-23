@@ -399,8 +399,7 @@ extension OtherOps on AppState {
       p.draftInfo = '${lg.name}の${t.name}から入団（${currentDate.year}年）';
       if (p.nationality == '海外' && !ikusei) ForeignEngine.applyAdapt(p);
     }
-    p.uniformNumber = RosterEngine.freeNumber(my, ikusei: ikusei);
-    RosterEngine.addPlayer(my, p);
+    RosterEngine.addPlayer(my, p, assignNumber: !isBeforeOpeningDay());
     logMove(p, back ? '日本球界復帰（${lg.name}の${t.name}から）' : '${lg.name}の${t.name}から入団', null, my);
     transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（${back ? '日本球界復帰・' : ''}${lg.name}の${t.name}から${ikusei ? '・育成' : ''}）と契約（${formatSalary(offerSal)}${offerY > 1 ? '・$offerY年' : ''}）');
     _addNews(['${p.registeredName}（${back ? '日本球界復帰・' : ''}${lg.name}の${t.name}）と${ikusei ? '育成' : ''}契約しました（${formatSalary(offerSal)}・$offerY年）']);
