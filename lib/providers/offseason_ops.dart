@@ -458,7 +458,17 @@ extension OffseasonOps on AppState {
     var d = from;
     while (d.isBefore(to)) {
       d = d.add(const Duration(days: 1));
-      if (firstReg != null && DateUtils.isSameDay(d, firstReg.subtract(const Duration(days: 1)))) applyNextNumbers(d); // 開幕前日：予約した背番号に変える
+      if (firstReg != null && DateUtils.isSameDay(d, firstReg.subtract(const Duration(days: 1)))) {
+        applyNextNumbers(d); // 開幕前日：予約した背番号に変える
+        // オープン戦期間中に一時表示していた2軍・3軍成績も開幕前日にリセットし、公式戦から0で集計する
+        for (final t in leagueTeams) {
+          for (final p in t.players) {
+            if (_liveSnap == null) p.seasonStats = PlayerStats();
+            p.farmStats = PlayerStats();
+            p.thirdStats = PlayerStats();
+          }
+        }
+      }
       if (d.month == 1 && d.day == 1) {
         _newYearDay(); // 1月1日：月初めのお金の処理より先に（来季からのスポンサー契約の支払いを始める）
         (firstReg, lastReg) = _regularRange();

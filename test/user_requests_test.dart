@@ -1162,4 +1162,64 @@ void main() {
     }
     expect(find.text('四国・徳島*'), findsWidgets);
   });
+
+  testWidgets('オープン戦期間中は選手詳細画面に2026(OP)として一時表示され通算に含まれず、開幕すると0から始まる', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    app.startYear = 2026;
+
+    // 公式戦初日より前（オープン戦期間）にする
+    final firstOpen = app.matches.firstWhere((m) => m.matchType == 'OPEN');
+    final firstReg = app.matches.where((m) => m.matchType == 'LEAGUE' || m.matchType == 'INTERLEAGUE').map((m) => m.date).reduce((a, b) => a.isBefore(b) ? a : b);
+    app.currentDate = firstOpen.date;
+    Player.showOpen = app.openPeriod;
+    expect(app.openPeriod, isTrue);
+
+    final batter = my.players.firstWhere((p) => !p.isPitcher && !p.ikusei);
+    final preCareerHits = batter.career.hits;
+    batter.openStats = PlayerStats(games: 8, atBats: 25, hits: 10, homeRuns: 2, rbi: 6);
+    batter.farmStats = PlayerStats(games: 5, atBats: 15, hits: 6, homeRuns: 1, rbi: 3);
+    batter.thirdStats = PlayerStats(games: 4, atBats: 12, hits: 4, homeRuns: 0, rbi: 2);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(child: ScoutReport(player: batter, appState: app, team: my, onClose: () {})),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('経歴').first);
+    await tester.pumpAndSettle();
+
+    // オープン戦期間中は「2026(OP)」として一時表示される
+    expect(find.text('2026(OP)'), findsOneWidget);
+
+    // 開幕前日を経て開幕日（試合開始前）へ日付を進めると、オープン戦の一時表示は消え、2軍・3軍成績も0にリセットされる
+    app.currentDate = firstReg.subtract(const Duration(days: 2));
+    app.playNextDay(); // _nextStop() により開幕前日を通過して開幕日（firstReg）の試合前に到達
+    expect(DateUtils.dateOnly(app.currentDate), DateUtils.dateOnly(firstReg));
+    expect(app.openPeriod, isFalse);
+    expect(Player.showOpen, isFalse);
+    expect(batter.seasonStats.games, 0);
+    expect(batter.farmStats.games, 0);
+    expect(batter.thirdStats.games, 0);
+    expect(batter.career.hits, preCareerHits);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(child: ScoutReport(player: batter, appState: app, team: my, onClose: () {})),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('経歴').first);
+    await tester.pumpAndSettle();
+    expect(find.text('2026(OP)'), findsNothing);
+  });
 }

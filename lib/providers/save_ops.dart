@@ -142,6 +142,18 @@ extension SaveOps on AppState {
     }
     _roundSalaries();
     Player.showOpen = openPeriod;
+    if (openPeriod) {
+      for (final t in teams) {
+        for (final p in t.players) {
+          if (p.seasonStats.games > 0 || p.seasonStats.pitchApps > 0) {
+            if (p.openStats.games == 0 && p.openStats.pitchApps == 0) {
+              p.openStats = p.seasonStats;
+            }
+            p.seasonStats = PlayerStats();
+          }
+        }
+      }
+    }
     // 外国人・他リーグの選手：メインポジションが G1 のままなら、得意な位置をメインに
     for (final p in [
       ...teams.expand((t) => t.players).where((p) => p.nationality == '海外'),
@@ -530,6 +542,15 @@ extension SaveOps on AppState {
     await _maybeSaveAmateur(); // アマチュア球界は7日ごと・年度の区切りに
     if (loaded) _diffRosters(); // 入団・退団・コーチの就任と退任を記録する
     // 画面の状態をこの時点で固めてから、順に書き込む（連続して呼ばれても混ざらない）
+    // 対話式のオープン戦・ポストシーズン中に保存が走った場合、一時退避中の公式戦成績（_liveSnap）で保存してオープン戦成績が混入しないようにする
+    Map<Player, PlayerStats>? tempLiveOpen;
+    if (_liveSnap != null) {
+      tempLiveOpen = {
+        for (final p in _liveSnap!.keys) p: p.seasonStats,
+      };
+      if (_liveOpen != null) _keepOpenStats(_liveOpen!);
+      _restoreStats(_liveSnap!);
+    }
     final changedTeams = <TeamRowsCompanion>[];
     for (var i = 0; i < teams.length; i++) {
       final js = jsonEncode(teams[i].toJson());
@@ -538,6 +559,9 @@ extension SaveOps on AppState {
         _savedTeamJson[teams[i].id] = js;
         _savedTeamSort[teams[i].id] = i;
       }
+    }
+    if (tempLiveOpen != null) {
+      tempLiveOpen.forEach((p, s) => p.seasonStats = s);
     }
     final teamIds = [for (final t in teams) t.id];
     _savedTeamJson.removeWhere((k, _) => !teamIds.contains(k));

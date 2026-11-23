@@ -681,7 +681,8 @@ class _ScoutReportState extends State<ScoutReport> {
             rows.add(_cells('${h.$1}', _teamName(h.$2, initial: true), s));
             total.add(s);
           }
-          final now = _mode == '3軍' ? p.thirdStats : (_farm ? p.farmStats : p.seasonStats);
+          final isOpen = _otherTeam == null && (app is AppState) && (app as AppState).openPeriod;
+          final now = _mode == '3軍' ? p.thirdStats : (_farm ? p.farmStats : (isOpen ? p.shownStats : p.seasonStats));
           final t = _team;
           if (_mode == '1軍' || _mode == '守備') {
             // ゲーム開始前の経歴：年度別の推定（球団の後ろに＊）。推定が作れないときは推定年度を生成して埋める
@@ -722,8 +723,8 @@ class _ScoutReportState extends State<ScoutReport> {
             final curTeamLabel = _otherTeam != null
                 ? _otherTableTeam
                 : (t == null ? '−' : _teamName([...p.seasonTeams, t.id].join('/'), initial: true));
-            rows.add(_cells('$sy', curTeamLabel, now));
-            total.add(now);
+            rows.add(_cells(isOpen ? '$sy(OP)' : '$sy', curTeamLabel, now));
+            if (!isOpen) total.add(now);
           }
           if (_mode == '1軍' && p.abroad.isNotEmpty) {
             final abRows = _abroadRows();
@@ -780,6 +781,7 @@ class _ScoutReportState extends State<ScoutReport> {
       if (h.$1 >= y - 3 && h.$1 <= y - 1) past.add(h.$3);
     }
     if (!closed) {
+      final isOpen = _otherTeam == null && (app is AppState) && (app as AppState).openPeriod;
       for (final sp in p.seasonSplits) {
         if (sp['stats'] is Map) {
           final st = PlayerStats.fromJson(Map<String, dynamic>.from(sp['stats'] as Map));
@@ -787,8 +789,8 @@ class _ScoutReportState extends State<ScoutReport> {
           total.add(st);
         }
       }
-      now.add(p.seasonStats);
-      total.add(p.seasonStats);
+      now.add(isOpen ? p.shownStats : p.seasonStats);
+      if (!isOpen) total.add(p.seasonStats);
     }
     final rows = switch (_splKind) {
       0 => [for (var i = 1; i <= 25; i++) ('$i', '${pre}c$i')],

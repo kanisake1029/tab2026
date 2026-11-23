@@ -153,6 +153,10 @@ extension CampOps on AppState {
   /// 3軍の日程：2軍の試合がある日に、12球団の総当たり（円の回し方）で6試合を組む。今日より前の日は作らない
   void _buildThirdMatches() {
     final today = DateUtils.dateOnly(currentDate);
+    final openDays = <DateTime>{
+      for (final m in farmMatches)
+        if (m.matchType == 'OPEN') DateUtils.dateOnly(m.date),
+    };
     final days = <DateTime>{
       for (final m in farmMatches)
         if (!AppState.isSpecialType(m.matchType) && m.matchType != 'ALLSTAR') DateUtils.dateOnly(m.date),
@@ -168,11 +172,12 @@ extension CampOps on AppState {
       final r = d % (n - 1);
       // 1番目の球団は動かさず、残りを r だけ回す
       final rot = [ids[0], for (var i = 0; i < n - 1; i++) ids[1 + (i + r) % (n - 1)]];
+      final mType = openDays.contains(days[d]) ? 'OPEN' : 'LEAGUE';
       for (var i = 0; i < n ~/ 2; i++) {
         final a = rot[i], b = rot[n - 1 - i];
         if (a.isEmpty || b.isEmpty) continue;
         final swap = (d + i).isOdd;
-        thirdMatches.add(Match(homeTeamId: swap ? b : a, awayTeamId: swap ? a : b, date: days[d], matchType: 'LEAGUE'));
+        thirdMatches.add(Match(homeTeamId: swap ? b : a, awayTeamId: swap ? a : b, date: days[d], matchType: mType));
       }
     }
   }
