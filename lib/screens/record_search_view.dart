@@ -215,17 +215,28 @@ class _HistoryAwardsViewState extends State<HistoryAwardsView> {
                 ...[
                   Padding(padding: const EdgeInsets.only(top: 10, bottom: 4), child: Text('$y年 ${lg == '両リーグ' ? '両リーグ' : leagueLabel(lg)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14))),
                   for (final e in data[lg]!.entries)
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _line))),
-                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        SizedBox(width: 150, child: Text(e.key, style: const TextStyle(fontSize: 11.5, color: _sub))),
-                        Expanded(
-                          child: Text(e.value.text,
-                              style: TextStyle(fontSize: 12, fontWeight: e.value.playerId != null ? FontWeight.w800 : FontWeight.w400, color: e.value.playerId != null ? const Color(0xFF1D4ED8) : _ink)),
+                    Builder(builder: (_) {
+                      final pid = e.value.playerId;
+                      final p = pid == null
+                          ? null
+                          : [for (final t in widget.app.teams) ...t.players, for (final fa in widget.app.freeAgents) fa.player]
+                              .where((x) => x.id == pid)
+                              .firstOrNull;
+                      return InkWell(
+                        onTap: p == null ? null : () => showPlayerDetail(context, widget.app, p, allowActions: false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _line))),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            SizedBox(width: 150, child: Text(e.key, style: const TextStyle(fontSize: 11.5, color: _sub))),
+                            Expanded(
+                              child: Text(e.value.text,
+                                  style: TextStyle(fontSize: 12, fontWeight: pid != null ? FontWeight.w800 : FontWeight.w400, color: pid != null ? const Color(0xFF1D4ED8) : _ink)),
+                            ),
+                          ]),
                         ),
-                      ]),
-                    ),
+                      );
+                    }),
                 ],
               const Padding(
                 padding: EdgeInsets.only(top: 10),

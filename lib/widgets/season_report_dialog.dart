@@ -3,6 +3,7 @@ import '../engine/growth_engine.dart';
 import '../models/team.dart';
 import '../providers/app_state.dart';
 import '../screens/awards_screen.dart';
+import 'player_detail_dialog.dart' show showPlayerDetail;
 
 /// シーズンが終わったときの年度更新のまとめ（順位・リーグの記録・自球団の成長と衰え）
 Future<void> showSeasonReport(BuildContext context, AppState app, SeasonReport r) {
@@ -18,14 +19,18 @@ Future<void> showSeasonReport(BuildContext context, AppState app, SeasonReport r
   Widget row(GrowthChange c) {
     final top = (c.deltas.entries.toList()..sort((a, b) => b.value.abs().compareTo(a.value.abs()))).take(3);
     final detail = top.map((e) => '${e.key}${e.value > 0 ? '+' : ''}${e.value}').join('　');
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(children: [
-        SizedBox(width: 108, child: Text(c.player.registeredName, style: const TextStyle(fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis)),
-        SizedBox(width: 62, child: Text('${c.ovrBefore}→${c.ovrAfter}', style: TextStyle(fontWeight: FontWeight.w900, color: c.ovrDiff > 0 ? const Color(0xFF15803D) : const Color(0xFFB91C1C)))),
-        SizedBox(width: 50, child: Text(c.reverted ? '${c.phase.label}↺' : c.phase.label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
-        Expanded(child: Text(detail, style: const TextStyle(fontSize: 12, color: Color(0xFF475569)), overflow: TextOverflow.ellipsis)),
-      ]),
+    return InkWell(
+      onTap: () => showPlayerDetail(context, app, c.player, allowActions: false),
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(children: [
+          SizedBox(width: 108, child: Text(c.player.registeredName, style: const TextStyle(fontWeight: FontWeight.w700, decoration: TextDecoration.underline, decorationColor: Color(0xFFCBD5E1)), overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 62, child: Text('${c.ovrBefore}→${c.ovrAfter}', style: TextStyle(fontWeight: FontWeight.w900, color: c.ovrDiff > 0 ? const Color(0xFF15803D) : const Color(0xFFB91C1C)))),
+          SizedBox(width: 50, child: Text(c.reverted ? '${c.phase.label}↺' : c.phase.label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
+          Expanded(child: Text(detail, style: const TextStyle(fontSize: 12, color: Color(0xFF475569)), overflow: TextOverflow.ellipsis)),
+        ]),
+      ),
     );
   }
 

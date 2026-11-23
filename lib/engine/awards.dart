@@ -133,6 +133,23 @@ class AwardsEngine {
     leader('最多セーブ', pitchers, (s) => s.saves, (v) => '$vセーブ');
     leader('最優秀中継ぎ', pitchers, (s) => s.holdPoints, (v) => '${v}HP');
 
+    // ---- タイトル外のシーズン1位記録（＋／－） ----
+    final leaders = <Map<String, dynamic>>[];
+    void statLeader(String title, List<(Player, Team)> pool, num Function(PlayerStats) v, String Function(num) fmt, {bool negative = false}) {
+      final cands = pool.where((e) => v(e.$1.seasonStats) > 0).toList();
+      if (cands.isEmpty) return;
+      final best = cands.map((e) => v(e.$1.seasonStats)).reduce(max);
+      final ws = cands.where((e) => v(e.$1.seasonStats) == best).toList();
+      leaders.add({'title': title, 'winners': [for (final (p, t) in ws) _who(p, t)], 'value': fmt(best), 'negative': negative});
+    }
+    statLeader('最多二塁打', hitters, (s) => s.doubles, (v) => '$v二塁打');
+    statLeader('最多三塁打', hitters, (s) => s.triples, (v) => '$v三塁打');
+    statLeader('最多四球', hitters, (s) => s.walks, (v) => '$v四球');
+    statLeader('最高長打率', qHit, (s) => s.slg, (v) => _rate(v.toDouble()));
+    statLeader('最高OPS', qHit, (s) => s.ops, (v) => _rate(v.toDouble()));
+    statLeader('最多三振', hitters, (s) => s.strikeouts, (v) => '$v三振', negative: true);
+    statLeader('最多登板', pitchers, (s) => s.apps, (v) => '$v登板');
+
     // ---- 点数 ----
     double teamBonus(Team t) => (7 - (ranks[t.id] ?? 6)) * 0.8; // 順位の高い球団ほど人気
     double valueOf(Player p, {String? asPos}) {
@@ -248,6 +265,7 @@ class AwardsEngine {
       'qualifiedPa': qPa,
       'qualifiedIp': qIp,
       'titles': titles,
+      'leaders': leaders,
       'mvp': mvp,
       'rookie': rookie,
       'b9': b9,
@@ -269,7 +287,8 @@ class AwardsEngine {
       final score = s.wins * 1.0 + s.pitcherStrikeouts / 15 + ip / 20 + (3.5 - s.era) * 5 + met * 2;
       if (score > bestScore) {
         bestScore = score;
-        best = {..._who(p, t), 'value': '${s.wins}勝${s.losses}敗 防御率${s.era.toStringAsFixed(2)} ${s.pitcherStrikeouts}奪三振 ${_ipText(s.inningsPitched)}回', 'met': met};
+        final w = _who(p, t);
+        best = {...w, 'winners': [w], 'value': '${s.wins}勝${s.losses}敗 防御率${s.era.toStringAsFixed(2)} ${s.pitcherStrikeouts}奪三振 ${_ipText(s.inningsPitched)}回', 'met': met};
       }
     }
     return best ?? {'none': true};
@@ -298,7 +317,8 @@ class AwardsEngine {
       }
       if (score > bestScore) {
         bestScore = score;
-        best = {..._who(p, t), 'value': value};
+        final w = _who(p, t);
+        best = {...w, 'winners': [w], 'value': value};
       }
     }
     return best ?? {'none': true};

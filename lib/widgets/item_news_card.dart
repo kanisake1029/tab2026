@@ -6,6 +6,7 @@ import '../utils/standings.dart';
 import 'chip_grid.dart';
 import 'game_news_card.dart';
 import 'player_avatar.dart';
+import 'player_detail_dialog.dart' show showPlayerDetail;
 
 const _ink = Color(0xFF0F172A);
 const _sub = Color(0xFF64748B);
@@ -79,7 +80,7 @@ class ItemNewsCard extends StatelessWidget {
         if (n.match != null && n.homeTeam != null && n.awayTeam != null) {
           showGameNews(context, n.match!, n.homeTeam!, n.awayTeam!, teams, myTeamId: myTeamId, app: app);
         } else {
-          showItemNews(context, n, teams, myTeamId: myTeamId, date: date);
+          showItemNews(context, n, teams, myTeamId: myTeamId, date: date, app: app);
         }
       },
       child: Container(
@@ -150,12 +151,12 @@ class ItemNewsCard extends StatelessWidget {
   }
 }
 
-Future<void> showItemNews(BuildContext context, ItemNews n, List<Team> teams, {String? myTeamId, DateTime? date}) => showModalBottomSheet(
+Future<void> showItemNews(BuildContext context, ItemNews n, List<Team> teams, {String? myTeamId, DateTime? date, dynamic app}) => showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: Colors.white,
-      builder: (c) => SizedBox(height: MediaQuery.of(c).size.height * 0.85, child: _ItemArticle(n: n, teams: teams, myTeamId: myTeamId, date: date)),
+      builder: (c) => SizedBox(height: MediaQuery.of(c).size.height * 0.85, child: _ItemArticle(n: n, teams: teams, myTeamId: myTeamId, date: date, app: app)),
     );
 
 class _ItemArticle extends StatefulWidget {
@@ -163,7 +164,8 @@ class _ItemArticle extends StatefulWidget {
   final List<Team> teams;
   final String? myTeamId;
   final DateTime? date;
-  const _ItemArticle({required this.n, required this.teams, this.myTeamId, this.date});
+  final dynamic app;
+  const _ItemArticle({required this.n, required this.teams, this.myTeamId, this.date, this.app});
   @override
   State<_ItemArticle> createState() => _ItemArticleState();
 }
@@ -199,22 +201,27 @@ class _ItemArticleState extends State<_ItemArticle> {
       headlineView(n.headline, size: 19.5, kickerColor: c),
       const SizedBox(height: 10),
       if (n.player != null)
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            gradient: LinearGradient(colors: [n.playerTeam == null ? c.withValues(alpha: 0.2) : teamColor(widget.teams, n.playerTeam!).withValues(alpha: 0.25), Colors.white]),
-          ),
-          child: Row(children: [
-            PlayerAvatar(n.player!, size: 64, date: widget.date),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(n.player!.registeredName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-                Text('${n.playerTeam == null ? '' : '${teamShort(n.playerTeam!)}　'}${n.player!.isPitcher ? '投手' : n.player!.mainPosition}　${n.player!.age}歳', style: const TextStyle(fontSize: 12.5, color: _sub)),
-              ]),
+        InkWell(
+          onTap: widget.app == null ? null : () => showPlayerDetail(context, widget.app, n.player!, allowActions: false),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              gradient: LinearGradient(colors: [n.playerTeam == null ? c.withValues(alpha: 0.2) : teamColor(widget.teams, n.playerTeam!).withValues(alpha: 0.25), Colors.white]),
             ),
-          ]),
+            child: Row(children: [
+              PlayerAvatar(n.player!, size: 64, date: widget.date),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(n.player!.registeredName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+                  Text('${n.playerTeam == null ? '' : '${teamShort(n.playerTeam!)}　'}${n.player!.isPitcher ? '投手' : n.player!.mainPosition}　${n.player!.age}歳', style: const TextStyle(fontSize: 12.5, color: _sub)),
+                ]),
+              ),
+              if (widget.app != null) const Icon(Icons.chevron_right, color: _sub),
+            ]),
+          ),
         )
       else if (n.team != null && n.playerTeam != null && n.team!.id != n.playerTeam!.id)
         Container(

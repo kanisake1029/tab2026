@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/player.dart';
 import '../models/team.dart';
 import '../providers/app_state.dart';
+import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 
 /// 背番号の一括変更：選手ごとに「開幕前日からの背番号」を入れる
 ///  変更・決定は入団時期に関わらず一律で開幕前日に行われる。支配下は 00・0〜99、育成は 100〜999
@@ -78,13 +79,33 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE7E5E4)))),
         child: Row(children: [
-          SizedBox(width: 44, child: Text('#${p.uniformText}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900))),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text(p.listName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
-              Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}$subNote',
-                  style: TextStyle(fontSize: 11, color: subColor)),
-            ]),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => showPlayerDetail(
+                context,
+                app,
+                p,
+                allowActions: widget.team.id == app.myTeamId,
+                onChanged: () {
+                  if (!mounted) return;
+                  setState(() => _ctl[p.id]?.text = uniformLabel(app.numberNextSeason(p)));
+                },
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(children: [
+                  SizedBox(width: 44, child: Text('#${p.uniformText}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900))),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      Text(p.listName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
+                      Text('${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳${p.ikusei ? '　育成' : ''}$subNote',
+                          style: TextStyle(fontSize: 11, color: subColor)),
+                    ]),
+                  ),
+                ]),
+              ),
+            ),
           ),
           const Icon(Icons.arrow_forward, size: 16, color: Color(0xFF78716C)),
           const SizedBox(width: 6),

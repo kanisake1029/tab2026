@@ -29,6 +29,7 @@ import 'camp_screen.dart';
 import 'front_screens.dart';
 import '../utils/news_kind.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 
 /// ホーム（ダッシュボード）
 ///  今日の試合（対戦・予告先発・今季対戦成績・試合開始）／順位（公式戦・交流戦・オープン戦、両リーグ）
@@ -497,14 +498,20 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(d.title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFB45309))),
             if (list.isEmpty) const Text('該当者なし', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
             for (var k = 0; k < list.length; k++)
-              Row(children: [
-                SizedBox(width: 14, child: Text('${k + 1}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
-                Expanded(
-                  child: Text('${list[k].$1.listName}（${list[k].$2.initialName.isNotEmpty ? list[k].$2.initialName : teamShort(list[k].$2)}）',
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: list[k].$2.id == my.id ? FontWeight.w800 : FontWeight.w500)),
+              InkWell(
+                onTap: () => showPlayerDetail(context, app, list[k].$1, allowActions: list[k].$2.id == my.id),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Row(children: [
+                    SizedBox(width: 14, child: Text('${k + 1}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
+                    Expanded(
+                      child: Text('${list[k].$1.listName}（${list[k].$2.initialName.isNotEmpty ? list[k].$2.initialName : teamShort(list[k].$2)}）',
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: list[k].$2.id == my.id ? FontWeight.w800 : FontWeight.w500)),
+                    ),
+                    Text(d.fmt(list[k].$3), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])),
+                  ]),
                 ),
-                Text(d.fmt(list[k].$3), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])),
-              ]),
+              ),
           ]),
         ),
       );
@@ -674,7 +681,13 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 8),
         Text(injured.isEmpty ? '離脱・故障者なし' : '故障者 ${injured.length}人', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: injured.isEmpty ? const Color(0xFF16A34A) : const Color(0xFFDC2626))),
         for (final p in injured.take(4))
-          Text('・${p.listName}　${p.injuryName} 残り${p.injuryDays}日${p.injurySeverity == 1 ? '（強行出場可）' : ''}', style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
+          InkWell(
+            onTap: () => showPlayerDetail(context, app, p),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 1.5),
+              child: Text('・${p.listName}　${p.injuryName} 残り${p.injuryDays}日${p.injurySeverity == 1 ? '（強行出場可）' : ''}', style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
+            ),
+          ),
       ]),
     );
   }

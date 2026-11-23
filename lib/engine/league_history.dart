@@ -16,6 +16,12 @@ class LeagueHistory {
     ('最優秀防御率', true), ('最多勝利', true), ('最多奪三振', true), ('最多セーブ', true), ('最優秀中継ぎ', true),
   ];
 
+  /// タイトルではないが選手の表彰タブに表示するシーズン1位記録（＋／－）
+  static const extraLeaders = <(String, bool)>[
+    ('最多二塁打', false), ('最多三塁打', false), ('最多四球', false), ('最高長打率', false), ('最高OPS', false),
+    ('最多三振', false), ('最多登板', true),
+  ];
+
   /// 架空の受賞者の成績（年・リーグごとに毎回同じ値）
   static num _fakeValue(String title, Random r) {
     double u(double a, double b) => a + r.nextDouble() * (b - a);
@@ -30,6 +36,13 @@ class LeagueHistory {
       '最多奪三振' => u(158, 225).round(),
       '最多セーブ' => u(30, 44).round(),
       '最優秀中継ぎ' => u(34, 48).round(),
+      '最多二塁打' => u(32, 44).round(),
+      '最多三塁打' => u(6, 11).round(),
+      '最多四球' => u(70, 96).round(),
+      '最高長打率' => u(0.515, 0.615),
+      '最高OPS' => u(0.900, 1.030),
+      '最多三振' => u(135, 172).round(),
+      '最多登板' => u(58, 70).round(),
       _ => 0,
     };
   }
@@ -46,6 +59,13 @@ class LeagueHistory {
         '最多奪三振' => s.pitcherStrikeouts,
         '最多セーブ' => s.saves,
         '最優秀中継ぎ' => s.holdPoints,
+        '最多二塁打' => s.doubles,
+        '最多三塁打' => s.triples,
+        '最多四球' => s.walks,
+        '最高長打率' => s.plateAppearances >= 443 ? s.slg : null,
+        '最高OPS' => s.plateAppearances >= 443 ? s.ops : null,
+        '最多三振' => s.strikeouts,
+        '最多登板' => s.apps,
         _ => null,
       };
 
@@ -125,6 +145,26 @@ class LeagueHistory {
             award(title, best.$1, best.$2, _shown(title, bv));
           } else {
             award(title, null, null, "$fakeWho　${_shown(title, cmpF)}");
+          }
+        }
+
+        // タイトル外のシーズン1位記録（二塁打・三塁打・四球・長打率・OPS・三振・最多登板）：選手の表彰タブ用
+        for (final (label, isPit) in extraLeaders) {
+          if (realHonors.any((h) => h.startsWith('$year年') && h.contains(label))) continue;
+          final fv = _fakeValue(label, r);
+          (Player, PreYear)? best;
+          num? bv;
+          for (final c in cands) {
+            if (c.$1.isPitcher != isPit) continue;
+            final v = _value(label, c.$2.stats);
+            if (v == null || v <= 0) continue;
+            if (bv == null || v > bv) {
+              bv = v;
+              best = c;
+            }
+          }
+          if (best != null && bv! > fv) {
+            best.$2.honors.add('$year年 $label');
           }
         }
 

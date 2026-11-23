@@ -73,6 +73,50 @@ extension RepairOps on AppState {
       for (final t in teams) for (final p in t.players) (p, t.id),
       for (final fa in freeAgents) (fa.player, fa.fromTeamId),
     ];
+    final byId = {for (final (p, _) in players) p.id: p};
+    final leagueOf = {for (final t in teams) t.id: t.league};
+    // すでに終了したシーズンのタイトル外1位記録（二塁打・三塁打・四球・長打率・OPS・三振・最多登板）を既存セーブにも補完
+    final seasonPool = <String, List<(Player, PlayerStats)>>{};
+    for (final r in rows) {
+      final p = byId[r.refId];
+      final lg = leagueOf[r.teamId];
+      if (p == null || (lg != 'CL' && lg != 'PL')) continue;
+      final j = jsonDecode(r.json) as Map<String, dynamic>;
+      final st = PlayerStats();
+      if (j['stats'] is Map) st.add(PlayerStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map)));
+      final sp = j['splits'];
+      if (sp is List) {
+        for (final x in sp) {
+          if (x is Map && x['stats'] is Map) st.add(PlayerStats.fromJson(Map<String, dynamic>.from(x['stats'] as Map)));
+        }
+      }
+      seasonPool.putIfAbsent('${r.season}|$lg', () => []).add((p, st));
+    }
+    for (final e in seasonPool.entries) {
+      final season = int.parse(e.key.split('|').first);
+      final list = e.value;
+      final maxG = list.map((x) => x.$2.games).fold<int>(143, max);
+      final qPa = (maxG * 3.1).floor();
+      final hit = list.where((x) => !x.$1.isPitcher && x.$2.plateAppearances > 0).toList();
+      final qHit = hit.where((x) => x.$2.plateAppearances >= qPa).toList();
+      final pit = list.where((x) => x.$1.isPitcher && x.$2.apps > 0).toList();
+      void backfill(String label, List<(Player, PlayerStats)> pool, num Function(PlayerStats) f) {
+        if (pool.isEmpty) return;
+        if (list.any((x) => x.$1.honors.any((h) => h.startsWith('$season年') && h.contains(label)))) return;
+        final best = pool.map((x) => f(x.$2)).reduce(max);
+        if (best <= 0) return;
+        for (final (p, st) in pool) {
+          if (f(st) == best) p.honors.add('$season年 $label');
+        }
+      }
+      backfill('最多二塁打', hit, (s) => s.doubles);
+      backfill('最多三塁打', hit, (s) => s.triples);
+      backfill('最多四球', hit, (s) => s.walks);
+      backfill('最高長打率', qHit, (s) => s.slg);
+      backfill('最高OPS', qHit, (s) => s.ops);
+      backfill('最多三振', hit, (s) => s.strikeouts);
+      backfill('最多登板', pit, (s) => s.apps);
+    }
     final out = <String, List<PreYear>>{};
     for (final (p, tid) in players) {
       final pre = PlayerStats()..add(p.career);
@@ -87,7 +131,6 @@ extension RepairOps on AppState {
       if (ys.isNotEmpty) out[p.id] = ys;
     }
     final real = <String>{for (final (p, _) in players) ...p.honors};
-    final leagueOf = {for (final t in teams) t.id: t.league};
     final teamsOf = <String, List<String>>{};
     for (final t in teams) {
       if (t.league == 'CL' || t.league == 'PL') teamsOf.putIfAbsent(t.league, () => []).add(t.shortName.isNotEmpty ? t.shortName : t.name);

@@ -6,6 +6,7 @@ import '../models/player.dart';
 import '../models/team.dart';
 import '../providers/app_state.dart';
 import '../utils/salary_utils.dart';
+import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 import '../widgets/player_row.dart';
 
 /// 監督室の「キャンプ」タブ：春季（1月・最大50人）・秋季（11月・最大30人）のメンバーと、選手ごとの練習メニュー
@@ -124,6 +125,7 @@ class _CampTabState extends State<CampTab> {
               sub: '${p.age}歳　${GrowthEngine.phaseOf(p).label}　練習：${_menuLabel(p)}',
               selected: _list.contains(p.id),
               onTap: () => _practice(p),
+              onDoubleTap: () => showPlayerDetail(context, app, p, onChanged: _changed),
               trailing: Checkbox(
                 value: _list.contains(p.id),
                 visualDensity: VisualDensity.compact,
@@ -136,7 +138,7 @@ class _CampTabState extends State<CampTab> {
             ),
           const Padding(
             padding: EdgeInsets.all(12),
-            child: Text('行をタップすると練習メニューを変えられます。チェックでキャンプのメンバーに入れます。', style: TextStyle(fontSize: 11.5, color: PlayerRow.subColor)),
+            child: Text('行をタップすると練習メニューを変えられます。ダブルタップで選手詳細を開きます。チェックでキャンプのメンバーに入れます。', style: TextStyle(fontSize: 11.5, color: PlayerRow.subColor)),
           ),
         ]),
       ),

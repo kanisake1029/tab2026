@@ -87,6 +87,8 @@ class PreCareer {
   static const _titles = <(String, bool)>[
     ('首位打者', false), ('本塁打王', false), ('打点王', false), ('盗塁王', false), ('最多安打', false),
     ('最優秀防御率', true), ('最多勝利', true), ('最多奪三振', true), ('最多セーブ', true), ('最優秀中継ぎ', true),
+    ('最多二塁打', false), ('最多三塁打', false), ('最多四球', false), ('最高長打率', false), ('最高OPS', false), ('最多三振', false),
+    ('最多登板', true),
   ];
 
   static num? _titleValue(String title, PlayerStats s) => switch (title) {
@@ -100,6 +102,13 @@ class PreCareer {
         '最多奪三振' => s.pitcherStrikeouts >= 100 ? s.pitcherStrikeouts : null,
         '最多セーブ' => s.saves >= 10 ? s.saves : null,
         '最優秀中継ぎ' => s.holdPoints >= 15 ? s.holdPoints : null,
+        '最多二塁打' => s.doubles >= 25 ? s.doubles : null,
+        '最多三塁打' => s.triples >= 5 ? s.triples : null,
+        '最多四球' => s.walks >= 55 ? s.walks : null,
+        '最高長打率' => s.atBats + s.walks + s.hbp + s.sacFlies >= 400 ? s.slg : null,
+        '最高OPS' => s.atBats + s.walks + s.hbp + s.sacFlies >= 400 ? s.ops : null,
+        '最多三振' => s.strikeouts >= 110 ? s.strikeouts : null,
+        '最多登板' => s.apps >= 50 ? s.apps : null,
         _ => null,
       };
 

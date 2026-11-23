@@ -136,8 +136,7 @@ class _ScoutReportState extends State<ScoutReport> {
         child: Row(children: [
           Container(width: 3, height: 13, color: _ink),
           const SizedBox(width: 5),
-          Text(s, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: _ink)),
-          const Spacer(),
+          Expanded(child: Text(s, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: _ink))),
           if (trailing != null) trailing,
         ]),
       );
@@ -489,8 +488,7 @@ class _ScoutReportState extends State<ScoutReport> {
     final rightFirst = p.isPitcher ? !_rightField : _rightField;
     final left = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Text(_leftBat ? '打撃' : '投球', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900)),
-        const Spacer(),
+        Expanded(child: Text(_leftBat ? '打撃' : '投球', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900))),
         p.isPitcher
             ? _switch('投球', '打撃', leftFirst, (v) => _leftBat = !v)
             : _switch('打撃', '投球', leftFirst, (v) => _leftBat = v),
@@ -500,7 +498,7 @@ class _ScoutReportState extends State<ScoutReport> {
     ]);
     final right = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Text(_rightField ? '守備・走塁' : '球種', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900)),
+        Flexible(child: Text(_rightField ? '守備・走塁' : '球種', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900))),
         if (!_rightField)
           InkWell(
             onTap: () => showPitchCatalog(context),
@@ -848,7 +846,12 @@ class _ScoutReportState extends State<ScoutReport> {
 
 
   // ---------------- 表彰・タイトル・記録 ----------------
-  static bool _isRecord(String h) => h.contains('達成') || h.contains('プロ初');
+  static const _posLeaderKeys = ['最多二塁打', '最多三塁打', '最多四球', '最高長打率', '最高OPS', '最多登板'];
+  static const _negLeaderKeys = ['最多三振'];
+  static bool _isPosLeader(String h) => _posLeaderKeys.any((k) => h.contains(k));
+  static bool _isNegLeader(String h) => _negLeaderKeys.any((k) => h.contains(k));
+  static bool _isLeaderRecord(String h) => _isPosLeader(h) || _isNegLeader(h);
+  static bool _isRecord(String h) => h.contains('達成') || h.contains('プロ初') || _isLeaderRecord(h);
   List<String> get _titles => [for (final h in p.honors) if (!_isRecord(h)) h];
 
   /// 入団の経緯。記録が無い選手は、プロ年数・出身から推定（ゲーム開始時の球団に入団したとする）
@@ -931,23 +934,42 @@ class _ScoutReportState extends State<ScoutReport> {
       if (h.contains('保持者') || h.contains('NPB記録') || h.contains('日本記録') || h.contains('歴代1位') || h.contains('シーズン最多')) {
         return ('現1位記録', const Color(0xFFFFE4E6), const Color(0xFFFB7185), const Color(0xFF9F1239));
       }
+      if (_isNegLeader(h)) {
+        return ('記録(－)', const Color(0xFFE2E8F0), const Color(0xFF94A3B8), const Color(0xFF334155));
+      }
+      if (_isPosLeader(h)) {
+        return ('記録(＋)', const Color(0xFFCCFBF1), const Color(0xFF2DD4BF), const Color(0xFF0F766E));
+      }
       if (h.contains('連続')) {
         return ('連続記録', const Color(0xFFDCFCE7), const Color(0xFF4ADE80), const Color(0xFF166534));
       }
-      if (h.contains('ベストナイン') || h.contains('ゴールデングラブ') || h.contains('月間MVP')) {
+      if (h.contains('ベストナイン') || h.contains('ゴールデングラブ') || h.contains('月間MVP') || h.contains('新人王') || h.contains('カムバック賞')) {
         return ('表彰', const Color(0xFFF3E8FF), const Color(0xFFC084FC), const Color(0xFF6B21A8));
       }
-      if (_isRecord(h) || h.contains('通算') || h.contains('達成') || h.contains('ノーヒット') || h.contains('完全試合')) {
+      if (h.contains('通算') || h.contains('達成') || h.contains('プロ初') || h.contains('ノーヒット') || h.contains('完全試合') || h.contains('サイクル安打')) {
         return ('通算記録', const Color(0xFFDBEAFE), const Color(0xFF60A5FA), const Color(0xFF1E40AF));
       }
       return ('タイトル', const Color(0xFFFEF3C7), const Color(0xFFF59E0B), const Color(0xFF92400E));
     }
 
-    Widget honorRow(String yearText, String h, {bool est = false}) {
+    String enrichLeaderText(String raw, PlayerStats st) {
+      if (raw.contains('（')) return raw;
+      if (raw.contains('最多二塁打') && st.doubles > 0) return '$raw（${st.doubles}二塁打）';
+      if (raw.contains('最多三塁打') && st.triples > 0) return '$raw（${st.triples}三塁打）';
+      if (raw.contains('最多四球') && st.walks > 0) return '$raw（${st.walks}四球）';
+      if (raw.contains('最高長打率') && st.atBats > 0) return '$raw（${st.slg.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '')}）';
+      if (raw.contains('最高OPS') && st.plateAppearances > 0) return '$raw（${st.ops.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '')}）';
+      if (raw.contains('最多三振') && st.strikeouts > 0) return '$raw（${st.strikeouts}三振）';
+      if (raw.contains('最多登板') && st.apps > 0) return '$raw（${st.apps}登板）';
+      return raw;
+    }
+
+    Widget honorRow(String yearText, String h, PlayerStats st, {bool est = false}) {
       final (cat, bg, border, fg) = honorStyle(h);
       final dm = RegExp(r'^(\d{4})年(?:(\d+)月(\d+)日)?\s*(.*)$').firstMatch(h);
       final dateLabel = dm != null && dm.group(2) != null ? '${dm.group(1)}/${dm.group(2)}/${dm.group(3)}' : yearText;
-      final text = (dm != null ? dm.group(4)! : h) + (est ? '（推定）' : '');
+      final body = enrichLeaderText(dm != null ? dm.group(4)! : h, st);
+      final text = body + (est ? '（推定）' : '');
       return Container(
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1036,17 +1058,23 @@ class _ScoutReportState extends State<ScoutReport> {
           final m2 = RegExp(r'\d{4}年(\d+)').firstMatch(h);
           return m2 != null ? (int.parse(m2.group(1)!), 1) : (11, 30);
         }
-        final chronologicalHonors = <(int, int, int, String, String, bool)>[
+        final chronologicalHonors = <(int, int, int, String, String, PlayerStats, bool)>[
           for (final r in rows)
             for (final h in r.$4)
-              (int.tryParse(r.$1.replaceAll(RegExp(r'[^0-9]'), '')) ?? 9999, honorMd(h).$1, honorMd(h).$2, r.$1, h, r.$5),
+              (int.tryParse(r.$1.replaceAll(RegExp(r'[^0-9]'), '')) ?? 9999, honorMd(h).$1, honorMd(h).$2, r.$1, h, r.$3, r.$5),
         ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : (a.$2 != b.$2 ? a.$2.compareTo(b.$2) : a.$3.compareTo(b.$3)));
         final honorsView = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (_titles.isNotEmpty || estTitles.isNotEmpty) ...[
+            _honorsSection(estTitles),
+            const SizedBox(height: 8),
+          ],
           _title('表彰・記録（時系列）'),
           Wrap(spacing: 6, runSpacing: 4, children: [
             for (final b in const [
               ('タイトル', Color(0xFFFEF3C7), Color(0xFFF59E0B), Color(0xFF92400E)),
               ('表彰', Color(0xFFF3E8FF), Color(0xFFC084FC), Color(0xFF6B21A8)),
+              ('記録(＋)', Color(0xFFCCFBF1), Color(0xFF2DD4BF), Color(0xFF0F766E)),
+              ('記録(－)', Color(0xFFE2E8F0), Color(0xFF94A3B8), Color(0xFF334155)),
               ('連続記録', Color(0xFFDCFCE7), Color(0xFF4ADE80), Color(0xFF166534)),
               ('通算記録', Color(0xFFDBEAFE), Color(0xFF60A5FA), Color(0xFF1E40AF)),
               ('現1位記録', Color(0xFFFFE4E6), Color(0xFFFB7185), Color(0xFF9F1239)),
@@ -1061,7 +1089,7 @@ class _ScoutReportState extends State<ScoutReport> {
           if (chronologicalHonors.isEmpty)
             const Text('表彰・記録はまだありません', style: TextStyle(fontSize: 11.5, color: _sub))
           else
-            for (final it in chronologicalHonors) honorRow(it.$4, it.$5, est: it.$6),
+            for (final it in chronologicalHonors) honorRow(it.$4, it.$5, it.$6, est: it.$7),
         ]);
         final timelineView = FutureBuilder<List<(DateTime, String)>>(
           future: _timeline,
@@ -1074,6 +1102,7 @@ class _ScoutReportState extends State<ScoutReport> {
             }
             for (final y in pre) {
               for (final h in y.honors) {
+                if (_isLeaderRecord(h)) continue;
                 l.add((DateTime(y.year, 12, 31, 23, 59), '${h.replaceFirst(RegExp(r'^\d{4}年 ?'), '')}（推定）。'));
               }
             }

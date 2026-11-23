@@ -1743,48 +1743,64 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               Expanded(
                 child: filtered.isEmpty
                     ? const Center(child: Text('条件に合う記録はありません', style: TextStyle(color: _sub)))
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) {
-                          final r = filtered[i];
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: i.isOdd ? const Color(0xFFF8FAFC) : Colors.white,
-                              border: const Border(bottom: BorderSide(color: _line)),
-                            ),
-                            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              SizedBox(
-                                width: 46,
-                                child: Text(r.md, style: const TextStyle(fontSize: 11.5, color: _sub, fontFeatures: [FontFeature.tabularFigures()])),
-                              ),
-                              SizedBox(
-                                width: 60,
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                    decoration: BoxDecoration(color: r.kindColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-                                    child: Text(r.kind, maxLines: 1, overflow: TextOverflow.clip, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: r.kindColor)),
-                                  ),
+                    : Builder(builder: (_) {
+                        final allPlayers = <Player>[
+                          for (final t in app.teams) ...t.players,
+                          for (final fa in app.freeAgents) fa.player,
+                        ]..sort((a, b) => b.registeredName.length.compareTo(a.registeredName.length));
+                        Player? matchPlayer(String detail) {
+                          for (final p in allPlayers) {
+                            if (p.registeredName.isNotEmpty && detail.contains(p.registeredName)) return p;
+                          }
+                          return null;
+                        }
+                        return ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 24),
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final r = filtered[i];
+                            final matched = matchPlayer(r.detail);
+                            return InkWell(
+                              onTap: matched == null ? null : () => showPlayerDetail(context, app, matched, allowActions: false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: i.isOdd ? const Color(0xFFF8FAFC) : Colors.white,
+                                  border: const Border(bottom: BorderSide(color: _line)),
                                 ),
-                              ),
-                              SizedBox(
-                                width: 66,
-                                child: Row(children: [
-                                  if (r.primaryTeam != null) ...[
-                                    Container(width: 3, height: 12, color: teamColor(app.teams, r.primaryTeam!)),
-                                    const SizedBox(width: 4),
-                                  ],
-                                  Expanded(child: Text(r.teamLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _ink))),
+                                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  SizedBox(
+                                    width: 46,
+                                    child: Text(r.md, style: const TextStyle(fontSize: 11.5, color: _sub, fontFeatures: [FontFeature.tabularFigures()])),
+                                  ),
+                                  SizedBox(
+                                    width: 60,
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(color: r.kindColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
+                                        child: Text(r.kind, maxLines: 1, overflow: TextOverflow.clip, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: r.kindColor)),
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 66,
+                                    child: Row(children: [
+                                      if (r.primaryTeam != null) ...[
+                                        Container(width: 3, height: 12, color: teamColor(app.teams, r.primaryTeam!)),
+                                        const SizedBox(width: 4),
+                                      ],
+                                      Expanded(child: Text(r.teamLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _ink))),
+                                    ]),
+                                  ),
+                                  Expanded(child: Text(r.detail, style: const TextStyle(fontSize: 12, height: 1.4, color: _ink))),
                                 ]),
                               ),
-                              Expanded(child: Text(r.detail, style: const TextStyle(fontSize: 12, height: 1.4, color: _ink))),
-                            ]),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        );
+                      }),
               ),
             ]),
     );

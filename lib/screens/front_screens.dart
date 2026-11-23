@@ -7,6 +7,7 @@ import '../models/equipment.dart';
 import '../models/stadium.dart';
 import '../models/team.dart';
 import '../providers/app_state.dart';
+import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 
 const _ink = Color(0xFF1C1917);
 const _sub = Color(0xFF78716C);
@@ -251,7 +252,10 @@ class ProposalList extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('${c['date']}　${c['coach']}${byId[c['player']] == null ? '' : '　→ ${byId[c['player']]!.registeredName}'}', style: const TextStyle(fontSize: 11.5, color: _sub)),
+              InkWell(
+                onTap: byId[c['player']] == null ? null : () => showPlayerDetail(context, app, byId[c['player']]!),
+                child: Text('${c['date']}　${c['coach']}${byId[c['player']] == null ? '' : '　→ ${byId[c['player']]!.registeredName}'}', style: const TextStyle(fontSize: 11.5, color: _sub)),
+              ),
               Text('${c['text']}', style: const TextStyle(fontSize: 13, height: 1.5)),
               Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                 TextButton(

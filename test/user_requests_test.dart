@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:npb_pennant_app/db/app_database.dart';
+import 'package:npb_pennant_app/engine/awards.dart';
 import 'package:npb_pennant_app/engine/batting_splits.dart';
 import 'package:npb_pennant_app/engine/career_path.dart';
 import 'package:npb_pennant_app/engine/condition_engine.dart';
@@ -19,6 +20,8 @@ import 'package:npb_pennant_app/models/team.dart';
 import 'package:npb_pennant_app/utils/schedule_generator.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
+import 'package:npb_pennant_app/screens/awards_screen.dart';
+import 'package:npb_pennant_app/screens/number_board_screen.dart';
 import 'package:npb_pennant_app/screens/office_screen.dart';
 import 'package:npb_pennant_app/screens/order_tabs/lineup_tab.dart';
 import 'package:npb_pennant_app/screens/order_tabs/pitcher_tab.dart';
@@ -946,5 +949,121 @@ void main() {
         expect(growthText.style?.fontSize, 12);
       }
     }
+  });
+
+  testWidgets('背番号変更画面で選手名をタップすると選手詳細が開き、表彰画面の沢村賞が崩れず、表彰タブに三振(－)や二塁打・OPS・最多登板(＋)が表示される', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    final sortedOnBoard = my.players.toList()
+      ..sort((a, b) => a.ikusei != b.ikusei ? (a.ikusei ? 1 : -1) : uniformSortKey(a.uniformNumber).compareTo(uniformSortKey(b.uniformNumber)));
+    final topPlayer = sortedOnBoard.first;
+    final batter = my.players.firstWhere((p) => !p.isPitcher && !p.ikusei);
+    final pitcher = my.players.firstWhere((p) => p.isPitcher && !p.ikusei);
+
+    // 1. 背番号変更画面から選手名をタップすると PlayerDetailDialog が開く
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(MaterialApp(
+      home: NumberBoardScreen(app: app, team: my),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text(topPlayer.listName), findsOneWidget);
+    await tester.tap(find.text(topPlayer.listName));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlayerDetailDialog), findsOneWidget);
+    await tester.tap(find.byTooltip('閉じる'));
+    await tester.pumpAndSettle();
+
+    // 2. タイトル外シーズン1位記録（三振(－)・二塁打・三塁打・四球・長打率・OPS・最多登板(＋)）と沢村賞の集計・表示確認
+    batter.seasonStats
+      ..games = 143
+      ..atBats = 500
+      ..hits = 175
+      ..doubles = 45
+      ..triples = 12
+      ..homeRuns = 38
+      ..walks = 95
+      ..strikeouts = 165
+      ..rbi = 110;
+    pitcher.seasonStats
+      ..games = 70
+      ..pitchApps = 70
+      ..starts = 26
+      ..inningsPitched = 195 * 3
+      ..wins = 18
+      ..losses = 4
+      ..earnedRuns = 38
+      ..pitcherStrikeouts = 220;
+
+    final aw = AwardsEngine.compute(year: 2026, teams: app.teams, matches: app.matches, championId: my.id);
+    final saw = aw['sawamura'] as Map<String, dynamic>;
+    expect(saw['id'], pitcher.id);
+    expect(saw['winners'], isA<List>());
+    final lgAw = (aw['leagues'] as Map)[my.league] as Map<String, dynamic>;
+    final leaders = (lgAw['leaders'] as List).cast<Map<String, dynamic>>();
+    final leaderTitles = leaders.map((e) => e['title'] as String).toSet();
+    expect(leaderTitles, containsAll(['最多二塁打', '最多三塁打', '最多四球', '最高長打率', '最高OPS', '最多三振', '最多登板']));
+
+    // 選手に各記録を付与して選手詳細の「経歴 → 表彰」タブを確認
+    batter.honors.addAll([
+      '2026年11月1日 最多二塁打',
+      '2026年11月1日 最多三塁打',
+      '2026年11月1日 最多四球',
+      '2026年11月1日 最高長打率',
+      '2026年11月1日 最高OPS',
+      '2026年11月1日 最多三振',
+    ]);
+    pitcher.honors.addAll([
+      '2026年11月1日 沢村賞',
+      '2026年11月1日 最多登板',
+    ]);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: PlayerDetailDialog(player: batter, appState: app, team: my, isReadOnly: true),
+      ),
+    ));
+    await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('経歴').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('表彰').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('記録(＋)'), findsWidgets);
+    expect(find.text('記録(－)'), findsWidgets);
+    expect(find.textContaining('最多二塁打（45二塁打）'), findsOneWidget);
+    expect(find.textContaining('最多三塁打（12三塁打）'), findsOneWidget);
+    expect(find.textContaining('最多四球（95四球）'), findsOneWidget);
+    expect(find.textContaining('最高長打率（'), findsOneWidget);
+    expect(find.textContaining('最高OPS（'), findsOneWidget);
+    expect(find.textContaining('最多三振（165三振）'), findsOneWidget);
+
+    // 3. AwardsScreen（タイトル発表画面）で沢村賞が360px幅でも崩れず、選手名タップで詳細が開く
+    await tester.runAsync(() async {
+      await app.db.setKv('awards_2026', '{"year":2026,"champion":"${my.id}","sawamura":{"id":"${pitcher.id}","name":"${pitcher.registeredName}","team":"${my.id}","teamName":"${my.shortName}","value":"18勝4敗 防御率1.75 220奪三振 195回","met":6},"leagues":{}}');
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: AwardsScreen(appState: app, year: 2026),
+    ));
+    await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('沢村賞'), findsOneWidget);
+    expect(find.text('基準6項目達成'), findsOneWidget);
+    expect(find.textContaining('18勝4敗 防御率1.75 220奪三振 195回'), findsOneWidget);
+
+    await tester.tap(find.text('${pitcher.registeredName}（${my.shortName}）'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlayerDetailDialog), findsOneWidget);
   });
 }

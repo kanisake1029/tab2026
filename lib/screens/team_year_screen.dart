@@ -3,6 +3,7 @@ import '../models/player.dart';
 import '../providers/app_state.dart';
 import '../utils/standings.dart';
 import '../widgets/frozen_table.dart';
+import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 
 const _ink = Color(0xFF1C1917);
 const _sub = Color(0xFF78716C);
@@ -268,19 +269,51 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
     return t == null ? '${r['name']}' : teamShort(t);
   }
 
+  Player? _findPlayer({String? id, String? name}) {
+    final all = <Player>[for (final t in app.teams) ...t.players, for (final fa in app.freeAgents) fa.player];
+    if (id != null && id.isNotEmpty) {
+      final p = all.where((x) => x.id == id).firstOrNull;
+      if (p != null) return p;
+    }
+    if (name != null && name.isNotEmpty) {
+      final clean = name.split('（').first.trim();
+      return all.where((x) => x.registeredName == clean || x.listName == clean).firstOrNull;
+    }
+    return null;
+  }
+
   List<Widget> _titles(Map<String, dynamic> aw) {
     String who(dynamic winners) {
-      if (winners is! List || winners.isEmpty) return '該当者なし';
-      return winners.map((w) => w is Map ? '${w['name']}（${w['teamName'] ?? ''}）' : '$w').join('・');
+      if (winners is List && winners.isNotEmpty) {
+        return winners.map((w) => w is Map ? '${w['name']}（${w['teamName'] ?? ''}）' : '$w').join('・');
+      }
+      if (winners is Map && winners['none'] != true && winners['name'] != null) {
+        return '${winners['name']}（${winners['teamName'] ?? ''}）';
+      }
+      return '該当者なし';
     }
 
-    Widget line(String label, String text, {String value = ''}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 1.5),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(width: 108, child: Text(label, style: const TextStyle(fontSize: 12, color: _sub))),
-            Expanded(child: Text('$text${value.isEmpty ? '' : '　$value'}', style: const TextStyle(fontSize: 12.5))),
-          ]),
-        );
+    Player? firstWinner(dynamic winners) {
+      if (winners is List && winners.isNotEmpty && winners.first is Map) {
+        final w = winners.first as Map;
+        return _findPlayer(id: '${w['id'] ?? ''}', name: '${w['name'] ?? ''}');
+      }
+      if (winners is Map && winners['none'] != true) {
+        return _findPlayer(id: '${winners['id'] ?? ''}', name: '${winners['name'] ?? ''}');
+      }
+      return null;
+    }
+
+    Widget line(String label, String text, {String value = '', Player? player}) {
+      final row = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1.5),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(width: 108, child: Text(label, style: const TextStyle(fontSize: 12, color: _sub))),
+          Expanded(child: Text('$text${value.isEmpty ? '' : '　$value'}', style: TextStyle(fontSize: 12.5, decoration: player != null ? TextDecoration.underline : null, decorationColor: const Color(0xFFCBD5E1)))),
+        ]),
+      );
+      return player == null ? row : InkWell(onTap: () => showPlayerDetail(context, app, player, allowActions: false), child: row);
+    }
 
     final out = <Widget>[];
     if (aw['champion'] != null) {
@@ -290,7 +323,7 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
     for (final s in (aw['series'] as List? ?? const [])) {
       if (s is! Map || '${s['winner']}'.isEmpty) continue;
       final w = app.teamById('${s['winner']}');
-      out.add(line('${s['label']}', '${w == null ? s['winner'] : teamShort(w)} 勝ち抜け（${s['score'] ?? ''}）${'${s['mvp'] ?? ''}'.isNotEmpty ? '　MVP ${s['mvp']}' : ''}'));
+      out.add(line('${s['label']}', '${w == null ? s['winner'] : teamShort(w)} 勝ち抜け（${s['score'] ?? ''}）${'${s['mvp'] ?? ''}'.isNotEmpty ? '　MVP ${s['mvp']}' : ''}', player: _findPlayer(name: '${s['mvp'] ?? ''}')));
     }
     final lgs = aw['leagues'];
     if (lgs is Map) {
@@ -298,21 +331,21 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
         final L = e.value;
         if (L is! Map) continue;
         out.add(Padding(padding: const EdgeInsets.only(top: 8, bottom: 2), child: Text(leagueLabel('${e.key}'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5))));
-        if (L['mvp'] is Map) out.add(line('MVP', who(L['mvp']['winners'])));
-        if (L['rookie'] is Map) out.add(line('新人王', who(L['rookie']['winners'])));
+        if (L['mvp'] is Map) out.add(line('MVP', who(L['mvp']['winners']), player: firstWinner(L['mvp']['winners'])));
+        if (L['rookie'] is Map) out.add(line('新人王', who(L['rookie']['winners']), player: firstWinner(L['rookie']['winners'])));
         for (final t in (L['titles'] as List? ?? const [])) {
-          if (t is Map) out.add(line('${t['title']}', who(t['winners']), value: '${t['value'] ?? ''}'));
+          if (t is Map) out.add(line('${t['title']}', who(t['winners']), value: '${t['value'] ?? ''}', player: firstWinner(t['winners'])));
         }
         for (final b in (L['b9'] as List? ?? const [])) {
-          if (b is Map) out.add(line('ベストナイン（${b['pos']}）', who(b['winners'])));
+          if (b is Map) out.add(line('ベストナイン（${b['pos']}）', who(b['winners']), player: firstWinner(b['winners'])));
         }
         for (final g in (L['gg'] as List? ?? const [])) {
-          if (g is Map) out.add(line('ゴールデングラブ（${g['pos']}）', who(g['winners'])));
+          if (g is Map) out.add(line('ゴールデングラブ（${g['pos']}）', who(g['winners']), player: firstWinner(g['winners'])));
         }
       }
     }
-    if (aw['sawamura'] is Map) out.add(line('沢村賞', who(aw['sawamura']['winners'])));
-    if (aw['comeback'] is Map && aw['comeback']['winners'] is List) out.add(line('カムバック賞', who(aw['comeback']['winners'])));
+    if (aw['sawamura'] is Map) out.add(line('沢村賞', who(aw['sawamura']['winners'] ?? aw['sawamura']), value: '${aw['sawamura']['value'] ?? ''}', player: firstWinner(aw['sawamura']['winners'] ?? aw['sawamura'])));
+    if (aw['comeback'] is Map && aw['comeback']['none'] != true) out.add(line('カムバック賞', who(aw['comeback']['winners'] ?? aw['comeback']), value: '${aw['comeback']['value'] ?? ''}', player: firstWinner(aw['comeback']['winners'] ?? aw['comeback'])));
     return out;
   }
 
@@ -362,16 +395,23 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
     final out = <Widget>[
       for (var i = 0; i < 9; i++)
         if (slots[i] != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 1.5),
-            child: Row(children: [
-              SizedBox(width: 22, child: Text('${i + 1}', style: const TextStyle(fontWeight: FontWeight.w900))),
-              SizedBox(width: 30, child: Text(slots[i]!.key, style: const TextStyle(fontWeight: FontWeight.w800))),
-              Expanded(child: Text(slots[i]!.value.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
-              Text('${avg(slots[i]!.value.st)} ${slots[i]!.value.st.homeRuns}本 ${slots[i]!.value.st.rbi}点　${_posKeys[slots[i]!.key]}${slots[i]!.value.st.posGames[slots[i]!.key] ?? 0}試合',
-                  style: const TextStyle(fontSize: 11.5, color: _sub)),
-            ]),
-          ),
+          Builder(builder: (_) {
+            final r = slots[i]!.value;
+            final p = _findPlayer(id: r.id, name: r.name);
+            return InkWell(
+              onTap: p == null ? null : () => showPlayerDetail(context, app, p, allowActions: false),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 1.5),
+                child: Row(children: [
+                  SizedBox(width: 22, child: Text('${i + 1}', style: const TextStyle(fontWeight: FontWeight.w900))),
+                  SizedBox(width: 30, child: Text(slots[i]!.key, style: const TextStyle(fontWeight: FontWeight.w800))),
+                  Expanded(child: Text(r.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
+                  Text('${avg(r.st)} ${r.st.homeRuns}本 ${r.st.rbi}点　${_posKeys[slots[i]!.key]}${r.st.posGames[slots[i]!.key] ?? 0}試合',
+                      style: const TextStyle(fontSize: 11.5, color: _sub)),
+                ]),
+              ),
+            );
+          }),
     ];
     // 投手：先発（先発の多い順に5人）・抑え（セーブ）・中継ぎ（ホールド）
     final pit = rows.where((r) => r.st.pitchApps > 0).toList();
@@ -379,14 +419,20 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
     final sp = [...pit.where((r) => r.st.starts > 0)]..sort((a, b) => b.st.starts.compareTo(a.st.starts));
     final cl = [...pit]..sort((a, b) => b.st.saves.compareTo(a.st.saves));
     final su = [...pit.where((r) => !sp.take(5).contains(r) && (cl.isEmpty || r != cl.first))]..sort((a, b) => b.st.holdPoints.compareTo(a.st.holdPoints));
-    Widget pline(String role, _Row r, String note) => Padding(
+    Widget pline(String role, _Row r, String note) {
+      final p = _findPlayer(id: r.id, name: r.name);
+      return InkWell(
+        onTap: p == null ? null : () => showPlayerDetail(context, app, p, allowActions: false),
+        child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 1.5),
           child: Row(children: [
             SizedBox(width: 52, child: Text(role, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))),
             Expanded(child: Text(r.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
             Text(note, style: const TextStyle(fontSize: 11.5, color: _sub)),
           ]),
-        );
+        ),
+      );
+    }
     out.add(const SizedBox(height: 6));
     for (var i = 0; i < sp.length && i < 5; i++) {
       out.add(pline('先発${i + 1}', sp[i], '${sp[i].st.wins}勝${sp[i].st.losses}敗 防${era(sp[i].st)}　先発${sp[i].st.starts}'));
@@ -413,13 +459,17 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
       rowHeight: 28,
       rows: [
         for (final r in rows)
-          FrozenRow(
-            lead: Text('${r.pos.isEmpty ? '' : r.pos.substring(0, 1)} ${r.name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-            cells: [
-              '${r.st.games}', '${r.st.atBats}', '${r.st.hits}', '${r.st.homeRuns}', '${r.st.rbi}', '${r.st.stolenBases}', '${r.st.walks}', '${r.st.strikeouts}',
-              r.st.atBats == 0 ? '-' : r3(r.st.battingAverage), r3(_obp(r.st)), r3(_obp(r.st) + _slg(r.st)),
-            ],
-          ),
+          () {
+            final p = _findPlayer(id: r.id, name: r.name);
+            return FrozenRow(
+              onTap: p == null ? null : () => showPlayerDetail(context, app, p, allowActions: false),
+              lead: Text('${r.pos.isEmpty ? '' : r.pos.substring(0, 1)} ${r.name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+              cells: [
+                '${r.st.games}', '${r.st.atBats}', '${r.st.hits}', '${r.st.homeRuns}', '${r.st.rbi}', '${r.st.stolenBases}', '${r.st.walks}', '${r.st.strikeouts}',
+                r.st.atBats == 0 ? '-' : r3(r.st.battingAverage), r3(_obp(r.st)), r3(_obp(r.st) + _slg(r.st)),
+              ],
+            );
+          }(),
       ],
     );
   }
@@ -436,14 +486,18 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
       rowHeight: 28,
       rows: [
         for (final r in rows)
-          FrozenRow(
-            lead: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-            cells: [
-              '${r.st.apps}', '${r.st.starts}', '${r.st.wins}', '${r.st.losses}', '${r.st.saves}', '${r.st.holds}',
-              '${r.st.inningsPitched ~/ 3}${r.st.inningsPitched % 3 == 0 ? '' : '.${r.st.inningsPitched % 3}'}', '${r.st.pitcherStrikeouts}', '${r.st.pitcherWalks}',
-              r.st.inningsPitched == 0 ? '-' : r.st.era.toStringAsFixed(2),
-            ],
-          ),
+          () {
+            final p = _findPlayer(id: r.id, name: r.name);
+            return FrozenRow(
+              onTap: p == null ? null : () => showPlayerDetail(context, app, p, allowActions: false),
+              lead: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+              cells: [
+                '${r.st.apps}', '${r.st.starts}', '${r.st.wins}', '${r.st.losses}', '${r.st.saves}', '${r.st.holds}',
+                '${r.st.inningsPitched ~/ 3}${r.st.inningsPitched % 3 == 0 ? '' : '.${r.st.inningsPitched % 3}'}', '${r.st.pitcherStrikeouts}', '${r.st.pitcherWalks}',
+                r.st.inningsPitched == 0 ? '-' : r.st.era.toStringAsFixed(2),
+              ],
+            );
+          }(),
       ],
     );
   }

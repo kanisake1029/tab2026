@@ -63,6 +63,17 @@ class _MonthlyMvpView extends StatelessWidget {
   final AppState app;
   const _MonthlyMvpView({required this.app});
 
+  Player? _find(Map e) {
+    final all = <Player>[for (final t in app.teams) ...t.players, for (final fa in app.freeAgents) fa.player];
+    final id = '${e['id'] ?? ''}';
+    if (id.isNotEmpty) {
+      final p = all.where((x) => x.id == id).firstOrNull;
+      if (p != null) return p;
+    }
+    final name = '${e['name'] ?? ''}'.trim();
+    return all.where((x) => x.registeredName == name || x.listName == name).firstOrNull;
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = app.monthlyMvps;
@@ -78,19 +89,25 @@ class _MonthlyMvpView extends StatelessWidget {
         _sectionTitle('${app.startYear}年 $m'),
         for (final lg in const ['CL', 'PL'])
           for (final e in list.where((e) => e['month'] == m && e['league'] == lg))
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 6),
-              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _line))),
-              child: Row(children: [
-                SizedBox(width: 64, child: Text('${leagueLabel(lg)}\n${e['kind']}', style: const TextStyle(fontSize: 10.5, color: _sub, height: 1.2))),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${e['name']}（${e['teamName']}）', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-                    Text('${e['line']}', style: const TextStyle(fontSize: 11.5, color: _sub)),
+            Builder(builder: (_) {
+              final p = _find(e);
+              return InkWell(
+                onTap: p == null ? null : () => showPlayerDetail(context, app, p, allowActions: false),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 6),
+                  decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _line))),
+                  child: Row(children: [
+                    SizedBox(width: 64, child: Text('${leagueLabel(lg)}\n${e['kind']}', style: const TextStyle(fontSize: 10.5, color: _sub, height: 1.2))),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('${e['name']}（${e['teamName']}）', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+                        Text('${e['line']}', style: const TextStyle(fontSize: 11.5, color: _sub)),
+                      ]),
+                    ),
                   ]),
                 ),
-              ]),
-            ),
+              );
+            }),
       ],
     ]);
   }
@@ -508,10 +525,19 @@ class _NumberHistoryViewState extends State<_NumberHistoryView> {
             final keys = h.keys.toList()..sort((a, b) => uniformSortKey(a).compareTo(uniformSortKey(b)));
             // いまの番号（記録の続き）
             final now = {for (final p in t.players) p.uniformNumber: p};
+            final byName = <String, Player>{
+              for (final tm in app.teams)
+                for (final p in tm.players) ...{p.registeredName: p, p.listName: p},
+              for (final fa in app.freeAgents) ...{fa.player.registeredName: fa.player, fa.player.listName: fa.player},
+            };
+            Player? resolveWho(String who) {
+              final target = who.contains('→') ? who.split('→').last.trim() : who.trim();
+              return byName[target];
+            }
             return ListView(padding: const EdgeInsets.fromLTRB(10, 0, 10, 16), children: [
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 6),
-                child: Text('2026年2月からの記録です（それより前からつけている番号は載せていません）。背番号の変更・決定は毎年開幕前日に行われます。', style: TextStyle(fontSize: 11.5, color: _sub)),
+                child: Text('2026年2月からの記録です（それより前からつけている番号は載せていません）。背番号の変更・決定は毎年開幕前日に行われます。選手名をタップすると詳細を開けます。', style: TextStyle(fontSize: 11.5, color: _sub)),
               ),
               if (keys.isEmpty) const Text('まだ記録がありません', style: TextStyle(color: _sub)),
               for (final n in keys)
@@ -524,19 +550,30 @@ class _NumberHistoryViewState extends State<_NumberHistoryView> {
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         for (final e in h[n]!)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 1.5),
-                            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              SizedBox(width: 78, child: Text(e.$1.replaceAll('-', '/'), style: const TextStyle(fontSize: 11.5, color: _sub, fontFeatures: [FontFeature.tabularFigures()]))),
-                              Expanded(
-                                child: Text.rich(TextSpan(children: [
-                                  TextSpan(text: e.$2, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _ink)),
-                                  TextSpan(text: '　${e.$3}', style: const TextStyle(fontSize: 12, color: _sub)),
-                                ])),
-                              ),
-                            ]),
+                          Builder(builder: (_) {
+                            final p = resolveWho(e.$2);
+                            final row = Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 1.5),
+                              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                SizedBox(width: 78, child: Text(e.$1.replaceAll('-', '/'), style: const TextStyle(fontSize: 11.5, color: _sub, fontFeatures: [FontFeature.tabularFigures()]))),
+                                Expanded(
+                                  child: Text.rich(TextSpan(children: [
+                                    TextSpan(text: e.$2, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _ink, decoration: p != null ? TextDecoration.underline : null, decorationColor: const Color(0xFFCBD5E1))),
+                                    TextSpan(text: '　${e.$3}', style: const TextStyle(fontSize: 12, color: _sub)),
+                                  ])),
+                                ),
+                              ]),
+                            );
+                            return p == null ? row : InkWell(onTap: () => showPlayerDetail(context, app, p, allowActions: false), child: row);
+                          }),
+                        if (now[n] != null)
+                          InkWell(
+                            onTap: () => showPlayerDetail(context, app, now[n]!, allowActions: t.id == app.myTeamId),
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text('いま：${now[n]!.listName}', style: const TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w700, decoration: TextDecoration.underline, decorationColor: Color(0xFFCBD5E1))),
+                            ),
                           ),
-                        if (now[n] != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text('いま：${now[n]!.listName}', style: const TextStyle(fontSize: 11.5, color: _sub, fontWeight: FontWeight.w700))),
                       ]),
                     ),
                   ]),

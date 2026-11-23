@@ -316,12 +316,23 @@ extension RecordOps on AppState {
         if (w is Map && byId[w['id']] != null) byId[w['id']]!.honors.add('${awardDate.year}年${awardDate.month}月${awardDate.day}日 $label');
       }
     }
+    void giveBlock(dynamic block, String label) {
+      if (block is! Map || block['none'] == true) return;
+      if (block['winners'] is List) {
+        give(block['winners'], label);
+      } else if (block['id'] != null && byId[block['id']] != null) {
+        byId[block['id']]!.honors.add('${awardDate.year}年${awardDate.month}月${awardDate.day}日 $label');
+      }
+    }
     final leagues = awards['leagues'];
     if (leagues is Map) {
       for (final lgEntry in leagues.values) {
         if (lgEntry is! Map) continue;
         for (final tt in (lgEntry['titles'] as List? ?? const [])) {
           if (tt is Map) give(tt['winners'], '${tt['title']}');
+        }
+        for (final ld in (lgEntry['leaders'] as List? ?? const [])) {
+          if (ld is Map) give(ld['winners'], '${ld['title']}');
         }
         if (lgEntry['mvp'] is Map) give(lgEntry['mvp']['winners'], 'MVP');
         if (lgEntry['rookie'] is Map) give(lgEntry['rookie']['winners'], '新人王');
@@ -333,8 +344,8 @@ extension RecordOps on AppState {
         }
       }
     }
-    if (awards['sawamura'] is Map) give(awards['sawamura']['winners'], '沢村賞');
-    if (awards['comeback'] is Map) give(awards['comeback']['winners'], 'カムバック賞');
+    giveBlock(awards['sawamura'], '沢村賞');
+    giveBlock(awards['comeback'], 'カムバック賞');
     _makerCollabsFromAwards(year, awards);
   }
 
