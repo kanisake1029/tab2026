@@ -421,6 +421,8 @@ extension RepairOps on AppState {
           : (eve.year <= startYear ? eve.year : item.year);
 
       var hasDecide = false;
+      var supersededBeforeEve = false;
+      var hasLaterTeamEvent = false;
       final changeItems = <({int year, Map<String, dynamic> e, int from, int to})>[];
       var leftBeforeEve = false;
       int? postEveFrom;
@@ -435,6 +437,7 @@ extension RepairOps on AppState {
         final jk = '${je['k'] ?? ''}';
         final jtext = '${je['t'] ?? ''}';
         if (jk == 'leave') {
+          hasLaterTeamEvent = true;
           if (jdOnly.isBefore(eve)) {
             leftBeforeEve = true;
           } else {
@@ -442,9 +445,18 @@ extension RepairOps on AppState {
           }
           break;
         }
+        if (jk == 'join' || jk == 'reg') {
+          hasLaterTeamEvent = true;
+          if (!jdOnly.isAfter(eve)) supersededBeforeEve = true;
+          break;
+        }
         if (jk == 'number') {
           final dm = decRe.firstMatch(jtext);
           if (dm != null && !jdOnly.isAfter(eve)) {
+            if (hasDecide) {
+              toRemove.add(je);
+              changed = true;
+            }
             hasDecide = true;
             continue;
           }
@@ -460,8 +472,8 @@ extension RepairOps on AppState {
         }
       }
 
-      if (hasDecide) {
-        // すでに決定があるのに途中の仮変更イベントが残っていれば除去
+      if (hasDecide || supersededBeforeEve) {
+        // すでに決定があるか、同じ開幕前日までに支配下登録等で上書きされる場合、途中の仮変更イベントは除去
         for (final c in changeItems) {
           toRemove.add(c.e);
           changed = true;
@@ -489,15 +501,14 @@ extension RepairOps on AppState {
       if (leftBeforeEve) continue;
 
       if (!today.isBefore(eve)) {
-        // すでにそのシーズンの開幕前日を通過済み → 開幕前日に決定イベントを補完
-        int? resolved = postEveFrom ?? leaveAfterEveNum;
-        if (resolved == null && pid != null) {
+        // すでにそのシーズンの開幕前日を通過済み → 開幕前日に決定イベントを補完（別年次の再入団・移籍と混同しないよう tempNum を優先）
+        int? resolved = postEveFrom ?? leaveAfterEveNum ?? tempNum;
+        if (resolved == null && !hasLaterTeamEvent && pid != null) {
           final cur = currentByPid[pid];
           if (cur != null && cur.$1 == tid && !cur.$2.numberPending) {
             resolved = cur.$2.uniformNumber;
           }
         }
-        resolved ??= tempNum;
         if (resolved != null) {
           final lbl = uniformLabel(resolved);
           toAdd.add((targetAddY, {
@@ -549,6 +560,7 @@ extension RepairOps on AppState {
     });
 
     final tracked = <String, int>{}; // tid|who -> number
+    final activeHolders = <String, Map<int, String>>{}; // tid -> {number -> tk}
     final pendingWho = <String>{}; // tid|who (仮番号で確定前の選手)
 
     String trackKey(String tid, Map<String, dynamic> e, String nm) {
@@ -564,6 +576,7 @@ extension RepairOps on AppState {
       final pm = playerLineRe.firstMatch(text) ?? chgRe.firstMatch(text) ?? decRe.firstMatch(text);
       final nm = pm?.group(2) ?? '';
       final tk = trackKey(tid, e, nm);
+      final holders = activeHolders.putIfAbsent(tid, () => {});
 
       if (k == 'join' || k == 'reg') {
         final m = RegExp(r'背番号は(00|\d+)').firstMatch(text);
@@ -572,6 +585,7 @@ extension RepairOps on AppState {
           if (n != null) {
             tracked[tk] = n;
             tracked['$tid|nm:$nm'] = n;
+            holders[n] = tk;
             pendingWho.remove(tk);
             pendingWho.remove('$tid|nm:$nm');
           }
@@ -582,10 +596,14 @@ extension RepairOps on AppState {
       } else if (k == 'number') {
         final cm = chgRe.firstMatch(text);
         if (cm != null) {
-          final to = parseNum(cm.group(4)!);
+          final from = parseNum(cm.group(3)!), to = parseNum(cm.group(4)!);
+          if (from != null && (holders[from] == tk || (nm.isNotEmpty && holders[from] == '$tid|nm:$nm'))) {
+            holders.remove(from);
+          }
           if (to != null) {
             tracked[tk] = to;
             tracked['$tid|nm:$nm'] = to;
+            holders[to] = tk;
             pendingWho.remove(tk);
             pendingWho.remove('$tid|nm:$nm');
           }
@@ -596,6 +614,7 @@ extension RepairOps on AppState {
             if (n != null) {
               tracked[tk] = n;
               tracked['$tid|nm:$nm'] = n;
+              holders[n] = tk;
               pendingWho.remove(tk);
               pendingWho.remove('$tid|nm:$nm');
             }
@@ -604,16 +623,30 @@ extension RepairOps on AppState {
       } else if (k == 'leave') {
         final wasPending = pendingWho.remove(tk) || pendingWho.remove('$tid|nm:$nm');
         final trackedNum = tracked.remove(tk) ?? tracked.remove('$tid|nm:$nm');
-        if (!wasPending && e['num'] == null) {
-          final pid = e['pid'] as String?;
-          final n = trackedNum ??
-              (pid != null ? faByPid['$tid|$pid'] : null) ??
-              (pid != null ? initByPid['$tid|$pid'] : null) ??
-              (nm.isNotEmpty ? initByName['$tid|$nm'] : null);
-          if (n != null) {
-            e['num'] = n;
+        void clearHolder(int numVal) {
+          if (holders[numVal] == tk || (nm.isNotEmpty && holders[numVal] == '$tid|nm:$nm')) {
+            holders.remove(numVal);
+          }
+        }
+        if (trackedNum != null) {
+          if (!wasPending && e['num'] == null) {
+            e['num'] = trackedNum;
             changed = true;
           }
+          clearHolder(trackedNum);
+        } else if (!wasPending && e['num'] == null) {
+          final pid = e['pid'] as String?;
+          final n = (pid != null ? faByPid['$tid|$pid'] : null) ??
+              (pid != null ? initByPid['$tid|$pid'] : null) ??
+              (nm.isNotEmpty ? initByName['$tid|$nm'] : null);
+          final heldBy = n == null ? null : holders[n];
+          if (n != null && (heldBy == null || heldBy == tk || (nm.isNotEmpty && heldBy == '$tid|nm:$nm'))) {
+            e['num'] = n;
+            changed = true;
+            clearHolder(n);
+          }
+        } else if (e['num'] is num) {
+          clearHolder((e['num'] as num).toInt());
         }
       }
     }

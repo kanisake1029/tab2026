@@ -1595,4 +1595,144 @@ void main() {
     expect(graceReloaded.numberFreeUntil, '2026-05-20');
     expect(app.numberFreeNow(graceReloaded), isTrue);
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('S25実データ由来のマイグレーション境界ケース（オフ内昇格・複数年再入団・番号重複leave）が正しく修復される', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams[0];
+    app.myTeamId = my.id;
+    app.startYear = 2027;
+    app.currentDate = DateTime(2027, 4, 28);
+
+    // 1. オフ内昇格（10/31 育成 #105 → 12/15 支配下 #39）：105に決定を出さず 39に決定 のみ 1 件出ること
+    final promo = Player(
+      id: 's25_promo_39',
+      lastName: '福島',
+      firstName: '宏樹',
+      isPitcher: false,
+      mainPos: '遊撃手',
+      age: 29,
+      proYears: 2,
+      uniformNumber: 39,
+      draftInfo: '2025年ドラフト育成5位（独立・埼玉）',
+    );
+    // 2. 複数年・退団後の再入団（2026 #110 → 11/1 帰国 → 11/9 再入団 #28→#98）：2026決定・leave は #110、2027決定は #98
+    final longP = Player(
+      id: 's25_long_98',
+      lastName: 'リーランド',
+      firstName: 'ロング',
+      isPitcher: true,
+      mainPos: '投手',
+      age: 22,
+      proYears: 2,
+      uniformNumber: 98,
+      nationality: '海外',
+      draftInfo: '外国人選手（2026年・独立）',
+    );
+    // 3. 初期番号 #15 を別の味方（岩本）が 3/19 に取得済みの状態で、元保持者（上田）が 7/23 に離脱した leave に bogus num=15 を付けないこと
+    final takenP = my.players.firstWhere((p) => p.uniformNumber == 15);
+    final takerP = my.players.firstWhere((p) => p.uniformNumber == 6);
+    takerP.uniformNumber = 15;
+    takenP.ikusei = true;
+    takenP.uniformNumber = 114;
+    my.players.remove(takenP);
+    my.players.addAll([promo, longP]);
+
+    app.chronYears[2026] = [
+      {
+        'd': '2025-10-31',
+        'team': my.id,
+        'k': 'join',
+        't': '遊撃手 ${promo.registeredName}(28)が育成ドラフト5位（独立・埼玉）で入団。背番号は105。',
+        'pid': promo.id,
+        'pt': '育成ドラフト5位で${my.name}に入団。背番号105。',
+      },
+      {
+        'd': '2025-12-15',
+        'team': my.id,
+        'k': 'reg',
+        't': '遊撃手 ${promo.registeredName}(28)を支配下登録。背番号は39。',
+        'pid': promo.id,
+        'pt': '支配下登録。背番号39。',
+      },
+      {
+        'd': '2025-12-01',
+        'team': my.id,
+        'k': 'join',
+        't': '投手 ${longP.registeredName}(21)が来日して入団。背番号は110。',
+        'pid': longP.id,
+        'pt': '来日して${my.name}に入団。背番号110。',
+      },
+      {
+        'd': '2026-03-19',
+        'team': my.id,
+        'k': 'number',
+        't': '投手 ${takerP.registeredName}の背番号を6から15に変更。',
+        'pid': takerP.id,
+        'pt': '背番号を6から15に変更。',
+      },
+      {
+        'd': '2026-07-23',
+        'team': my.id,
+        'k': 'leave',
+        't': '投手 ${takenP.registeredName}(20)がトレードで他球団へ移籍。',
+        'pid': takenP.id,
+      },
+    ];
+    app.chronYears[2027] = [
+      {
+        'd': '2026-11-01',
+        'team': my.id,
+        'k': 'leave',
+        't': '投手 ${longP.registeredName}(22)が退団（帰国）。',
+        'pid': longP.id,
+        'pt': '${my.name}を退団（帰国）。',
+      },
+      {
+        'd': '2026-11-09',
+        'team': my.id,
+        'k': 'join',
+        't': '投手 ${longP.registeredName}(22)が自由契約から入団。背番号は28。',
+        'pid': longP.id,
+        'pt': '自由契約から${my.name}に入団。背番号28。',
+      },
+      {
+        'd': '2027-03-18',
+        'team': my.id,
+        'k': 'number',
+        't': '投手 ${longP.registeredName}の背番号を28から98に変更。',
+        'pid': longP.id,
+        'pt': '背番号を28から98に変更。',
+      },
+    ];
+    app.chronFirstYear = 2026;
+
+    await app.migrateChronNumbers();
+
+    final promoNums = app.chronYears[2026]!.where((c) => c['pid'] == promo.id && c['k'] == 'number').toList();
+    expect(promoNums, hasLength(1));
+    expect(promoNums.single['t'], contains('背番号が39に決定。'));
+
+    final longNums26 = app.chronYears[2026]!.where((c) => c['pid'] == longP.id && c['k'] == 'number').toList();
+    final longLeave27 = app.chronYears[2027]!.firstWhere((c) => c['pid'] == longP.id && c['k'] == 'leave');
+    final longNums27 = app.chronYears[2027]!.where((c) => c['pid'] == longP.id && c['k'] == 'number').toList();
+    expect(longNums26, hasLength(1));
+    expect(longNums26.single['t'], contains('背番号が110に決定。'));
+    expect(longLeave27['num'], 110);
+    expect(longNums27, hasLength(1));
+    expect(longNums27.single['t'], contains('背番号が98に決定。'));
+
+    final takenLeave = app.chronYears[2026]!.firstWhere((c) => c['pid'] == takenP.id && c['k'] == 'leave');
+    expect(takenLeave['num'], isNull);
+
+    final hist = await app.numberHistory(my);
+    expect(hist[15]?.any((e) => e.$2 == takenP.registeredName) ?? false, isFalse);
+    expect(hist[105], isNull);
+    expect(hist[39]?.any((e) => e.$2 == promo.registeredName && e.$3 == '背番号決定'), isTrue);
+    expect(hist[110]?.where((e) => e.$2 == longP.registeredName), hasLength(2));
+    expect(hist[98]?.single.$2, longP.registeredName);
+  });
 }
