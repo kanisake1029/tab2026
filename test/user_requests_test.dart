@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -117,7 +118,7 @@ void main() {
     expect(tl.any((e) => e.$2.contains('背番号${uniformLabel(oldNum)}。')), isTrue);
   });
 
-  test('④-2 シーズン途中の入団・来日や一括入替も一律で予約となり、開幕前日に反映される', () async {
+  test('④-2 シーズン途中の入団から1か月以内は即変更・入団時背番号書換、期間外と一括入替は開幕前日反映', () async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState(AppDatabase(NativeDatabase.memory()));
     while (!app.loaded) {
@@ -134,6 +135,8 @@ void main() {
     final joinDate = DateTime(2026, 4, 1);
     app.currentDate = DateTime(2026, 4, 15);
     app.markNumberFree(p, joinDate);
+    expect(p.numberFreeUntil, '2026-05-01');
+    expect(app.numberFreeNow(p), isTrue);
     app.chron.add({
       'd': '2026-04-01',
       'team': t.id,
@@ -143,31 +146,45 @@ void main() {
       'pt': '来日して${t.name}に入団。背番号${uniformLabel(n14)}。',
     });
 
+    // 1か月以内（4/15）は即座に空き番号へ変更され、入団時の背番号から書き換わる
     final err = app.setNumber(t, p, n53);
     expect(err, isNull);
-    expect(p.uniformNumber, n14);
-    expect(p.nextNumber, n53);
+    expect(p.uniformNumber, n53);
+    expect(p.nextNumber, isNull);
     expect(app.chron.any((c) => c['pid'] == p.id && c['k'] == 'number'), isFalse);
 
-    // オフ期間に一括変更で2人の番号を入れ替えても、予約となり開幕前日に同時に切り替わる
+    final tlGrace = await app.playerTimeline(p);
+    expect(tlGrace.any((e) => e.$2.contains('来日して${t.name}に入団。背番号${uniformLabel(n53)}。')), isTrue);
+    expect(tlGrace.any((e) => e.$2.contains('背番号${uniformLabel(n14)}')), isFalse);
+    final histGrace = await app.numberHistory(t);
+    expect(histGrace[n14]?.any((e) => e.$2 == p.registeredName) ?? false, isFalse);
+    expect(histGrace[n53]?.any((e) => e.$1 == '2026-04-01' && e.$2 == p.registeredName), isTrue);
+
+    // 1か月経過後（5/15）およびオフ期間の一括入替は予約となり、開幕前日に反映される
+    app.currentDate = DateTime(2026, 5, 15);
+    expect(app.numberFreeNow(p), isFalse);
+    expect(app.setNumber(t, p, n14), isNull);
+    expect(p.uniformNumber, n53);
+    expect(p.nextNumber, n14);
+
     app.currentDate = DateTime(2026, 11, 15);
     final qOld = q.uniformNumber;
-    final bulkErr = app.setNumbersBulk(t, {p.id: qOld, q.id: n14});
+    final bulkErr = app.setNumbersBulk(t, {p.id: qOld, q.id: n53});
     expect(bulkErr, isNull);
-    expect(p.uniformNumber, n14);
+    expect(p.uniformNumber, n53);
     expect(q.uniformNumber, qOld);
     expect(p.nextNumber, qOld);
-    expect(q.nextNumber, n14);
+    expect(q.nextNumber, n53);
 
     app.applyNextNumbers(DateTime(2027, 3, 25));
     expect(p.uniformNumber, qOld);
-    expect(q.uniformNumber, n14);
+    expect(q.uniformNumber, n53);
     expect(p.nextNumber, isNull);
     expect(q.nextNumber, isNull);
 
     final tl = await app.playerTimeline(p);
-    expect(tl.any((e) => e.$2.contains('来日して${t.name}に入団。背番号${uniformLabel(n14)}。')), isTrue);
-    expect(tl.any((e) => e.$2.contains('背番号を${uniformLabel(n14)}から${uniformLabel(qOld)}に変更。')), isTrue);
+    expect(tl.any((e) => e.$2.contains('来日して${t.name}に入団。背番号${uniformLabel(n53)}。')), isTrue);
+    expect(tl.any((e) => e.$2.contains('背番号を${uniformLabel(n53)}から${uniformLabel(qOld)}に変更。')), isTrue);
   });
 
   testWidgets('支配下登録: 2027/6/12・支配下65人で選手詳細ダイアログから支配下登録できる', (tester) async {
@@ -1249,6 +1266,8 @@ void main() {
     for (final r in rookies) {
       expect(r.uniformNumber, r.ikusei ? greaterThanOrEqualTo(100) : inInclusiveRange(-1, 99));
       expect(r.numberPending, isTrue);
+      expect(r.numberFreeUntil, isEmpty);
+      expect(app.numberFreeNow(r), isFalse);
     }
     final rookieJoin = app.chron.lastWhere((c) => c['pid'] == firstRookie.id && c['k'] == 'join');
     expect('${rookieJoin['t']}', isNot(contains('背番号は')));
@@ -1270,6 +1289,8 @@ void main() {
     expect(my.players.contains(getP), isTrue);
     expect(getP.uniformNumber, inInclusiveRange(-1, 99));
     expect(getP.numberPending, isTrue);
+    expect(getP.numberFreeUntil, isEmpty);
+    expect(app.numberFreeNow(getP), isFalse);
 
     final myHistBefore = await app.numberHistory(my);
     expect(myHistBefore[tempRookieNum]?.any((e) => e.$2 == firstRookie.registeredName) ?? false, isFalse);
@@ -1302,7 +1323,7 @@ void main() {
     expect(myHistAfter[tempRookieNum]?.any((e) => e.$2 == firstRookie.registeredName) ?? false, isFalse);
     expect(myHistAfter[oldNum]?.any((e) => e.$2.contains(firstRookie.registeredName)), isTrue);
 
-    // 5. シーズン中（開幕後〜ドラフト会議前日：6/15）の支配下登録とトレードでは即座に確定背番号が付与される
+    // 5. シーズン中（開幕後〜ドラフト会議前日：6/15）の支配下登録とトレードでは即座に確定背番号・1か月猶予期間が付与され、入団時の背番号から書き換わる
     app.seasonFinished = false;
     app.currentDate = DateTime(2026, 6, 15);
     expect(app.isBeforeOpeningDay(), isFalse);
@@ -1315,9 +1336,13 @@ void main() {
     }
     final ik = my.players.firstWhere((p) => p.ikusei, orElse: () => my.players.last..ikusei = true..uniformNumber = 120);
     expect(app.promoteIkusei(ik), isNull);
+    await app.saveData();
     expect(ik.ikusei, isFalse);
     expect(ik.uniformNumber, inInclusiveRange(-1, 99));
     expect(ik.numberPending, isFalse);
+    expect(ik.numberFreeUntil, '2026-07-15');
+    expect(app.numberFreeNow(ik), isTrue);
+    final ikOld = ik.uniformNumber;
 
     final giveSeason = my.players.where((p) => !p.ikusei && p.id != ik.id).toList()
       ..sort((a, b) => RosterEngine.value(b).compareTo(RosterEngine.value(a)));
@@ -1326,7 +1351,45 @@ void main() {
     final getInSeason = getSeason.first;
     app.lastTradeWith.remove(partner.id);
     expect(app.proposeTrade(partner, [giveSeason[0], giveSeason[1]], [getInSeason], 0, givePicks: [(3, my.id)]), isNull);
+    await app.saveData();
     expect(getInSeason.numberPending, isFalse);
+    expect(getInSeason.numberFreeUntil, '2026-07-15');
+    expect(app.numberFreeNow(getInSeason), isTrue);
+    final tradeOld = getInSeason.uniformNumber;
+
+    // 猶予期間中（6/20）の個別変更・一括変更は即時反映され、入団/支配下登録記録が書き換わる
+    app.currentDate = DateTime(2026, 6, 20);
+    final swapIk = RosterEngine.freeNumber(my, ikusei: false);
+    expect(app.setNumber(my, ik, swapIk), isNull);
+    expect(ik.uniformNumber, swapIk);
+    expect(ik.nextNumber, isNull);
+
+    final swapTrade = RosterEngine.freeNumber(my, ikusei: false);
+    expect(app.setNumbersBulk(my, {getInSeason.id: swapTrade}), isNull);
+    expect(getInSeason.uniformNumber, swapTrade);
+    expect(getInSeason.nextNumber, isNull);
+
+    final tlIk = await app.playerTimeline(ik);
+    expect(tlIk.any((e) => e.$2 == '支配下登録。背番号${uniformLabel(swapIk)}。'), isTrue);
+    expect(tlIk.any((e) => e.$2.contains('変更')), isFalse);
+    final tlTrade = await app.playerTimeline(getInSeason);
+    expect(tlTrade.any((e) => e.$2.contains('移籍。背番号${uniformLabel(swapTrade)}。')), isTrue);
+    expect(tlTrade.any((e) => e.$2.contains('変更')), isFalse);
+
+    final myHistGrace = await app.numberHistory(my);
+    expect(myHistGrace[ikOld]?.any((e) => e.$2.contains(ik.registeredName)) ?? false, isFalse);
+    expect(myHistGrace[swapIk]?.any((e) => e.$2.contains(ik.registeredName) && e.$3.contains('支配下登録')), isTrue);
+    expect(myHistGrace[tradeOld]?.any((e) => e.$2.contains(getInSeason.registeredName)) ?? false, isFalse);
+    expect(myHistGrace[swapTrade]?.any((e) => e.$2.contains(getInSeason.registeredName)), isTrue);
+
+    // 1か月経過後（7/20）は通常通り開幕前日予約に戻る
+    app.currentDate = DateTime(2026, 7, 20);
+    expect(app.numberFreeNow(ik), isFalse);
+    expect(app.numberFreeNow(getInSeason), isFalse);
+    final afterGrace = RosterEngine.freeNumber(my, ikusei: false);
+    expect(app.setNumber(my, ik, afterGrace), isNull);
+    expect(ik.uniformNumber, swapIk);
+    expect(ik.nextNumber, afterGrace);
   });
 
   testWidgets('背番号一括変更画面に仮番号（開幕前日に決定）が表示され保存時に例外が出ない', (tester) async {
@@ -1360,17 +1423,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('既存セーブ（開発者版スロット1相当）のオフシーズン入団と移籍空き番号がマイグレーションで修復される', () async {
+  test('既存セーブ（開発者版スロット1相当・joinFixV1済）が起動時に自動修復されオフ入団・移籍空き・30日以内変更・猶予期限が整う', () async {
     SharedPreferences.setMockInitialValues({});
-    final app = AppState(AppDatabase(NativeDatabase.memory()));
-    while (!app.loaded) {
+    final tmpDir = Directory.systemTemp.createTempSync('slot1_mig_');
+    addTearDown(() {
+      if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+    });
+    final dbFile = File('${tmpDir.path}/npb_pennant.sqlite');
+    NativeDatabase openTestFileDb() => NativeDatabase(
+          dbFile,
+          setup: (rawDb) {
+            rawDb.execute('PRAGMA journal_mode=WAL;');
+            rawDb.execute('PRAGMA synchronous=OFF;');
+          },
+        );
+
+    final app1 = AppState(AppDatabase(openTestFileDb(), false));
+    while (!app1.loaded) {
       await Future.delayed(const Duration(milliseconds: 10));
     }
-    final my = app.teams[0];
-    final partner = app.teams[1];
-    app.myTeamId = my.id;
-    app.startYear = 2026;
-    app.currentDate = DateTime(2026, 5, 1);
+    final my = app1.teams[0];
+    final partner = app1.teams[1];
+    app1.myTeamId = my.id;
+    app1.startYear = 2026;
+    app1.currentDate = DateTime(2026, 5, 1);
 
     final initOta = partner.players.firstWhere((p) => !p.ikusei);
     final otaNum = initOta.uniformNumber;
@@ -1386,10 +1462,45 @@ void main() {
       draftInfo: '2026年ドラフト6位（高校・テスト高）',
       draftYear: 2026,
     );
-    my.players.add(rookie);
+    final inSeasonNew = Player(
+      id: 'slot1_inseason_new',
+      lastName: '途中',
+      firstName: '助っ人',
+      isPitcher: false,
+      mainPos: '外野手',
+      age: 27,
+      proYears: 1,
+      uniformNumber: 53,
+      nationality: '海外',
+      draftInfo: '外国人選手（2026年途中に自球団へ入団）',
+    );
+    final activeGrace = Player(
+      id: 'slot1_active_grace',
+      lastName: '猶予',
+      firstName: '対象',
+      isPitcher: true,
+      mainPos: '投手',
+      age: 24,
+      proYears: 1,
+      uniformNumber: 62,
+      nationality: '海外',
+      draftInfo: '外国人選手（2026年途中に自球団へ入団）',
+    );
+    my.players.addAll([rookie, inSeasonNew, activeGrace]);
+    await app1.saveData(); // _rosterSnap へ登録（その後、旧セーブ状態として年表とフラグを上書き保存する）
 
-    // 旧仕様の記録：10/31 ドラフト入団に仮番号25が書かれ、開幕前に25→23へ変更。2/1に太田が移籍（numなし）
-    app.chronYears[2026] = [
+    // 旧仕様の記録：
+    // ・10/31 ドラフト入団に仮番号25が書かれ、開幕前に25→23へ変更
+    // ・2/1 に太田が移籍（numなし）
+    // ・4/10 シーズン中入団（45）→ 4/20 変更（45→53）の30日以内変更が残っている
+    // ・4/20 シーズン中入団（62）で numberFreeUntil が空のまま現在5/1（30日以内）
+    rookie.numberPending = false;
+    rookie.numberFreeUntil = '';
+    inSeasonNew.numberPending = false;
+    inSeasonNew.numberFreeUntil = '';
+    activeGrace.numberPending = false;
+    activeGrace.numberFreeUntil = '';
+    app1.chronYears[2026] = [
       {
         'd': '2025-10-31',
         'team': my.id,
@@ -1413,23 +1524,75 @@ void main() {
         't': '${initOta.isPitcher ? '投手' : initOta.mainPosition} ${initOta.registeredName}(${initOta.age})がトレードで${my.shortName}へ移籍。',
         'pid': initOta.id,
       },
+      {
+        'd': '2026-04-10',
+        'team': my.id,
+        'k': 'join',
+        't': '外野手 ${inSeasonNew.registeredName}(27)がテスト入団。背番号は45。',
+        'pid': inSeasonNew.id,
+        'pt': 'テスト入団で${my.name}に入団。背番号45。',
+      },
+      {
+        'd': '2026-04-20',
+        'team': my.id,
+        'k': 'number',
+        't': '外野手 ${inSeasonNew.registeredName}の背番号を45から53に変更。',
+        'pid': inSeasonNew.id,
+        'pt': '背番号を45から53に変更。',
+      },
+      {
+        'd': '2026-04-20',
+        'team': my.id,
+        'k': 'join',
+        't': '投手 ${activeGrace.registeredName}(24)がテスト入団。背番号は62。',
+        'pid': activeGrace.id,
+        'pt': 'テスト入団で${my.name}に入団。背番号62。',
+      },
     ];
-    app.chronFirstYear = 2026;
+    app1.chronFirstYear = 2026;
+    await app1.saveData();
+    // すでに joinFixV1='1' かつ chronNumberFixV2 未適用の既存セーブ状態を再現して再起動
+    await app1.db.setKv('joinFixV1', '1');
+    await app1.db.deleteKv('chronNumberFixV2');
+    await app1.db.close();
 
-    await app.migrateChronNumbers();
+    final app = AppState(AppDatabase(openTestFileDb(), false));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    await app.saveData();
+    addTearDown(() async => app.db.close());
 
-    // 新人の年表が「10/31 入団（背番号なし）」「3/25 背番号が23に決定。」になっていること
-    final tl = await app.playerTimeline(rookie);
+    final myReloaded = app.teams[0];
+    final partnerReloaded = app.teams[1];
+    final rReloaded = myReloaded.players.firstWhere((p) => p.id == rookie.id);
+    final inNewReloaded = myReloaded.players.firstWhere((p) => p.id == inSeasonNew.id);
+    final graceReloaded = myReloaded.players.firstWhere((p) => p.id == activeGrace.id);
+
+    // 1. 新人の年表が「10/31 入団（背番号なし）」「3/25 背番号が23に決定。」になっていること
+    final tl = await app.playerTimeline(rReloaded);
     expect(tl.any((e) => e.$1.month == 10 && e.$1.day == 31 && e.$2.contains('ドラフト6位') && !e.$2.contains('25')), isTrue);
     expect(tl.any((e) => e.$1.month == 3 && e.$2 == '背番号が23に決定。'), isTrue);
     expect(tl.any((e) => e.$2.contains('25から')), isFalse);
 
-    // 背番号変遷：25番に仮番号が残らず、23番に決定が記録され、太田の元番号は「移籍で空き番号に」として出ること
-    final myHist = await app.numberHistory(my);
+    // 2. 背番号変遷：25番に仮番号が残らず、23番に決定が記録され、太田の元番号は「移籍で空き番号に」として出ること
+    final myHist = await app.numberHistory(myReloaded);
     expect(myHist[25]?.any((e) => e.$2 == rookie.registeredName) ?? false, isFalse);
     expect(myHist[23]?.any((e) => e.$2 == rookie.registeredName && e.$3 == '背番号決定'), isTrue);
 
-    final pHist = await app.numberHistory(partner);
+    final pHist = await app.numberHistory(partnerReloaded);
     expect(pHist[otaNum]?.any((e) => e.$1 == '2026-02-01' && e.$2 == initOta.registeredName && e.$3 == '移籍で空き番号に'), isTrue);
-  });
+
+    // 3. シーズン中の30日以内変更（45→53）が入団時の背番号（53）へ統合され、45番にも変更にも残らないこと
+    final tlIn = await app.playerTimeline(inNewReloaded);
+    expect(tlIn.any((e) => e.$2.contains('背番号53。')), isTrue);
+    expect(tlIn.any((e) => e.$2.contains('45')), isFalse);
+    expect(tlIn.any((e) => e.$2.contains('変更')), isFalse);
+    expect(myHist[45]?.any((e) => e.$2 == inSeasonNew.registeredName) ?? false, isFalse);
+    expect(myHist[53]?.any((e) => e.$1 == '2026-04-10' && e.$2 == inSeasonNew.registeredName), isTrue);
+
+    // 4. 現在5/1時点で入団30日以内の選手に numberFreeUntil ('2026-05-20') が復元されていること
+    expect(graceReloaded.numberFreeUntil, '2026-05-20');
+    expect(app.numberFreeNow(graceReloaded), isTrue);
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

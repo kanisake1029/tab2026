@@ -268,8 +268,10 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
                     helperText: p.numberPending
                         ? '現在は仮の番号（#${p.uniformText}）です。開幕前日までは変更でき、開幕前日に正式決定します（変更記録は残りません）'
                         : (free
-                            ? '今年だけ特別に、今日（開幕日）はすぐ変えられます'
-                            : 'いまは #${p.uniformText}。背番号の変更は入団時期に関わらず一律で開幕前日に行われます（チーム → 全選手 →「背番号」で一括も）'),
+                            ? (app.isOpeningNumberDay
+                                ? '今年だけ特別に、今日（開幕日）はすぐ変えられます'
+                                : '入団・支配下登録から1か月以内（${p.numberFreeUntil}まで）は空き番号へすぐ変えられ、入団時の背番号から書き換わります')
+                            : 'いまは #${p.uniformText}。通常は開幕前日に反映されます（チーム → 全選手 →「背番号」で一括も）'),
                     helperMaxLines: 2,
                   ),
                 ),
@@ -378,7 +380,7 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                                 content: Text(p.numberPending
                                     ? '${p.registeredName}を支配下登録しました（仮背番号${p.uniformText}・開幕前日に決定）'
-                                    : '${p.registeredName}を支配下登録しました（背番号${p.uniformText}）'),
+                                    : '${p.registeredName}を支配下登録しました（背番号${p.uniformText}・1か月以内は変更可）'),
                               ));
                             }
                             setState(() {});

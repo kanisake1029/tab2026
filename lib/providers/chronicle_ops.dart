@@ -82,21 +82,28 @@ extension ChronicleOps on AppState {
         if (o.$2 && !p.ikusei) {
           if (pending) {
             p.numberPending = true;
+            p.numberFreeUntil = '';
             _chron(d, t.id, 'reg', '${_pos(p)} ${p.registeredName}(${p.age})を支配下登録。', pid: p.id, pt: '支配下登録。');
           } else {
+            p.numberPending = false;
             _chron(d, t.id, 'reg', '${_pos(p)} ${p.registeredName}(${p.age})を支配下登録。背番号は${p.uniformText}。', pid: p.id, pt: '支配下登録。背番号${p.uniformText}。');
+            if (t.id == myTeamId) markNumberFree(p, d);
           }
         } else if (!o.$2 && p.ikusei && pending) {
           p.numberPending = true;
+          p.numberFreeUntil = '';
         }
         continue;
       }
       final (how, pt) = _joinText(p, t, from: o == null ? null : teamById(o.$1));
       if (pending) {
         p.numberPending = true;
+        p.numberFreeUntil = '';
         _chron(d, t.id, 'join', '${_pos(p)} ${p.registeredName}(${p.age})が$how。', pid: p.id, pt: pt.endsWith('。') ? pt : '$pt。');
       } else {
+        p.numberPending = false;
         _chron(d, t.id, 'join', '${_pos(p)} ${p.registeredName}(${p.age})が$how。背番号は${p.uniformText}。', pid: p.id, pt: '$pt背番号${p.uniformText}。');
+        if (t.id == myTeamId) markNumberFree(p, d);
       }
     }
     // コーチ

@@ -187,10 +187,10 @@ extension SaveOps on AppState {
 
     // 以前のセーブの記録の修復（今季の成績がまだ選手に残っている間に）→ 以前の方式（1月1日に年度更新）のオフなら、ここで年度を切り替える
     await _repairLostSeasonRecords();
-    await _fixInGameCareers();
+    final careerFixed = await _fixInGameCareers();
     await _fixInitialProYears();
 
-    var needSave = false;
+    var needSave = careerFixed;
     var needSaveWorld = false;
     final dirtyKv = <String, String>{};
 
@@ -627,6 +627,7 @@ extension SaveOps on AppState {
         'scoutNetV1': '1',
         'rewindOpeningV2': '1',
         'chronNumberFixV1': '1',
+        'chronNumberFixV2': '1',
       },
       'chronFirst': '$chronFirstYear',
       'openingNumbers': openingNumberDay,

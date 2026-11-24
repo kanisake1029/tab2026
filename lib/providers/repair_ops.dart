@@ -144,31 +144,34 @@ extension RepairOps on AppState {
 
   /// 以前の版の誤り（一度だけ）：ゲームの中で入団した選手に、開始前の推定の通算が足されていたら、
   ///  通算を「ゲームの中の年度別の記録（1軍）の合計」に戻す
-  Future<void> _fixInGameCareers() async {
-    if (await db.getKv('joinFixV1') == '1') return;
-    final bad = [for (final t in teams) for (final p in t.players) if (p.careerEstimated && p.joinedInGame) p];
-    if (bad.isNotEmpty) {
-      final rows = await (db.select(db.seasonRecords)..where((t) => t.kind.equals('player'))).get();
-      final hist = <String, PlayerStats>{};
-      for (final r in rows) {
-        final j = jsonDecode(r.json) as Map<String, dynamic>;
-        final h = hist.putIfAbsent(r.refId, () => PlayerStats());
-        if (j['stats'] is Map) h.add(PlayerStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map)));
-        final sp = j['splits'];
-        if (sp is List) {
-          for (final x in sp) {
-            if (x is Map && x['stats'] is Map) h.add(PlayerStats.fromJson(Map<String, dynamic>.from(x['stats'] as Map)));
+  Future<bool> _fixInGameCareers() async {
+    var teamChanged = false;
+    if (await db.getKv('joinFixV1') != '1') {
+      final bad = [for (final t in teams) for (final p in t.players) if (p.careerEstimated && p.joinedInGame) p];
+      if (bad.isNotEmpty) {
+        final rows = await (db.select(db.seasonRecords)..where((t) => t.kind.equals('player'))).get();
+        final hist = <String, PlayerStats>{};
+        for (final r in rows) {
+          final j = jsonDecode(r.json) as Map<String, dynamic>;
+          final h = hist.putIfAbsent(r.refId, () => PlayerStats());
+          if (j['stats'] is Map) h.add(PlayerStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map)));
+          final sp = j['splits'];
+          if (sp is List) {
+            for (final x in sp) {
+              if (x is Map && x['stats'] is Map) h.add(PlayerStats.fromJson(Map<String, dynamic>.from(x['stats'] as Map)));
+            }
           }
         }
+        for (final p in bad) {
+          p.career = PlayerStats()..add(hist[p.id] ?? PlayerStats());
+          p.careerEstimated = false;
+        }
+        _preCache = null;
+        teamChanged = true;
+        debugPrint('CAREER FIX: ${bad.length} players joined in game');
       }
-      for (final p in bad) {
-        p.career = PlayerStats()..add(hist[p.id] ?? PlayerStats());
-        p.careerEstimated = false;
-      }
-      _preCache = null;
-      debugPrint('CAREER FIX: ${bad.length} players joined in game');
+      await db.setKv('joinFixV1', '1');
     }
-    await db.setKv('joinFixV1', '1');
     if (await db.getKv('foreignProYearsV2') != '1') {
       final re1 = RegExp(r'^外国人選手（(\d{4})年');
       final re2 = RegExp(r'から入団（(\d{4})年）');
@@ -186,31 +189,38 @@ extension RepairOps on AppState {
           }
         }
       }
-      if (fixed > 0) debugPrint('FOREIGN PRO YEARS FIX V2: $fixed players');
+      if (fixed > 0) {
+        teamChanged = true;
+        debugPrint('FOREIGN PRO YEARS FIX V2: $fixed players');
+      }
       await db.setKv('foreignProYearsV2', '1');
     }
-    if (await db.getKv('chronNumberFixV1') != '1') {
-      await migrateChronNumbers();
-      await db.setKv('chronNumberFixV1', '1');
+    if (await db.getKv('chronNumberFixV2') != '1') {
+      if (await migrateChronNumbers()) teamChanged = true;
+      await db.setKv('chronNumberFixV2', '1');
     }
+    return teamChanged;
   }
 
   /// 既存セーブ（開発者版スロット1を含む）の年表・背番号変遷を修復する：
   ///  ・オフシーズン（10/31〜開幕前日）の join / reg に書かれた仮背番号を消し、開幕前日の「決定」として揃える
+  ///  ・シーズン中（開幕後〜10/30）の join / reg から30日以内の変更は入団時の背番号に統合し、猶予期間中なら numberFreeUntil を復元する
   ///  ・leave（移籍・引退・退団）に当時の確定背番号 'num' を補完し、空き番号変遷へ表示されるようにする
-  Future<void> migrateChronNumbers() async {
+  Future<bool> migrateChronNumbers() async {
     int? parseNum(String s) => s == '00' ? -1 : int.tryParse(s);
     final playerLineRe = RegExp(r'^(\S+)\s+(.+?)\(\d+\)');
     final numTagRe = RegExp(r'\s*背番号(?:は)?(00|\d+)。?');
     final chgRe = RegExp(r'^(\S+)\s+(.+?)の背番号を(00|\d+)から(00|\d+)に変更');
     final decRe = RegExp(r'^(\S+)\s+(.+?)の背番号が(00|\d+)に決定');
 
+    var teamChanged = false;
     // 万一「未定(-2)」のまま保存されていた選手がいれば仮番号を与えて修復
     for (final t in leagueTeams) {
       for (final p in t.players) {
         if (p.uniformNumber <= -2) {
           p.uniformNumber = RosterEngine.freeNumber(t, ikusei: p.ikusei);
           p.numberPending = true;
+          teamChanged = true;
         }
       }
     }
@@ -223,7 +233,7 @@ extension RepairOps on AppState {
         byYear[y] = [for (final e in list) Map<String, dynamic>.from(e)];
       }
     }
-    if (byYear.isEmpty) return;
+    if (byYear.isEmpty) return teamChanged;
 
     DateTime openEveFor(int seasonY) {
       if (seasonY == startYear) {
@@ -241,6 +251,18 @@ extension RepairOps on AppState {
             return DateUtils.dateOnly(dt);
           }
         }
+        DateTime? earliestGame;
+        for (final e in list) {
+          final k = e['k'];
+          if (k != 'first' && k != 'manager') continue;
+          final dt = DateTime.tryParse('${e['d']}');
+          if (dt == null || dt.year != seasonY || (dt.month != 3 && dt.month != 4)) continue;
+          final dOnly = DateUtils.dateOnly(dt);
+          if (earliestGame == null || dOnly.isBefore(earliestGame)) earliestGame = dOnly;
+        }
+        if (earliestGame != null) {
+          return earliestGame.subtract(const Duration(days: 1));
+        }
       }
       return DateTime(seasonY, 3, 25);
     }
@@ -254,7 +276,7 @@ extension RepairOps on AppState {
       return dt.month <= 3 && DateUtils.dateOnly(dt).isBefore(openEveFor(sY));
     }
 
-    // 初期選手（2026年開幕前）の初期背番号マップ
+    // 初期選手（2026年開幕前）と自由契約選手の初期・退団前背番号マップ
     final initByPid = <String, int>{};
     final initByName = <String, int>{};
     for (final t in _initialTeams()) {
@@ -264,6 +286,9 @@ extension RepairOps on AppState {
         initByName['${t.id}|${p.listName}'] = p.uniformNumber;
       }
     }
+    final faByPid = <String, int>{
+      for (final fa in freeAgents) '${fa.fromTeamId}|${fa.player.id}': fa.player.uniformNumber,
+    };
 
     final currentByPid = <String, (String tid, Player p)>{
       for (final t in leagueTeams)
@@ -306,14 +331,14 @@ extension RepairOps on AppState {
       return m != null && nm.isNotEmpty && m.group(2) == nm;
     }
 
-    // Pass 1: オフシーズンの join / reg から仮背番号を取り除き、開幕前日の決定へ整える
+    // Pass 1: オフシーズンの join / reg から仮背番号を取り除き、シーズン中の30日以内変更を入団記録へ統合する
     for (var i = 0; i < flat.length; i++) {
       final item = flat[i];
       final e = item.e;
       final k = '${e['k'] ?? ''}';
       if (k != 'join' && k != 'reg') continue;
       final dt = DateTime.tryParse('${e['d']}');
-      if (dt == null || !isOffseasonDate(dt)) continue;
+      if (dt == null) continue;
 
       final tid = '${e['team'] ?? ''}';
       final pid = e['pid'] as String?;
@@ -322,6 +347,57 @@ extension RepairOps on AppState {
       final pm = playerLineRe.firstMatch(text0);
       final pos = pm?.group(1) ?? '選手';
       final nm = pm?.group(2) ?? '';
+
+      if (!isOffseasonDate(dt)) {
+        // Pass 1b: シーズン中の join / reg（30日以内の変更は入団時の背番号へ統合、猶予期間中なら numberFreeUntil を復元）
+        final dtOnly = DateUtils.dateOnly(dt);
+        final graceChanges = <({Map<String, dynamic> e, int to})>[];
+        for (var j = i + 1; j < flat.length; j++) {
+          final je = flat[j].e;
+          if (!samePlayerAndTeam(je, tid, wKey, nm)) continue;
+          final jdt = DateTime.tryParse('${je['d']}');
+          if (jdt == null) continue;
+          final jdOnly = DateUtils.dateOnly(jdt);
+          final jk = '${je['k'] ?? ''}';
+          if (jk == 'leave') break;
+          if (jk == 'number') {
+            final cm = chgRe.firstMatch('${je['t'] ?? ''}');
+            if (cm != null && !jdOnly.isBefore(dtOnly) && jdOnly.difference(dtOnly).inDays <= 30) {
+              final to = parseNum(cm.group(4)!);
+              if (to != null) graceChanges.add((e: je, to: to));
+            }
+          }
+        }
+        if (graceChanges.isNotEmpty) {
+          final finalLbl = uniformLabel(graceChanges.last.to);
+          final curText = '${e['t'] ?? ''}';
+          if (RegExp(r'背番号は(00|\d+)').hasMatch(curText)) {
+            e['t'] = curText.replaceFirst(RegExp(r'背番号は(00|\d+)'), '背番号は$finalLbl');
+          } else {
+            e['t'] = '${curText.endsWith('。') ? curText : '$curText。'}背番号は$finalLbl。';
+          }
+          final pt0 = e['pt'] as String?;
+          if (pt0 != null && pt0.isNotEmpty) {
+            if (RegExp(r'背番号(00|\d+)').hasMatch(pt0)) {
+              e['pt'] = pt0.replaceFirst(RegExp(r'背番号(00|\d+)'), '背番号$finalLbl');
+            } else {
+              e['pt'] = '${pt0.endsWith('。') ? pt0 : '$pt0。'}背番号$finalLbl。';
+            }
+          }
+          for (final gc in graceChanges) {
+            toRemove.add(gc.e);
+          }
+          changed = true;
+        }
+        if (tid == myTeamId && pid != null && !today.isBefore(dtOnly) && today.difference(dtOnly).inDays <= 30) {
+          final cur = currentByPid[pid];
+          if (cur != null && cur.$1 == tid && !cur.$2.numberPending && cur.$2.numberFreeUntil.isEmpty) {
+            cur.$2.numberFreeUntil = ChronicleOps.ymd(dtOnly.add(const Duration(days: 30)));
+            teamChanged = true;
+          }
+        }
+        continue;
+      }
 
       int? tempNum;
       final mTag = numTagRe.firstMatch(text0);
@@ -340,6 +416,9 @@ extension RepairOps on AppState {
       final seasonY = targetSeasonOf(dt);
       final eve = openEveFor(seasonY);
       final eveStr = ChronicleOps.ymd(eve);
+      final targetAddY = byYear.containsKey(eve.year)
+          ? eve.year
+          : (eve.year <= startYear ? eve.year : item.year);
 
       var hasDecide = false;
       final changeItems = <({int year, Map<String, dynamic> e, int from, int to})>[];
@@ -399,6 +478,10 @@ extension RepairOps on AppState {
         last.e['d'] = eveStr;
         last.e['t'] = '$pos $nmの背番号が$toLabelに決定。';
         last.e['pt'] = '背番号が$toLabelに決定。';
+        if (last.year != targetAddY) {
+          toRemove.add(last.e);
+          toAdd.add((targetAddY, Map<String, dynamic>.from(last.e)));
+        }
         changed = true;
         continue;
       }
@@ -417,9 +500,6 @@ extension RepairOps on AppState {
         resolved ??= tempNum;
         if (resolved != null) {
           final lbl = uniformLabel(resolved);
-          final targetAddY = byYear.containsKey(eve.year)
-              ? eve.year
-              : (eve.year <= startYear ? eve.year : item.year);
           toAdd.add((targetAddY, {
             'd': eveStr,
             'team': tid,
@@ -433,7 +513,14 @@ extension RepairOps on AppState {
       } else if (pid != null) {
         final cur = currentByPid[pid];
         if (cur != null && cur.$1 == tid) {
-          cur.$2.numberPending = true;
+          if (!cur.$2.numberPending) {
+            cur.$2.numberPending = true;
+            teamChanged = true;
+          }
+          if (cur.$2.numberFreeUntil.isNotEmpty) {
+            cur.$2.numberFreeUntil = '';
+            teamChanged = true;
+          }
         }
       }
     }
@@ -520,6 +607,7 @@ extension RepairOps on AppState {
         if (!wasPending && e['num'] == null) {
           final pid = e['pid'] as String?;
           final n = trackedNum ??
+              (pid != null ? faByPid['$tid|$pid'] : null) ??
               (pid != null ? initByPid['$tid|$pid'] : null) ??
               (nm.isNotEmpty ? initByName['$tid|$nm'] : null);
           if (n != null) {
@@ -530,7 +618,7 @@ extension RepairOps on AppState {
       }
     }
 
-    if (!changed) return;
+    if (!changed) return teamChanged;
 
     for (final entry in byYear.entries) {
       final list = entry.value;
@@ -544,7 +632,8 @@ extension RepairOps on AppState {
       if (chronFirstYear == 0 || entry.key < chronFirstYear) chronFirstYear = entry.key;
       await db.setKv('chron_${entry.key}', jsonEncode(sorted));
     }
-    debugPrint('CHRON NUMBER FIX V1: migrated chronicles');
+    debugPrint('CHRON NUMBER FIX V2: migrated chronicles');
+    return true;
   }
 
   /// a − b（0未満は0。守備位置ごとの値も）

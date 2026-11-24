@@ -5,8 +5,8 @@ import '../models/team.dart';
 import '../providers/app_state.dart';
 import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 
-/// 背番号の一括変更：選手ごとに「開幕前日からの背番号」を入れる
-///  変更・決定は入団時期に関わらず一律で開幕前日に行われる。支配下は 00・0〜99、育成は 100〜999
+/// 背番号の一括変更：選手ごとに希望背番号を入れる
+///  既存選手・オフ期間入団の変更や決定は開幕前日、シーズン中入団・支配下登録から1か月以内は空き番号へ即反映。支配下は 00・0〜99、育成は 100〜999
 class NumberBoardScreen extends StatefulWidget {
   final AppState app;
   final Team team;
@@ -55,9 +55,20 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
       if (n == null) return setState(() => _err = '${p.registeredName}：背番号は 00・0〜999 で入れてください');
       next[p.id] = n;
     }
+    final beforeNums = {for (final p in widget.team.players) p.id: p.uniformNumber};
+    final beforeNext = {for (final p in widget.team.players) p.id: p.nextNumber};
     final e = widget.app.setNumbersBulk(widget.team, next);
     if (e != null) return setState(() => _err = e);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.isOpeningNumberDay ? '背番号を変えました' : '背番号を予約しました（開幕前日に反映されます）')));
+    final changedNow = widget.app.isOpeningNumberDay ||
+        widget.team.players.any((p) => p.uniformNumber != beforeNums[p.id]);
+    final hasNewReserved = !widget.app.isOpeningNumberDay &&
+        widget.team.players.any((p) => p.nextNumber != null && p.nextNumber != beforeNext[p.id]);
+    final msg = widget.app.isOpeningNumberDay || (changedNow && !hasNewReserved)
+        ? '背番号を変えました'
+        : (changedNow && hasNewReserved
+            ? '背番号を更新しました（予約分は開幕前日に反映されます）'
+            : '背番号を予約しました（開幕前日に反映されます）');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     Navigator.of(context).pop(true);
   }
 
@@ -69,12 +80,21 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
       ..sort((a, b) => a.ikusei != b.ikusei ? (a.ikusei ? 1 : -1) : uniformSortKey(a.uniformNumber).compareTo(uniformSortKey(b.uniformNumber)));
     Widget row(Player p) {
       final changed = parseUniform(_ctl[p.id]!.text) != p.uniformNumber;
+      final freeNow = !app.isOpeningNumberDay && app.numberFreeNow(p);
+      final untilParts = p.numberFreeUntil.split('-');
+      final untilText = untilParts.length == 3
+          ? '・〜${int.tryParse(untilParts[1]) ?? untilParts[1]}/${int.tryParse(untilParts[2]) ?? untilParts[2]}'
+          : '';
       final subColor = p.numberPending
           ? const Color(0xFF15803D)
-          : (p.nextNumber != null ? const Color(0xFF1D4ED8) : const Color(0xFF78716C));
+          : (p.nextNumber != null
+              ? const Color(0xFF1D4ED8)
+              : (freeNow ? const Color(0xFF0F766E) : const Color(0xFF78716C)));
       final subNote = p.numberPending
           ? '　仮番号（開幕前日に決定）'
-          : (p.nextNumber != null ? '　予約 #${uniformLabel(p.nextNumber!)}（開幕前日〜）' : '');
+          : (p.nextNumber != null
+              ? '　予約 #${uniformLabel(p.nextNumber!)}（開幕前日〜）'
+              : (freeNow ? '　猶予期間中（すぐ変更可$untilText）' : ''));
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE7E5E4)))),
@@ -139,7 +159,7 @@ class _NumberBoardScreenState extends State<NumberBoardScreen> {
           child: Text(
               app.isOpeningNumberDay
                   ? '今年だけ特別に、今日（開幕日）は全員の背番号をすぐ変えられます（初期の背番号の扱い。背番号の変遷には変更として残りません）。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。'
-                  : '右の欄が開幕前日から適用される背番号です。変更・決定は入団時期に関わらず一律で毎年開幕前日に行われます。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。',
+                  : '既存選手・オフ入団は開幕前日に反映・決定されます（シーズン中の入団・支配下登録から1か月以内は、空いている番号へすぐ変えられ入団時の番号から書き換わります）。\n支配下は 00・0〜99、育成は 100〜999。赤は重なり・決まり違い、青は変える番号です。',
               style: const TextStyle(fontSize: 12, color: Color(0xFF334155))),
         ),
         Expanded(child: ListView(children: [for (final p in list) row(p)])),
