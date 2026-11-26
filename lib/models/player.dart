@@ -263,11 +263,12 @@ class Player {
   int proYears;
 
   int trajectory;
-  int trajectoryVal; // 弾道の内部数値（1〜100。平均打球角度 0〜20° を比例配分）
-  static const double maxLaunchAngle = 20.0;
+  int trajectoryVal; // 弾道の内部数値（1〜100。平均打球角度 -5.0°〜+25.0° を比例配分）
+  static const double minLaunchAngle = -5.0;
+  static const double maxLaunchAngle = 25.0;
   static int trajectoryFromVal(int v) => ((v.clamp(1, 100) - 1) ~/ 25 + 1).clamp(1, 4);
   static int defaultTrajectoryVal(int traj) => ((traj.clamp(1, 4) - 1) * 25 + 13).clamp(1, 100);
-  double get launchAngle => (trajectoryVal.clamp(1, 100) / 100.0) * maxLaunchAngle;
+  double get launchAngle => minLaunchAngle + (trajectoryVal.clamp(1, 100) / 100.0) * (maxLaunchAngle - minLaunchAngle);
   void setTrajectoryVal(int v) {
     trajectoryVal = v.clamp(1, 100);
     trajectory = trajectoryFromVal(trajectoryVal);

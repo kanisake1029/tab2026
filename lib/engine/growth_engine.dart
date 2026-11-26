@@ -75,6 +75,7 @@ class GrowthEngine {
     GrowthStat('contactLeft', '対左ミート', 'bat', (p) => p.contactLeft, (p, v) => p.contactLeft = v, batterOnly: true),
     GrowthStat('contactRight', '対右ミート', 'bat', (p) => p.contactRight, (p, v) => p.contactRight = v, batterOnly: true),
     GrowthStat('power', 'パワー', 'bat', (p) => p.power, (p, v) => p.power = v, curve: 15, batterOnly: true),
+    // 弾道（-5.0°〜+25.0°を1〜100に比例配分。値が上がるほど needExp により必要経験値が増えて伸びにくくなる）
     GrowthStat('trajectoryVal', '弾道', 'bat', (p) => p.trajectoryVal, (p, v) => p.setTrajectoryVal(v), curve: 15, batterOnly: true),
     GrowthStat('eye', '選球眼', 'bat', (p) => p.eye, (p, v) => p.eye = v, body: true, batterOnly: true),
     GrowthStat('clutch', 'チャンス', 'bat', (p) => p.clutch, (p, v) => p.clutch = v, base: 1500, curve: 15, batterOnly: true),

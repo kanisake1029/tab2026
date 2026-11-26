@@ -2014,15 +2014,23 @@ void main() {
     expect(p.fieldSS, greaterThan(fieldBefore));
   });
 
-  test('弾道が練習メニューに含まれ、1〜100と0〜20°が比例配分されて練習で成長する', () {
+  test('弾道が練習メニューに含まれ、1〜100と-5〜25°が比例配分されて値が上がるほど伸びにくくなり練習で成長する', () {
     final p = Player(id: 'traj_1', lastName: '強打', isPitcher: false, trajectory: 3, trajectoryVal: 75);
-    expect(p.launchAngle, closeTo(15.0, 1e-9));
+    expect(p.launchAngle, closeTo(17.5, 1e-9));
+    p.setTrajectoryVal(1);
+    expect(p.trajectory, 1);
+    expect(p.launchAngle, closeTo(-4.7, 1e-9)); // マイナス打球角度
     p.setTrajectoryVal(100);
     expect(p.trajectory, 4);
-    expect(p.launchAngle, closeTo(20.0, 1e-9));
+    expect(p.launchAngle, closeTo(25.0, 1e-9));
     p.setTrajectoryVal(50);
     expect(p.trajectory, 2);
     expect(p.launchAngle, closeTo(10.0, 1e-9));
+
+    final trajStat = GrowthEngine.stats.firstWhere((s) => s.key == 'trajectoryVal');
+    expect(GrowthEngine.needExp(trajStat, 20), lessThan(GrowthEngine.needExp(trajStat, 50)));
+    expect(GrowthEngine.needExp(trajStat, 50), lessThan(GrowthEngine.needExp(trajStat, 75)));
+    expect(GrowthEngine.needExp(trajStat, 75), lessThan(GrowthEngine.needExp(trajStat, 90)));
 
     expect(GrowthEngine.practiceOptions(p), contains('弾道'));
     expect(GrowthEngine.menuValue(p, '弾道'), '2（10.0°）');
