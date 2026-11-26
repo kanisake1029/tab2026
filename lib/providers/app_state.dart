@@ -939,10 +939,16 @@ class AppState extends ChangeNotifier {
     }
     // 試合のない期間（ドラフト明け〜開幕）は毎週月曜日に止まる（補強・練習の見直しのため）
     final monday = d0.add(Duration(days: (DateTime.monday - d0.weekday + 7) % 7 == 0 ? 7 : (DateTime.monday - d0.weekday + 7) % 7));
-    for (final c in [DateTime(d0.year, 10, 31), DateTime(d0.year + 1, 1, 1), ..._offseasonStops(d0), if (_offPeriod(d0)) monday]) {
+    for (final c in [if (draftDoneYear < d0.year) DateTime(d0.year, 10, 31), DateTime(d0.year + 1, 1, 1), ..._offseasonStops(d0), if (_offPeriod(d0)) monday]) {
       if (c.isAfter(d0) && (best == null || c.isBefore(best))) best = c;
     }
     return best ?? d0.add(const Duration(days: 1));
+  }
+
+  /// 今日、まだ終わっていない試合があるか（他球団同士のCS・日本シリーズ含む）
+  bool get hasUnplayedMatchToday {
+    final d0 = DateUtils.dateOnly(currentDate);
+    return matches.any((m) => DateUtils.isSameDay(m.date, d0) && !m.done);
   }
 
   /// 試合のない期間か（ドラフト会議の後〜その年の最初の試合の前）
@@ -955,12 +961,25 @@ class AppState extends ChangeNotifier {
 
   /// 「進める」ボタンに出す、次の止まる日の名前
   String nextStopLabel() {
+    final d0 = DateUtils.dateOnly(currentDate);
+    final todayUnplayed = matches.where((m) => DateUtils.isSameDay(m.date, d0) && !m.done).toList();
+    if (todayUnplayed.isNotEmpty) {
+      if (todayUnplayed.any((m) => m.matchType == 'JS')) return '今日の日本シリーズ';
+      if (todayUnplayed.any((m) => m.matchType == 'CS')) return '今日のCS';
+      return '今日の試合（${d0.month}/${d0.day}）';
+    }
     final s = _nextStop();
-    if (matches.any((m) => DateUtils.isSameDay(m.date, s))) return '次の試合日（${s.month}/${s.day}）';
+    final onStop = matches.where((m) => DateUtils.isSameDay(m.date, s)).toList();
+    if (onStop.isNotEmpty) {
+      if (onStop.any((m) => m.matchType == 'JS')) return '日本シリーズ（${s.month}/${s.day}）';
+      if (onStop.any((m) => m.matchType == 'CS')) return 'CS（${s.month}/${s.day}）';
+      return '次の試合日（${s.month}/${s.day}）';
+    }
     if (s.month == 10 && s.day == 31) return 'ドラフト会議（10/31）';
     if (s.month == 11 && s.day == faDeclareDate(s.year).day) return 'FA 宣言（11/${s.day}）';
+    if (s.month == 12 && s.day == 9) return '現役ドラフト（12/9）';
     if (s.month == 12 && s.day == 31) return 'FA 交渉の期限（12/31）';
-    if (s.weekday == DateTime.monday && _offPeriod(DateUtils.dateOnly(currentDate))) return '次の月曜（${s.month}/${s.day}）';
+    if (s.weekday == DateTime.monday && _offPeriod(d0)) return '次の月曜（${s.month}/${s.day}）';
     if (s.month == 12 && s.day == 1) return '契約更改（12/1）';
     if (s.month == 1 && s.day == 1) return s.year > startYear ? '年度更新・春季キャンプ（1/1）' : '春季キャンプ（1/1〜1/31）';
     return '${s.month}/${s.day}';

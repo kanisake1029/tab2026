@@ -583,6 +583,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget _sidePanel() {
     final ms = _matchesOn(_selected);
     final plan = _planOn(_selected);
+    final otherMatches = _teamId == null ? const <Match>[] : _all.where((m) => DateUtils.isSameDay(m.date, _selected) && !ms.contains(m)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (ms.isEmpty && plan.isNotEmpty)
         _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -594,11 +595,67 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         _card(Text('${_selected.month}/${_selected.day}　試合はありません', style: const TextStyle(color: Color(0xFF64748B))))
       else
         for (final m in ms) Padding(padding: const EdgeInsets.only(bottom: 10), child: _gameCard(m, compact: ms.length > 1)),
+      if (otherMatches.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        _otherMatchesCard(otherMatches),
+      ],
       if (_teamId != null) ...[
-        const SizedBox(height: 2),
+        const SizedBox(height: 6),
         _vsCard(),
       ],
     ]);
+  }
+
+  Widget _otherMatchesCard(List<Match> otherMatches) {
+    return _card(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('${_selected.month}/${_selected.day} の他球団の結果', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 6),
+      for (final m in otherMatches)
+        Builder(builder: (_) {
+          final away = _team(m.awayTeamId), home = _team(m.homeTeamId);
+          if (away == null || home == null) return const SizedBox.shrink();
+          final aWin = m.isPlayed && (m.awayScore ?? 0) > (m.homeScore ?? 0);
+          final hWin = m.isPlayed && (m.homeScore ?? 0) > (m.awayScore ?? 0);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Material(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: m.isPlayed && _level < 2 ? () => _showMatchDetails(m) : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(children: [
+                    Container(width: 3, height: 14, decoration: BoxDecoration(color: teamColor(app.teams, away), borderRadius: BorderRadius.circular(2))),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(teamShort(away), textAlign: TextAlign.right, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: aWin ? FontWeight.w900 : FontWeight.w500)),
+                    ),
+                    SizedBox(
+                      width: 54,
+                      child: Text(
+                        m.isPlayed ? '${m.awayScore} - ${m.homeScore}' : 'vs',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, fontFeatures: [FontFeature.tabularFigures()]),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(teamShort(home), textAlign: TextAlign.left, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: hWin ? FontWeight.w900 : FontWeight.w500)),
+                    ),
+                    const SizedBox(width: 5),
+                    Container(width: 3, height: 14, decoration: BoxDecoration(color: teamColor(app.teams, home), borderRadius: BorderRadius.circular(2))),
+                    if (m.isPlayed && _level < 2) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right, size: 14, color: Color(0xFF94A3B8)),
+                    ],
+                  ]),
+                ),
+              ),
+            ),
+          );
+        }),
+    ]));
   }
 
   Widget _card(Widget child) => Container(

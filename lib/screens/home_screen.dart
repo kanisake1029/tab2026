@@ -20,6 +20,7 @@ import '../widgets/season_report_dialog.dart';
 import 'awards_screen.dart';
 import 'title_race.dart';
 import 'live_game_screen.dart';
+import 'match_detail_screen.dart';
 import 'pre_game_screen.dart';
 import 'standings_screen.dart';
 import 'draft_screen.dart';
@@ -295,18 +296,59 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final off = app.offseasonLabel();
-    final dateLabel = next == null ? (off ?? '') : (hasToday ? '今日の試合' : '${off != null ? '$off　' : ''}次の試合 ${next.date.month}/${next.date.day}');
+    final isEvent = app.draftPending || app.activeDraftPending;
+    final needFinish = !hasToday && app.seasonOver && !app.seasonFinished;
+    final nextIsFarOffseason = !hasToday && (off != null || app.seasonFinished) && (next == null || next.date.difference(DateUtils.dateOnly(app.currentDate)).inDays > 7);
+    final hideMatchLayout = isEvent || needFinish || nextIsFarOffseason;
+    final dateLabel = hideMatchLayout
+        ? (app.draftPending
+            ? 'ドラフト会議（10/31）'
+            : app.activeDraftPending
+                ? '現役ドラフト（12/9）'
+                : needFinish
+                    ? 'シーズン終了'
+                    : (off ?? 'オフシーズン'))
+        : (next == null ? (off ?? '') : (hasToday ? '今日の試合' : '${off != null ? '$off　' : ''}次の試合 ${next.date.month}/${next.date.day}'));
     final typeLabel = next == null ? '' : const {'OPEN': 'オープン戦', 'LEAGUE': '公式戦', 'INTERLEAGUE': '交流戦', 'CS': 'クライマックスシリーズ', 'JS': '日本シリーズ'}[next.matchType] ?? next.matchType;
+    final btnLabel = app.draftPending
+        ? 'ドラフト会議を始める'
+        : app.activeDraftPending
+            ? '現役ドラフトを行う'
+            : hasToday
+                ? '今日の試合を開始する'
+                : needFinish
+                    ? 'シーズンを終える（成績を確定）'
+                    : (app.hasUnplayedMatchToday ? '${app.nextStopLabel()}を進める' : '${app.nextStopLabel()}まで進める');
     return Container(
       padding: EdgeInsets.all(MediaQuery.of(context).size.width < 600 ? 14 : 22),
       decoration: BoxDecoration(color: _navy, borderRadius: BorderRadius.circular(18)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Wrap(alignment: WrapAlignment.spaceBetween, spacing: 12, runSpacing: 4, children: [
-          Text('$dateLabel　$typeLabel', style: const TextStyle(fontSize: 13, letterSpacing: 1.5, color: _lime, fontWeight: FontWeight.w700)),
-          Text(h2h, style: const TextStyle(fontSize: 12, color: _muted)),
+          Text(hideMatchLayout ? dateLabel : '$dateLabel　$typeLabel', style: const TextStyle(fontSize: 13, letterSpacing: 1.5, color: _lime, fontWeight: FontWeight.w700)),
+          if (!hideMatchLayout) Text(h2h, style: const TextStyle(fontSize: 12, color: _muted)),
         ]),
         const SizedBox(height: 14),
-        if (next == null)
+        if (hideMatchLayout)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                app.draftPending
+                    ? '今年のドラフト会議を開催します'
+                    : app.activeDraftPending
+                        ? '今年の現役ドラフトを開催します'
+                        : needFinish
+                            ? '今季の試合はすべて終了しました'
+                            : '次の予定：${app.nextStopLabel()}',
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              if (!isEvent && !needFinish && next != null) ...[
+                const SizedBox(height: 6),
+                Text('次の試合予定：${next.date.month}/${next.date.day} $typeLabel', style: const TextStyle(fontSize: 12, color: _muted)),
+              ],
+            ]),
+          )
+        else if (next == null)
           Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text(app.seasonFinished ? '今季の日程はすべて終了しました' : '今後の試合はありません', style: const TextStyle(color: Colors.white, fontSize: 18)))
         else
           LayoutBuilder(builder: (context, c) {
@@ -317,15 +359,18 @@ class _HomeScreenState extends State<HomeScreen> {
             }
             return Row(children: [Expanded(child: teamSide(away, false)), Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: vs), Expanded(child: teamSide(home, true))]);
           }),
-        const SizedBox(height: 6),
-        if (MediaQuery.of(context).size.width >= 600) Text(next == null ? '' : 'ビジター（先攻）：${away?.name ?? '-'} ／ ホーム：${home?.name ?? '-'}', style: const TextStyle(fontSize: 11, color: _muted)),
-        const SizedBox(height: 12),
-        if (next != null && hasToday) ...[
-          starter(away),
+        if (!hideMatchLayout) ...[
+          const SizedBox(height: 6),
+          if (MediaQuery.of(context).size.width >= 600) Text(next == null ? '' : 'ビジター（先攻）：${away?.name ?? '-'} ／ ホーム：${home?.name ?? '-'}', style: const TextStyle(fontSize: 11, color: _muted)),
+          const SizedBox(height: 12),
+          if (next != null && hasToday) ...[
+            starter(away),
+            const SizedBox(height: 8),
+            starter(home),
+            const SizedBox(height: 14),
+          ],
+        ] else
           const SizedBox(height: 8),
-          starter(home),
-          const SizedBox(height: 14),
-        ],
         Wrap(spacing: 10, runSpacing: 10, children: [
           SizedBox(
             height: MediaQuery.of(context).size.width < 600 ? 44 : 52,
@@ -335,11 +380,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? () => _openDraft(context)
                   : app.activeDraftPending
                   ? () => _openActiveDraft(context)
-                  : (!hasToday && app.seasonOver && !app.seasonFinished) ? () => _finishSeason(context) : () => _playToday(context),
-              icon: Icon(app.draftPending || app.activeDraftPending ? Icons.how_to_vote : (hasToday ? Icons.sports_baseball : ((app.seasonOver && !app.seasonFinished) ? Icons.emoji_events : Icons.fast_forward))),
+                  : needFinish ? () => _finishSeason(context) : () => _playToday(context),
+              icon: Icon(app.draftPending || app.activeDraftPending ? Icons.how_to_vote : (hasToday ? Icons.sports_baseball : (needFinish ? Icons.emoji_events : Icons.fast_forward))),
               label: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text(app.draftPending ? 'ドラフト会議を始める' : app.activeDraftPending ? '現役ドラフトを行う' : (hasToday ? '今日の試合を開始する' : ((app.seasonOver && !app.seasonFinished) ? 'シーズンを終える（成績を確定）' : '${app.nextStopLabel()}まで進める')), maxLines: 1, softWrap: false, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                child: Text(btnLabel, maxLines: 1, softWrap: false, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
               ),
             ),
           ),
@@ -600,6 +645,120 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ---------------- 直近の試合結果（他球団含む） ----------------
+  Widget? _latestResultsCard(Team my) {
+    final played = app.matches.where((m) => m.isPlayed).toList();
+    if (played.isEmpty) return null;
+    var latestDate = DateUtils.dateOnly(played.first.date);
+    for (final m in played) {
+      final d = DateUtils.dateOnly(m.date);
+      if (d.isAfter(latestDate)) latestDate = d;
+    }
+    final dayMatches = played.where((m) => DateUtils.isSameDay(m.date, latestDate)).toList();
+    if (dayMatches.isEmpty) return null;
+
+    String groupOf(Match m) {
+      switch (m.matchType) {
+        case 'JS':
+          return '日本シリーズ';
+        case 'CS':
+          return 'クライマックスシリーズ';
+        case 'INTERLEAGUE':
+          return '交流戦';
+        case 'OPEN':
+          return 'オープン戦';
+        default:
+          final h = app.teamById(m.homeTeamId);
+          return h?.league == 'PL' ? 'Bリーグ' : 'Aリーグ';
+      }
+    }
+
+    final grouped = <String, List<Match>>{};
+    for (final m in dayMatches) {
+      (grouped[groupOf(m)] ??= []).add(m);
+    }
+    for (final list in grouped.values) {
+      list.sort((a, b) {
+        final aMine = a.homeTeamId == my.id || a.awayTeamId == my.id ? 0 : 1;
+        final bMine = b.homeTeamId == my.id || b.awayTeamId == my.id ? 0 : 1;
+        return aMine.compareTo(bMine);
+      });
+    }
+
+    Widget matchRow(Match m) {
+      final away = app.teamById(m.awayTeamId);
+      final home = app.teamById(m.homeTeamId);
+      if (away == null || home == null) return const SizedBox.shrink();
+      final mine = away.id == my.id || home.id == my.id;
+      final aWin = (m.awayScore ?? 0) > (m.homeScore ?? 0);
+      final hWin = (m.homeScore ?? 0) > (m.awayScore ?? 0);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 5),
+        child: Material(
+          color: mine ? const Color(0xFFFEF3C7) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MatchDetailScreen(match: m, home: home, away: away, appState: app))),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(children: [
+                Container(width: 4, height: 18, decoration: BoxDecoration(color: teamColor(app.teams, away), borderRadius: BorderRadius.circular(2))),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    teamShort(away),
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, fontWeight: aWin ? FontWeight.w900 : FontWeight.w500, color: aWin ? const Color(0xFF0F172A) : const Color(0xFF475569)),
+                  ),
+                ),
+                Container(
+                  width: 64,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFE2E8F0))),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${m.awayScore} - ${m.homeScore}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), fontFeatures: [FontFeature.tabularFigures()]),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    teamShort(home),
+                    textAlign: TextAlign.left,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, fontWeight: hWin ? FontWeight.w900 : FontWeight.w500, color: hWin ? const Color(0xFF0F172A) : const Color(0xFF475569)),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(width: 4, height: 18, decoration: BoxDecoration(color: teamColor(app.teams, home), borderRadius: BorderRadius.circular(2))),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right, size: 16, color: Color(0xFF94A3B8)),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _card(
+      title: '${latestDate.month}/${latestDate.day} の試合結果（他球団含む）',
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (final entry in grouped.entries) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            child: Text(entry.key, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF64748B))),
+          ),
+          for (final m in entry.value) matchRow(m),
+        ],
+      ]),
+    );
+  }
+
   // ---------------- 7日間 ----------------
   Widget _weekCard(Team my) {
     const dows = ['月', '火', '水', '木', '金', '土', '日'];
@@ -771,8 +930,13 @@ class _HomeScreenState extends State<HomeScreen> {
         // お知らせ（ニュース以外）と、チームの調子・故障
         body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_newsList(), _conditionCard(my)]);
       default:
-        // 順位と、この7日間
-        body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_standingsCard(my, kind), _weekCard(my)]);
+        // 直近の試合結果（他球団含む）と順位、この7日間
+        final latest = _latestResultsCard(my);
+        body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (latest != null) ...[latest, const SizedBox(height: 8)],
+          _standingsCard(my, kind),
+          _weekCard(my),
+        ]);
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Container(

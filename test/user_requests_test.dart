@@ -26,6 +26,7 @@ import 'package:npb_pennant_app/providers/app_state.dart';
 import 'package:npb_pennant_app/screens/active_draft_screen.dart';
 import 'package:npb_pennant_app/screens/awards_screen.dart';
 import 'package:npb_pennant_app/screens/contract_screen.dart';
+import 'package:npb_pennant_app/screens/home_screen.dart';
 import 'package:npb_pennant_app/widgets/awards_view.dart';
 import 'package:npb_pennant_app/screens/number_board_screen.dart';
 import 'package:npb_pennant_app/screens/office_screen.dart';
@@ -2284,5 +2285,59 @@ void main() {
     expect(p.isPartner, isFalse);
     expect(p.foreignSlot, isTrue);
     await db.close();
+  });
+
+  testWidgets('ホーム画面: 現役ドラフト前は試合開始レイアウトを出さず、CS中はドラフト表記にならない', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      final my = app.teams.first;
+      final t2 = app.teams[1];
+      final t3 = app.teams[2];
+      app.myTeamId = my.id;
+
+      // 1) CS期間中で自チームは試合なし・他球団のCSがある日（10/14）
+      app.startYear = 2026;
+      app.draftDoneYear = 2026;
+      app.currentDate = DateTime(2026, 10, 14);
+      app.matches.clear();
+      app.matches.add(Match(homeTeamId: t2.id, awayTeamId: t3.id, date: DateTime(2026, 10, 14), matchType: 'CS'));
+    });
+
+    expect(app.nextStopLabel(), '今日のCS');
+    expect(app.nextStopLabel(), isNot(contains('ドラフト')));
+    await tester.pumpWidget(MaterialApp(home: HomeScreen(appState: app)));
+    await tester.pumpAndSettle();
+    expect(find.text('今日のCSを進める'), findsOneWidget);
+    expect(find.textContaining('ドラフト会議'), findsNothing);
+
+    // 2) 現役ドラフト前（12/5）および当日（12/9）：VSレイアウトにならず現役ドラフト予定が表示される
+    app.matches.clear();
+    app.matches.add(Match(homeTeamId: app.teams[1].id, awayTeamId: app.teams[2].id, date: DateTime(2026, 10, 14), matchType: 'CS')
+      ..homeScore = 4
+      ..awayScore = 2
+      ..isPlayed = true);
+    app.matches.add(Match(homeTeamId: app.teams.first.id, awayTeamId: app.teams[1].id, date: DateTime(2027, 2, 20), matchType: 'OPEN'));
+    app.seasonFinished = true;
+    app.offAfterSeason = true;
+    app.activeDraftYear = 2025;
+    app.currentDate = DateTime(2026, 12, 8);
+    await tester.pumpWidget(MaterialApp(home: HomeScreen(appState: app)));
+    await tester.pumpAndSettle();
+    expect(find.text('VS'), findsNothing);
+    expect(find.text('現役ドラフト（12/9）まで進める'), findsOneWidget);
+    // 直近の他球団試合結果カードも表示される
+    expect(find.text('10/14 の試合結果（他球団含む）'), findsOneWidget);
+    expect(find.text('2 - 4'), findsOneWidget);
+
+    app.currentDate = DateTime(2026, 12, 9);
+    await tester.pumpWidget(MaterialApp(home: HomeScreen(appState: app)));
+    await tester.pumpAndSettle();
+    expect(find.text('VS'), findsNothing);
+    expect(find.text('現役ドラフトを行う'), findsOneWidget);
   });
 }
