@@ -25,7 +25,10 @@ class AwardsEngine {
     Map<String, Map<String, dynamic>> prevStats = const {}, // 前年の成績（カムバック賞）
     List<Map<String, dynamic>> series = const [],
     List<String> allStarMvps = const [],
+    List<Map<String, dynamic>> allStarGames = const [],
     String? championId,
+    Map<String, PlayerStats>? priorCareers,
+    Map<String, int>? proYearsMap,
   }) {
     final rnd = Random(year * 7919);
     final leagues = <String, dynamic>{};
@@ -37,7 +40,7 @@ class AwardsEngine {
       final g = st.map((r) => r.games).fold(0, max);
       final members = <(Player, Team)>[for (final t in teams.where((t) => t.league == lg)) for (final p in t.players) (p, t)];
       allPitchers.addAll(members.where((e) => e.$1.isPitcher));
-      leagues[lg] = _league(lg, members, ranks, g, rnd, previous?['leagues']?[lg] as Map<String, dynamic>?);
+      leagues[lg] = _league(year, lg, members, ranks, g, rnd, previous?['leagues']?[lg] as Map<String, dynamic>?, priorCareers: priorCareers, proYearsMap: proYearsMap);
     }
     return {
       'year': year,
@@ -47,7 +50,96 @@ class AwardsEngine {
       'comeback': _comeback([for (final t in teams) for (final p in t.players) (p, t)], prevStats),
       'series': series,
       'allStarMvp': allStarMvps,
+      'allStarGames': allStarGames,
     };
+  }
+
+  /// ポストシーズン1シリーズの1戦ずつの試合結果リスト
+  static List<Map<String, dynamic>> seriesGamesOf(List<int> matchIdx, List<Match> matches) {
+    final out = <Map<String, dynamic>>[];
+    for (final i in matchIdx) {
+      if (i < 0 || i >= matches.length) continue;
+      final m = matches[i];
+      if (m.homeScore == null || m.awayScore == null) continue;
+      out.add({
+        'date': m.date.toIso8601String().substring(0, 10),
+        'away': m.awayTeamId,
+        'home': m.homeTeamId,
+        'awayScore': m.awayScore,
+        'homeScore': m.homeScore,
+      });
+    }
+    return out;
+  }
+
+  /// オールスターの1戦ずつの試合結果リスト
+  static List<Map<String, dynamic>> allStarGamesOf(List<Match> matches) {
+    final out = <Map<String, dynamic>>[];
+    for (final m in matches.where((m) => m.matchType == 'ALLSTAR' && m.homeScore != null && m.awayScore != null)) {
+      out.add({
+        'date': m.date.toIso8601String().substring(0, 10),
+        'away': m.awayTeamId,
+        'home': m.homeTeamId,
+        'awayScore': m.awayScore,
+        'homeScore': m.homeScore,
+        if (m.boxScore?['mvp'] is String) 'mvp': m.boxScore!['mvp'] as String,
+      });
+    }
+    return out;
+  }
+
+  /// 1戦ずつの表示文字列（例：10/1 ○東新 5-3 ラクテル●、引分は △）
+  static String formatGameLine({
+    required String date,
+    required String awayName,
+    required String homeName,
+    required int awayScore,
+    required int homeScore,
+  }) {
+    var md = date;
+    final parts = date.split('T').first.split('-');
+    if (parts.length >= 3) {
+      md = '${int.tryParse(parts[1]) ?? parts[1]}/${int.tryParse(parts[2]) ?? parts[2]}';
+    }
+    final aMark = awayScore > homeScore ? '○' : (awayScore < homeScore ? '●' : '△');
+    final hMark = homeScore > awayScore ? '○' : (homeScore < awayScore ? '●' : '△');
+    return '$md $aMark$awayName $awayScore-$homeScore $homeName$hMark';
+  }
+
+  /// NPB 準拠の新人王対象判定：
+  /// 1. 支配下選手（!ikusei）かつ提携選手でない（!isPartner）
+  /// 2. 海外プロ出身・外国人は NPB ドラフト経由のみ対象
+  /// 3. 支配下登録から5年以内（1 <= proYears <= 5）
+  /// 4. 前年までの1軍通算成績が 投手30イニング（90アウト）以内・野手60打席以内
+  /// 5. 過去に新人王を受賞していないこと
+  static bool isRookieEligible(
+    Player p, {
+    int? proYearsOverride,
+    PlayerStats? priorCareer,
+    int? seasonYear,
+  }) {
+    if (p.ikusei || p.isPartner) return false;
+    final fromDraft = p.draftInfo.contains('ドラフト') || (p.draftYear > 0 && !p.draftInfo.contains('外国人'));
+    final hasOverseasPro = p.abroad.any((a) =>
+        a.contains('MLB') || a.contains('3A') || a.contains('2A') || a.contains('1A') || a.contains('KBO') || a.contains('CPBL') || a.contains('海外'));
+    if ((p.nationality == '海外' || hasOverseasPro) && !fromDraft) return false;
+    final py = proYearsOverride ?? p.proYears;
+    if (py < 1 || py > 5) return false;
+    final alreadyWon = p.honors.any((h) {
+      if (!h.contains('新人王')) return false;
+      if (seasonYear == null) return true;
+      final m = RegExp(r'^(\d{4})年').firstMatch(h);
+      return m != null && int.parse(m.group(1)!) < seasonYear;
+    });
+    if (alreadyWon) return false;
+    final prior = priorCareer ?? p.career;
+    if (p.isPitcher || p.twoWay) {
+      if (prior.inningsPitched > 90) return false;
+    }
+    if (!p.isPitcher || p.twoWay) {
+      if (prior.plateAppearances > 60) return false;
+    }
+    return true;
   }
 
   // ───────── 指標 ─────────
@@ -88,7 +180,17 @@ class AwardsEngine {
 
   // ───────── リーグごと ─────────
 
-  static Map<String, dynamic> _league(String lg, List<(Player, Team)> members, Map<String, int> ranks, int g, Random rnd, Map<String, dynamic>? prev) {
+  static Map<String, dynamic> _league(
+    int year,
+    String lg,
+    List<(Player, Team)> members,
+    Map<String, int> ranks,
+    int g,
+    Random rnd,
+    Map<String, dynamic>? prev, {
+    Map<String, PlayerStats>? priorCareers,
+    Map<String, int>? proYearsMap,
+  }) {
     final qPa = (g * 3.1).floor();
     final qIp = g; // 規定投球回（チーム試合数）
     final hitters = members.where((e) => !e.$1.isPitcher && e.$1.seasonStats.plateAppearances > 0).toList();
@@ -198,7 +300,12 @@ class AwardsEngine {
     // ---- MVP・新人王 ----
     final mvpPool = [...hitters.where((e) => e.$1.seasonStats.plateAppearances >= qPa * 0.7), ...pitchers.where((e) => e.$1.seasonStats.inningsPitched >= qIp * 3 * 0.7 || e.$1.seasonStats.saves >= 25 || e.$1.seasonStats.holds >= 30)];
     final mvp = vote('mvp', mvpPool, (p) => valueOf(p) + (ranks[members.firstWhere((e) => e.$1 == p).$2.id] == 1 ? 6 : 0), sigma: 6);
-    final rookies = [...hitters, ...pitchers].where((e) => e.$1.proYears <= 1).toList();
+    final rookies = [...hitters, ...pitchers].where((e) => isRookieEligible(
+          e.$1,
+          proYearsOverride: proYearsMap?[e.$1.id],
+          priorCareer: priorCareers?[e.$1.id],
+          seasonYear: year,
+        )).toList();
     final rookiePool = rookies.where((e) => e.$1.seasonStats.plateAppearances >= 150 || e.$1.seasonStats.inningsPitched >= 120 || e.$1.seasonStats.games >= 30).toList();
     final rookie = vote('rookie', rookiePool, (p) => valueOf(p), sigma: 4);
 

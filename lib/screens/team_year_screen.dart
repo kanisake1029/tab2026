@@ -3,6 +3,7 @@ import '../models/player.dart';
 import '../providers/app_state.dart';
 import '../utils/standings.dart';
 import '../widgets/frozen_table.dart';
+import '../widgets/awards_view.dart';
 import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 
 const _ink = Color(0xFF1C1917);
@@ -130,7 +131,10 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
             if (d.standings.isEmpty) const Text('順位表の記録がありません', style: TextStyle(color: _sub)),
             const SizedBox(height: 12),
             _h('タイトル・表彰'),
-            if (d.awards == null) Text(_current ? 'シーズンが終わると決まります' : '表彰の記録がありません', style: const TextStyle(color: _sub, fontSize: 12.5)) else ..._titles(d.awards!),
+            if (d.awards == null)
+              Text(_current ? 'シーズンが終わると決まります' : '表彰の記録がありません', style: const TextStyle(color: _sub, fontSize: 12.5))
+            else
+              SeasonAwardsBody(app: app, year: widget.year, awards: d.awards!, embedded: true),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -280,73 +284,6 @@ class _TeamYearScreenState extends State<TeamYearScreen> {
       return all.where((x) => x.registeredName == clean || x.listName == clean).firstOrNull;
     }
     return null;
-  }
-
-  List<Widget> _titles(Map<String, dynamic> aw) {
-    String who(dynamic winners) {
-      if (winners is List && winners.isNotEmpty) {
-        return winners.map((w) => w is Map ? '${w['name']}（${w['teamName'] ?? ''}）' : '$w').join('・');
-      }
-      if (winners is Map && winners['none'] != true && winners['name'] != null) {
-        return '${winners['name']}（${winners['teamName'] ?? ''}）';
-      }
-      return '該当者なし';
-    }
-
-    Player? firstWinner(dynamic winners) {
-      if (winners is List && winners.isNotEmpty && winners.first is Map) {
-        final w = winners.first as Map;
-        return _findPlayer(id: '${w['id'] ?? ''}', name: '${w['name'] ?? ''}');
-      }
-      if (winners is Map && winners['none'] != true) {
-        return _findPlayer(id: '${winners['id'] ?? ''}', name: '${winners['name'] ?? ''}');
-      }
-      return null;
-    }
-
-    Widget line(String label, String text, {String value = '', Player? player}) {
-      final row = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1.5),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(width: 108, child: Text(label, style: const TextStyle(fontSize: 12, color: _sub))),
-          Expanded(child: Text('$text${value.isEmpty ? '' : '　$value'}', style: TextStyle(fontSize: 12.5, decoration: player != null ? TextDecoration.underline : null, decorationColor: const Color(0xFFCBD5E1)))),
-        ]),
-      );
-      return player == null ? row : InkWell(onTap: () => showPlayerDetail(context, app, player, allowActions: false), child: row);
-    }
-
-    final out = <Widget>[];
-    if (aw['champion'] != null) {
-      final c = app.teamById('${aw['champion']}');
-      out.add(line('日本一', c?.name ?? '${aw['champion']}'));
-    }
-    for (final s in (aw['series'] as List? ?? const [])) {
-      if (s is! Map || '${s['winner']}'.isEmpty) continue;
-      final w = app.teamById('${s['winner']}');
-      out.add(line('${s['label']}', '${w == null ? s['winner'] : teamShort(w)} 勝ち抜け（${s['score'] ?? ''}）${'${s['mvp'] ?? ''}'.isNotEmpty ? '　MVP ${s['mvp']}' : ''}', player: _findPlayer(name: '${s['mvp'] ?? ''}')));
-    }
-    final lgs = aw['leagues'];
-    if (lgs is Map) {
-      for (final e in lgs.entries) {
-        final L = e.value;
-        if (L is! Map) continue;
-        out.add(Padding(padding: const EdgeInsets.only(top: 8, bottom: 2), child: Text(leagueLabel('${e.key}'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5))));
-        if (L['mvp'] is Map) out.add(line('MVP', who(L['mvp']['winners']), player: firstWinner(L['mvp']['winners'])));
-        if (L['rookie'] is Map) out.add(line('新人王', who(L['rookie']['winners']), player: firstWinner(L['rookie']['winners'])));
-        for (final t in (L['titles'] as List? ?? const [])) {
-          if (t is Map) out.add(line('${t['title']}', who(t['winners']), value: '${t['value'] ?? ''}', player: firstWinner(t['winners'])));
-        }
-        for (final b in (L['b9'] as List? ?? const [])) {
-          if (b is Map) out.add(line('ベストナイン（${b['pos']}）', who(b['winners']), player: firstWinner(b['winners'])));
-        }
-        for (final g in (L['gg'] as List? ?? const [])) {
-          if (g is Map) out.add(line('ゴールデングラブ（${g['pos']}）', who(g['winners']), player: firstWinner(g['winners'])));
-        }
-      }
-    }
-    if (aw['sawamura'] is Map) out.add(line('沢村賞', who(aw['sawamura']['winners'] ?? aw['sawamura']), value: '${aw['sawamura']['value'] ?? ''}', player: firstWinner(aw['sawamura']['winners'] ?? aw['sawamura'])));
-    if (aw['comeback'] is Map && aw['comeback']['none'] != true) out.add(line('カムバック賞', who(aw['comeback']['winners'] ?? aw['comeback']), value: '${aw['comeback']['value'] ?? ''}', player: firstWinner(aw['comeback']['winners'] ?? aw['comeback'])));
-    return out;
   }
 
   // ───────── ベストオーダー ─────────

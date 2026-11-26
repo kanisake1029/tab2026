@@ -851,8 +851,21 @@ extension RepairOps on AppState {
         matches: matches,
         previous: null,
         prevStats: const {},
-        series: [for (final s in postseason) {'id': s.id, 'label': s.label, 'high': s.high, 'low': s.low, 'winner': s.winner, 'mvp': s.mvp, 'score': _seriesScore(s)}],
+        series: [
+          for (final s in postseason)
+            {
+              'id': s.id,
+              'label': s.label,
+              'high': s.high,
+              'low': s.low,
+              'winner': s.winner,
+              'mvp': s.mvp,
+              'score': _seriesScore(s),
+              'games': AwardsEngine.seriesGamesOf(s.matchIdx, matches),
+            }
+        ],
         allStarMvps: [for (final m in matches.where((m) => m.matchType == 'ALLSTAR')) if (m.boxScore?['mvp'] is String) m.boxScore!['mvp'] as String],
+        allStarGames: AwardsEngine.allStarGamesOf(matches),
         championId: champion?.id,
       );
       await db.saveRecords(year, rows);
@@ -1112,5 +1125,293 @@ extension RepairOps on AppState {
     }
     _matchesReplaceAll = true; // 書き換えたボックススコアを保存する
     debugPrint('DECISIONS REBUILT: $changed changed');
+  }
+
+  /// 過去年度の表彰（新人王のNPB準拠精査＋オールスター/CS/日本シリーズの1戦ずつ記録バックフィル）
+  Future<bool> _repairRoyAndSeriesHistory(Map<String, String> kv, Map<String, String> dirtyKv) async {
+    if (kv['royAndSeriesFixV1'] == '1') return false;
+    final years = <int>[];
+    for (final k in kv.keys) {
+      final m = RegExp(r'^awards_(\d{4})$').firstMatch(k);
+      if (m != null) years.add(int.parse(m.group(1)!));
+    }
+    years.sort();
+    dirtyKv['royAndSeriesFixV1'] = '1';
+    if (years.isEmpty) return false;
+
+    final allPlayers = <String, Player>{
+      for (final t in teams)
+        for (final p in t.players) p.id: p,
+      for (final fa in freeAgents) fa.player.id: fa.player,
+    };
+    final retireeById = <String, Map<String, dynamic>>{
+      for (final r in retirees)
+        if (r['id'] is String) r['id'] as String: r,
+    };
+
+    // 全年度の選手成績レコードを読み込む（priorCareer 計算用）
+    final allRecRows = await (db.select(db.seasonRecords)..where((t) => t.kind.equals('player'))).get();
+    final recByYear = <int, List<SeasonRecord>>{};
+    for (final r in allRecRows) {
+      recByYear.putIfAbsent(r.season, () => []).add(r);
+    }
+
+    PlayerStats sumStatsFromYear(String pid, int fromYear) {
+      final sum = PlayerStats();
+      for (final entry in recByYear.entries) {
+        if (entry.key < fromYear) continue;
+        for (final r in entry.value) {
+          if (r.refId != pid) continue;
+          final j = jsonDecode(r.json) as Map<String, dynamic>;
+          if (j['stats'] is Map) sum.add(PlayerStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map)));
+          if (j['splits'] is List) {
+            for (final sp in j['splits'] as List) {
+              if (sp is Map && sp['stats'] is Map) {
+                sum.add(PlayerStats.fromJson(Map<String, dynamic>.from(sp['stats'] as Map)));
+              }
+            }
+          }
+        }
+      }
+      return sum;
+    }
+
+    PlayerStats subtractStats(PlayerStats total, PlayerStats sub) {
+      int pos(int a, int b) => a > b ? a - b : 0;
+      return PlayerStats(
+        games: pos(total.games, sub.games),
+        atBats: pos(total.atBats, sub.atBats),
+        hits: pos(total.hits, sub.hits),
+        homeRuns: pos(total.homeRuns, sub.homeRuns),
+        rbi: pos(total.rbi, sub.rbi),
+        walks: pos(total.walks, sub.walks),
+        strikeouts: pos(total.strikeouts, sub.strikeouts),
+        stolenBases: pos(total.stolenBases, sub.stolenBases),
+        doubles: pos(total.doubles, sub.doubles),
+        triples: pos(total.triples, sub.triples),
+        sacFlies: pos(total.sacFlies, sub.sacFlies),
+        hitsAllowed: pos(total.hitsAllowed, sub.hitsAllowed),
+        hrAllowed: pos(total.hrAllowed, sub.hrAllowed),
+        inningsPitched: pos(total.inningsPitched, sub.inningsPitched),
+        earnedRuns: pos(total.earnedRuns, sub.earnedRuns),
+        pitcherStrikeouts: pos(total.pitcherStrikeouts, sub.pitcherStrikeouts),
+        pitcherWalks: pos(total.pitcherWalks, sub.pitcherWalks),
+        wins: pos(total.wins, sub.wins),
+        losses: pos(total.losses, sub.losses),
+        saves: pos(total.saves, sub.saves),
+        holds: pos(total.holds, sub.holds),
+        hbp: pos(total.hbp, sub.hbp),
+        pitchApps: pos(total.pitchApps, sub.pitchApps),
+        starts: pos(total.starts, sub.starts),
+      );
+    }
+
+    var changedPlayers = false;
+    final refYear = startYear;
+
+    for (final y in years) {
+      final raw = kv['awards_$y'];
+      if (raw == null) continue;
+      final aw = jsonDecode(raw) as Map<String, dynamic>;
+      var awDirty = false;
+
+      // 1. match_rows からオールスター・CS・日本シリーズの1戦ずつ記録を補完
+      final mRows = await db.loadMatchRows(y);
+      final yearMatches = <Match>[
+        for (final r in mRows.where((r) => r.idx < AppState.farmIdxBase))
+          Match.fromJson(jsonDecode(r.json) as Map<String, dynamic>),
+      ];
+      final existingAs = aw['allStarGames'];
+      if (existingAs is! List || existingAs.isEmpty) {
+        final asGames = AwardsEngine.allStarGamesOf(yearMatches);
+        if (asGames.isNotEmpty) {
+          aw['allStarGames'] = asGames;
+          awDirty = true;
+        }
+      }
+      final seriesList = aw['series'];
+      if (seriesList is List) {
+        for (final s in seriesList) {
+          if (s is! Map) continue;
+          final g = s['games'];
+          if (g is List && g.isNotEmpty) continue;
+          final high = '${s['high'] ?? ''}';
+          final low = '${s['low'] ?? ''}';
+          final targetType = s['id'] == 'JS' ? 'JS' : 'CS';
+          final games = <Map<String, dynamic>>[];
+          for (final m in yearMatches) {
+            if (m.matchType != targetType || m.homeScore == null || m.awayScore == null) continue;
+            final matchPair = (m.homeTeamId == high && m.awayTeamId == low) || (m.homeTeamId == low && m.awayTeamId == high);
+            if (!matchPair) continue;
+            games.add({
+              'date': m.date.toIso8601String().substring(0, 10),
+              'away': m.awayTeamId,
+              'home': m.homeTeamId,
+              'awayScore': m.awayScore,
+              'homeScore': m.homeScore,
+            });
+          }
+          if (games.isNotEmpty) {
+            s['games'] = games;
+            awDirty = true;
+          }
+        }
+      }
+
+      // 2. 新人王のNPB準拠精査・再計算
+      final recs = recByYear[y] ?? const <SeasonRecord>[];
+      if (recs.isNotEmpty && aw['leagues'] is Map) {
+        final snapTeams = <Team>[
+          for (final t in teams)
+            Team(id: t.id, name: t.name, shortName: t.shortName, league: t.league, players: []),
+        ];
+        final snapById = {for (final t in snapTeams) t.id: t};
+        final priorCareers = <String, PlayerStats>{};
+        final proYearsMap = <String, int>{};
+
+        for (final r in recs) {
+          final realP = allPlayers[r.refId];
+          final t = snapById[r.teamId];
+          if (realP == null || t == null) continue;
+          final j = jsonDecode(r.json) as Map<String, dynamic>;
+          final stMap = j['stats'];
+          if (stMap is! Map) continue;
+          final clone = Player.fromJson(jsonDecode(jsonEncode(realP.toJson())) as Map<String, dynamic>);
+          clone.seasonStats = PlayerStats.fromJson(Map<String, dynamic>.from(stMap));
+          t.players.add(clone);
+          priorCareers[clone.id] = subtractStats(realP.career, sumStatsFromYear(clone.id, y));
+          proYearsMap[clone.id] = realP.proYears - (refYear - y);
+        }
+
+        final recomputed = AwardsEngine.compute(
+          year: y,
+          teams: snapTeams,
+          matches: yearMatches,
+          priorCareers: priorCareers,
+          proYearsMap: proYearsMap,
+        );
+
+        final leagues = aw['leagues'] as Map;
+        final newLeagues = recomputed['leagues'] as Map? ?? const {};
+        for (final lg in ['CL', 'PL']) {
+          final oldL = leagues[lg];
+          final newL = newLeagues[lg];
+          if (oldL is! Map || newL is! Map) continue;
+          final oldRookie = oldL['rookie'] as Map?;
+          final newRookie = newL['rookie'] as Map?;
+          if (newRookie == null) continue;
+          final oldWs = (oldRookie?['winners'] as List? ?? const []).whereType<Map>().toList();
+          final newWs = (newRookie['winners'] as List? ?? const []).whereType<Map>().toList();
+          final oldIds = [for (final w in oldWs) '${w['id']}'].join(',');
+          final newIds = [for (final w in newWs) '${w['id']}'].join(',');
+          if (oldIds != newIds) {
+            // 新人王の受賞者が変わった：awards, honors, news, chron を同期修正
+            String datePrefix = '${y}年10月25日';
+            for (final w in oldWs) {
+              final pid = '${w['id'] ?? ''}';
+              final rp = allPlayers[pid];
+              if (rp != null) {
+                for (final h in rp.honors) {
+                  if (h.startsWith('${y}年') && h.contains('新人王')) {
+                    datePrefix = h.split(' ').first;
+                    break;
+                  }
+                }
+                final before = rp.honors.length;
+                rp.honors.removeWhere((h) => h.startsWith('${y}年') && h.contains('新人王'));
+                if (rp.honors.length != before) changedPlayers = true;
+              }
+              final ret = retireeById[pid];
+              if (ret != null && ret['honors'] is List) {
+                final list = (ret['honors'] as List).cast<String>();
+                final before = list.length;
+                list.removeWhere((h) => h.startsWith('${y}年') && h.contains('新人王'));
+                if (list.length != before) changedPlayers = true;
+              }
+            }
+            for (final w in newWs) {
+              final pid = '${w['id'] ?? ''}';
+              final entry = '$datePrefix 新人王';
+              final rp = allPlayers[pid];
+              if (rp != null && !rp.honors.any((h) => h.startsWith('${y}年') && h.contains('新人王'))) {
+                rp.honors.add(entry);
+                changedPlayers = true;
+              }
+              final ret = retireeById[pid];
+              if (ret != null) {
+                final list = List<String>.from(ret['honors'] as List? ?? const []);
+                if (!list.any((h) => h.startsWith('${y}年') && h.contains('新人王'))) {
+                  list.add(entry);
+                  ret['honors'] = list;
+                  changedPlayers = true;
+                }
+              }
+            }
+
+            // ニュース記事の同期更新（該当年の新人王記事がある場合）
+            if (oldWs.isNotEmpty && newWs.isNotEmpty) {
+              final oldName = '${oldWs.first['name'] ?? ''}';
+              final newName = '${newWs.first['name'] ?? ''}';
+              for (final nk in ['news_$y', 'news']) {
+                final nRaw = dirtyKv[nk] ?? kv[nk];
+                if (nRaw == null) continue;
+                try {
+                  final list = List<dynamic>.from(jsonDecode(nRaw) as List);
+                  var nChanged = false;
+                  for (var i = 0; i < list.length; i++) {
+                    final s = list[i];
+                    if (s is String && s.contains('新人王') && oldName.isNotEmpty && s.contains(oldName)) {
+                      list[i] = s.replaceAll(oldName, newName);
+                      nChanged = true;
+                    }
+                  }
+                  if (nChanged) dirtyKv[nk] = jsonEncode(list);
+                } catch (_) {}
+              }
+            }
+
+            oldL['rookie'] = newRookie;
+            awDirty = true;
+            debugPrint('ROY FIXED [$y $lg]: $oldIds -> $newIds');
+          }
+        }
+      }
+
+      if (awDirty) {
+        dirtyKv['awards_$y'] = jsonEncode(aw);
+      }
+    }
+    if (changedPlayers) {
+      _preCache = null;
+      leagueHistory = null;
+    }
+    return changedPlayers;
+  }
+
+  /// オフシーズン入団の外国人選手などで proYears が 0 始まりになっていた分を 1年目始まりに修復する
+  bool _repairProYearsOnJoin(Map<String, String> kv, Map<String, String> dirtyKv) {
+    if (kv['proYearsJoinFixV1'] == '1') return false;
+    dirtyKv['proYearsJoinFixV1'] = '1';
+    var changed = false;
+    final reForeign = RegExp(r'外国人選手（(\d{4})年');
+    for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
+      if (p.proYears <= 0) {
+        p.proYears = 1;
+        changed = true;
+      }
+      if (p.draftYear == 0) {
+        final m = reForeign.firstMatch(p.draftInfo);
+        if (m != null) {
+          final joinYear = int.parse(m.group(1)!);
+          final expected = (startYear - joinYear + 1).clamp(1, 30);
+          if (p.proYears < expected) {
+            p.proYears = expected;
+            changed = true;
+          }
+        }
+      }
+    }
+    if (changed) _preCache = null;
+    return changed;
   }
 }

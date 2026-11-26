@@ -237,6 +237,10 @@ extension OtherOps on AppState {
   void _joinOther(Player p, OTeam t, String note) {
     final w = otherWorld;
     if (w == null) return;
+    // シーズン終了後〜開幕前（まだ新シーズンで試合をしていないオフ）に NPB を離れた場合、_rollover() で先行加算された1年分を戻す
+    if (offAfterSeason || currentDate.year < startYear || (p.seasonStats.games == 0 && p.seasonStats.pitchApps == 0 && currentDate.month < 3)) {
+      p.proYears = max(1, p.proYears - 1);
+    }
     p.seasonStats = PlayerStats();
     p.farmStats = PlayerStats();
     p.thirdStats = PlayerStats();
@@ -398,6 +402,9 @@ extension OtherOps on AppState {
       p.faService = 0;
       p.draftInfo = '${lg.name}の${t.name}から入団（${currentDate.year}年）';
       if (p.nationality == '海外' && !ikusei) ForeignEngine.applyAdapt(p);
+    } else {
+      // 元 NPB 選手の日本球界復帰：以前 NPB にいた年数に +1（例：5年いたなら6年目）
+      p.proYears = max(1, p.proYears) + 1;
     }
     p.uniformNumber = RosterEngine.freeNumber(my, ikusei: ikusei);
     RosterEngine.addPlayer(my, p, pendingNumber: isBeforeOpeningDay());

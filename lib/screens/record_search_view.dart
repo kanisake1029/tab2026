@@ -6,6 +6,7 @@ import '../models/player.dart';
 import '../models/team.dart';
 import '../providers/app_state.dart';
 import '../utils/standings.dart';
+import '../widgets/awards_view.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/player_detail_dialog.dart' show showPlayerDetail;
 import '../widgets/wheel_picker.dart';
@@ -194,57 +195,42 @@ class HistoryAwardsView extends StatefulWidget {
 
 class _HistoryAwardsViewState extends State<HistoryAwardsView> {
   int? _year;
-  late final Future<void> _ready = widget.app.preCareers();
+  late final Future<Map<int, Map<String, dynamic>>> _ready = _loadAll();
+
+  Future<Map<int, Map<String, dynamic>>> _loadAll() async {
+    await widget.app.preCareers();
+    final real = <int, Map<String, dynamic>>{};
+    for (var y = 2026; y <= widget.app.startYear; y++) {
+      final aw = await widget.app.loadAwards(y);
+      if (aw != null) real[y] = aw;
+    }
+    return real;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
+    return FutureBuilder<Map<int, Map<String, dynamic>>>(
       future: _ready,
       builder: (context, snap) {
         final h = widget.app.leagueHistory;
         if (snap.connectionState != ConnectionState.done || h == null) return const Center(child: CircularProgressIndicator());
-        final years = h.years.keys.toList()..sort((a, b) => b.compareTo(a));
-        if (years.isEmpty) return const Center(child: Text('ゲーム開始前の歴史はありません', style: TextStyle(color: _sub)));
+        final real = snap.data ?? const {};
+        final years = {...h.years.keys, ...real.keys}.toList()..sort((a, b) => b.compareTo(a));
+        if (years.isEmpty) return const Center(child: Text('歴代の表彰はまだありません', style: TextStyle(color: _sub)));
         final y = _year ?? years.first;
+        final realAw = real[y];
         final data = h.years[y] ?? const {};
-        return Column(children: [
-          YearStepper(years: years, selected: y, onSelect: (x) => setState(() => _year = x)),
-          Expanded(
-            child: ListView(padding: const EdgeInsets.fromLTRB(10, 0, 10, 20), children: [
-              for (final lg in [...data.keys.where((k) => k != '両リーグ'), if (data.containsKey('両リーグ')) '両リーグ'])
-                ...[
-                  Padding(padding: const EdgeInsets.only(top: 10, bottom: 4), child: Text('$y年 ${lg == '両リーグ' ? '両リーグ' : leagueLabel(lg)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14))),
-                  for (final e in data[lg]!.entries)
-                    Builder(builder: (_) {
-                      final pid = e.value.playerId;
-                      final p = pid == null
-                          ? null
-                          : [for (final t in widget.app.teams) ...t.players, for (final fa in widget.app.freeAgents) fa.player]
-                              .where((x) => x.id == pid)
-                              .firstOrNull;
-                      return InkWell(
-                        onTap: p == null ? null : () => showPlayerDetail(context, widget.app, p, allowActions: false),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _line))),
-                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            SizedBox(width: 150, child: Text(e.key, style: const TextStyle(fontSize: 11.5, color: _sub))),
-                            Expanded(
-                              child: Text(e.value.text,
-                                  style: TextStyle(fontSize: 12, fontWeight: pid != null ? FontWeight.w800 : FontWeight.w400, color: pid != null ? const Color(0xFF1D4ED8) : _ink)),
-                            ),
-                          ]),
-                        ),
-                      );
-                    }),
-                ],
-              const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: Text('ゲーム開始前の表彰は架空の歴史です。青字は今いる選手（推定の成績が、その年の受賞者を上回った年）', style: TextStyle(fontSize: 10.5, color: _sub)),
-              ),
-            ]),
-          ),
-        ]);
+        return Container(
+          color: awardsBg,
+          child: Column(children: [
+            YearStepper(years: years, selected: y, onSelect: (x) => setState(() => _year = x)),
+            Expanded(
+              child: realAw != null
+                  ? SeasonAwardsBody(app: widget.app, year: y, awards: realAw)
+                  : HistoryLeagueAwardsBody(app: widget.app, year: y, data: data),
+            ),
+          ]),
+        );
       },
     );
   }

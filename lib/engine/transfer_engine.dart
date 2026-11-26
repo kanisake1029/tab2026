@@ -378,22 +378,59 @@ class TransferEngine {
   /// 提携選手が申し出を受けるか：出場機会（その位置の層の薄さ）と期間（短いほど受けやすい）
   static double partnerAcceptChance(Team t, Player p, int years) => (0.45 + RosterEngine.need(t, p.mainPosition) * 0.4 + (5 - years) * 0.08).clamp(0.1, 0.95);
 
-  // ───────── 現役ドラフト（仕様書 5章）─────────
+  // ───────── 現役ドラフト（各球団 最低20名選出方式）─────────
 
-  /// 現役ドラフトの対象（自動）：支配下・日本人扱い・プロ3年目以上・31歳以下・FA 権なし・年俸5000万円未満・
-  ///  前季の1軍出場が少ない（野手30試合未満・投手30イニング未満）・そのオフに入った選手でない。育成選手は対象外（条件は仮）
+  static const int activeDraftMinPick = 20;
+
+  /// 現役ドラフトの選出対象（提出リストに入れられる選手）：
+  /// 支配下・日本人扱い・FA権なし・そのオフに入団した選手でないこと。育成選手は対象外。
   static bool activeDraftEligible(Player p, int offYear) {
+    return !p.ikusei && !p.foreignSlot && !p.hasFA && p.offJoin != offYear && p.draftYear != offYear;
+  }
+
+  /// 各球団が最低限選出すべき人数（基本20名、対象が20名未満なら全員）
+  static int activeDraftRequiredCount(Team t, int offYear) {
+    final eligibleCount = t.players.where((p) => activeDraftEligible(p, offYear)).length;
+    return min(activeDraftMinPick, eligibleCount);
+  }
+
+  /// 保護優先度（高いほどチームに残したい＝放出候補に回りにくい）。若手有望株と1軍主力を保護する
+  static double activeDraftProtectScore(Player p) {
     final useSeason = p.seasonStats.games > 0 || p.seasonStats.apps > 0 || p.seasonStats.inningsPitched > 0;
     final g = useSeason ? p.seasonStats.games : p.prevGames;
     final ip = useSeason ? p.seasonStats.inningsPitched : p.prevInnings;
-    return !p.ikusei && !p.foreignSlot && !p.hasFA && p.proYears >= 3 && p.age <= 31 && p.salary < 5000 && p.offJoin != offYear && p.draftYear != offYear &&
-        (p.isPitcher ? ip < 90 : g < 30);
+    final regularBonus = (p.isPitcher ? ip >= 150 : g >= 60) ? 35.0 : (p.isPitcher ? ip >= 60 : g >= 25) ? 14.0 : 0.0;
+    final youthBonus = p.age <= 25 ? (26 - p.age) * 7.0 + (p.talent >= 60 ? 15.0 : 0.0) : 0.0;
+    return RosterEngine.value(p) + regularBonus + youthBonus;
+  }
+
+  /// CPU・おまかせ用の自動選出（保護優先度が低い順に最低20名を選出）
+  static List<Player> autoSelectActiveDraftPool(Team t, int offYear) {
+    final req = activeDraftRequiredCount(t, offYear);
+    if (req <= 0) return const [];
+    final list = [
+      for (final p in t.players)
+        if (activeDraftEligible(p, offYear)) p,
+    ]..sort((a, b) => activeDraftProtectScore(a).compareTo(activeDraftProtectScore(b)));
+    return list.take(req).toList();
   }
 
   /// 現役ドラフトを行う：order（指名の順。最初の球団から）で、各球団が1人ずつ指名する。
+  ///  pools が指定されていれば各球団の提出リストを使用（未指定時は autoSelectActiveDraftPool で各球団20名選出）。
   ///  選手を指名された球団が次に指名する（すでに指名した球団なら、まだの球団を順に）。各球団から指名されるのは1人まで。
   ///  pick(球団, 候補) で選ぶ（null なら指名なし）。戻り値は [元の球団, 行き先, 選手]
-  static List<(Team, Team, Player)> runActiveDraft(List<Team> order, int offYear, Player? Function(Team t, List<Player> cands) pick) {
+  static List<(Team, Team, Player)> runActiveDraft(
+    List<Team> order,
+    int offYear,
+    Player? Function(Team t, List<Player> cands) pick, {
+    Map<String, List<Player>>? pools,
+  }) {
+    final teamPools = <String, List<Player>>{
+      for (final t in order)
+        t.id: (pools?[t.id] != null && pools![t.id]!.isNotEmpty)
+            ? [for (final p in pools[t.id]!) if (activeDraftEligible(p, offYear) && t.players.contains(p)) p]
+            : autoSelectActiveDraftPool(t, offYear),
+    };
     final picked = <String>{}, lost = <String>{};
     final moves = <(Team, Team, Player)>[];
     var cur = order.isEmpty ? null : order.first;
@@ -404,8 +441,8 @@ class TransferEngine {
       final cands = [
         for (final t in order)
           if (t.id != me.id && !lost.contains(t.id))
-            for (final p in t.players)
-              if (activeDraftEligible(p, offYear) && !moves.any((m) => m.$3.id == p.id)) p,
+            for (final p in teamPools[t.id] ?? const <Player>[])
+              if (!moves.any((m) => m.$3.id == p.id)) p,
       ];
       final p = cands.isEmpty ? null : pick(me, cands);
       Team? next;

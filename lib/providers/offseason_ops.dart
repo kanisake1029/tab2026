@@ -353,26 +353,50 @@ extension OffseasonOps on AppState {
   /// 現役ドラフトの日（12月9日。シーズンを終えたオフだけ）
   bool get activeDraftPending => _afterSeason && currentDate.month == 12 && currentDate.day == 9 && activeDraftYear < currentDate.year;
 
-  /// 現役ドラフトで自球団が指名できる候補（他球団の対象選手）
-  List<Player> activeDraftCandidates() => [
+  /// 自球団の現役ドラフト選出対象（提出リストに入れられる選手：保護優先度が低い順）
+  List<Player> activeDraftMyEligible() => [
+        for (final p in myTeam?.players ?? const <Player>[])
+          if (TransferEngine.activeDraftEligible(p, offseasonYear)) p,
+      ]..sort((a, b) => TransferEngine.activeDraftProtectScore(a).compareTo(TransferEngine.activeDraftProtectScore(b)));
+
+  /// 球団ごとの必要選出人数（基本20名）
+  int activeDraftRequiredCount(Team t) => TransferEngine.activeDraftRequiredCount(t, offseasonYear);
+
+  /// 自球団のおまかせ提出リスト（20名）
+  List<Player> activeDraftDefaultMyPool() => myTeam == null ? const [] : TransferEngine.autoSelectActiveDraftPool(myTeam!, offseasonYear);
+
+  /// 他球団（CPU）の提出リスト（各球団20名）
+  Map<String, List<Player>> activeDraftCpuPools() => {
         for (final t in leagueTeams)
-          if (t.id != myTeamId)
-            for (final p in t.players)
-              if (TransferEngine.activeDraftEligible(p, offseasonYear)) p,
+          if (t.id != myTeamId) t.id: TransferEngine.autoSelectActiveDraftPool(t, offseasonYear),
+      };
+
+  /// 現役ドラフトで自球団が指名できる候補（他球団の提出リスト全員）
+  List<Player> activeDraftCandidates() => [
+        for (final list in activeDraftCpuPools().values) ...list,
       ]..sort((a, b) => RosterEngine.value(b).compareTo(RosterEngine.value(a)));
 
-  /// 自球団の対象選手（指名されるかもしれない）
-  List<Player> activeDraftMine() => [for (final p in myTeam?.players ?? const <Player>[]) if (TransferEngine.activeDraftEligible(p, offseasonYear)) p];
+  /// 自球団の提出リスト（おまかせ既定値）
+  List<Player> activeDraftMine() => activeDraftDefaultMyPool();
 
-  /// 現役ドラフトを行う。myPick：自球団が指名したい選手（null や、先に他球団に指名されたときは CPU の考え方で選ぶ）
-  List<String> runActiveDraft(Player? myPick) {
+  /// 現役ドラフトを行う。myPick：自球団が指名したい選手、myPoolIds：自球団が提出した放出候補ID集合（最低20名）
+  List<String> runActiveDraft(Player? myPick, {Set<String>? myPoolIds}) {
     if (activeDraftYear >= currentDate.year) return const [];
     final order = [for (final id in draftWaiver()) ?teamById(id)];
+    final pools = activeDraftCpuPools();
+    final my = myTeam;
+    if (my != null) {
+      final req = activeDraftRequiredCount(my);
+      final chosen = myPoolIds == null
+          ? const <Player>[]
+          : [for (final p in my.players) if (myPoolIds.contains(p.id) && TransferEngine.activeDraftEligible(p, offseasonYear)) p];
+      pools[my.id] = chosen.length >= req ? chosen : TransferEngine.autoSelectActiveDraftPool(my, offseasonYear);
+    }
     final moves = TransferEngine.runActiveDraft(order, offseasonYear, (t, cands) {
       if (t.id == myTeamId && myPick != null && cands.any((p) => p.id == myPick.id)) return cands.firstWhere((p) => p.id == myPick.id);
       final best = (List.of(cands)..sort((a, b) => cpuValue(t, b).compareTo(cpuValue(t, a)))).first;
       return best;
-    });
+    }, pools: pools);
     final lines = <String>[];
     for (final (from, to, p) in moves) {
       RosterEngine.removePlayer(from, p);
@@ -1662,7 +1686,7 @@ extension OffseasonOps on AppState {
         ForeignEngine.applyAdapt(p);
         p.offJoin = offseasonYear;
         p.contractYears = TrustEngine.preferredYears(p, isInitialForeign: true);
-        if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
+        p.proYears = 1;
         RosterEngine.addPlayer(t, p, pendingNumber: isBeforeOpeningDay());
         transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}（外国人・${p.mainPosition}）と契約（${formatSalary(p.salary)}）');
         signed++;
@@ -1678,6 +1702,7 @@ extension OffseasonOps on AppState {
           final p = ik.first;
           foreignPool.remove(p);
           _removeFromOther(p.id);
+          p.proYears = 1;
           RosterEngine.addPlayer(t, p, pendingNumber: isBeforeOpeningDay());
           transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}（外国人・育成・${p.mainPosition}）と契約');
         }
@@ -1711,7 +1736,7 @@ extension OffseasonOps on AppState {
     p.salary = offerSal;
     p.contractYears = offerY;
     p.offJoin = offseasonYear;
-    if (offAfterSeason && currentDate.month >= 10) p.proYears = 0;
+    p.proYears = 1;
     RosterEngine.addPlayer(my, p, pendingNumber: isBeforeOpeningDay());
     transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName}（外国人・${p.ikusei ? '育成・' : ''}${p.mainPosition}）と契約（${formatSalary(offerSal)}${offerY > 1 ? '・$offerY年' : ''}）');
     _addNews(['${p.registeredName}（外国人${p.ikusei ? '・育成' : ''}）と${p.ikusei ? '育成' : ''}契約しました（${formatSalary(offerSal)}・$offerY年）']);

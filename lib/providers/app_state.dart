@@ -1745,8 +1745,21 @@ class AppState extends ChangeNotifier {
       matches: matches,
       previous: prevAwards,
       prevStats: prevStats,
-      series: [for (final s in postseason) {'id': s.id, 'label': s.label, 'high': s.high, 'low': s.low, 'winner': s.winner, 'mvp': s.mvp, 'score': _seriesScore(s)}],
+      series: [
+        for (final s in postseason)
+          {
+            'id': s.id,
+            'label': s.label,
+            'high': s.high,
+            'low': s.low,
+            'winner': s.winner,
+            'mvp': s.mvp,
+            'score': _seriesScore(s),
+            'games': AwardsEngine.seriesGamesOf(s.matchIdx, matches),
+          }
+      ],
       allStarMvps: [for (final m in matches.where((m) => m.matchType == 'ALLSTAR')) if (m.boxScore?['mvp'] is String) m.boxScore!['mvp'] as String],
+      allStarGames: AwardsEngine.allStarGamesOf(matches),
       championId: champion?.id,
     );
 

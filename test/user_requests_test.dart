@@ -14,6 +14,7 @@ import 'package:npb_pennant_app/engine/growth_curve.dart';
 import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/match_simulator.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
+import 'package:npb_pennant_app/models/other_league.dart';
 import 'package:npb_pennant_app/engine/roster_engine.dart';
 import 'package:npb_pennant_app/engine/trade_rumor.dart';
 import 'package:npb_pennant_app/engine/transfer_engine.dart';
@@ -21,7 +22,9 @@ import 'package:npb_pennant_app/models/team.dart';
 import 'package:npb_pennant_app/utils/schedule_generator.dart';
 import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
+import 'package:npb_pennant_app/screens/active_draft_screen.dart';
 import 'package:npb_pennant_app/screens/awards_screen.dart';
+import 'package:npb_pennant_app/widgets/awards_view.dart';
 import 'package:npb_pennant_app/screens/number_board_screen.dart';
 import 'package:npb_pennant_app/screens/office_screen.dart';
 import 'package:npb_pennant_app/screens/order_tabs/lineup_tab.dart';
@@ -509,7 +512,7 @@ void main() {
     expect(g.headline, isNot(contains('佐藤が劇的サヨナラ')));
   });
 
-  test('現役ドラフトは前季出場数(prevGames/prevApps)で判定し、自球団自由契約の再契約は移籍扱いにならない', () async {
+  test('現役ドラフトは支配下・日本人扱い・FA権なし（新規入団除く）から最低20名選出方式、自球団自由契約の再契約は移籍扱いにならない', () async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState(AppDatabase(NativeDatabase.memory()));
     while (!app.loaded) {
@@ -517,17 +520,20 @@ void main() {
     }
     final my = app.teams.first;
     app.myTeamId = my.id;
-    // 1) 現役ドラフト: 年俸5000万未満・プロ4年目・25歳でも前季40試合出場なら対象外
+    // 1) 現役ドラフト: 出場数に関わらず支配下・日本人扱い・FA権なし（新規入団除く）は提出リスト対象、育成・FA権あり・新規入団は対象外
     final reg = Player(id: 'ad_reg', lastName: '主力', isPitcher: false, mainPos: '遊撃手', age: 25, proYears: 4, salary: 3000, prevGames: 40);
-    final sub = Player(id: 'ad_sub', lastName: '控え', isPitcher: false, mainPos: '遊撃手', age: 25, proYears: 4, salary: 3000, prevGames: 10);
-    expect(TransferEngine.activeDraftEligible(reg, 2027), isFalse);
-    expect(TransferEngine.activeDraftEligible(sub, 2027), isTrue);
+    final iku = Player(id: 'ad_iku', lastName: '育成', isPitcher: false, mainPos: '遊撃手', age: 20, proYears: 1, ikusei: true);
+    final faHold = Player(id: 'ad_fa', lastName: 'FA', isPitcher: false, mainPos: '遊撃手', age: 30, proYears: 9, faService: 8);
+    final newJoin = Player(id: 'ad_new', lastName: '新人', isPitcher: false, mainPos: '遊撃手', age: 22, proYears: 1, draftYear: 2027);
+    expect(TransferEngine.activeDraftEligible(reg, 2027), isTrue);
+    expect(TransferEngine.activeDraftEligible(iku, 2027), isFalse);
+    expect(TransferEngine.activeDraftEligible(faHold, 2027), isFalse);
+    expect(TransferEngine.activeDraftEligible(newJoin, 2027), isFalse);
 
-    // 投手: 前季30イニング未満（89アウト = 29回2/3）は対象、30イニング（90アウト）は対象外
-    final pUnder30 = Player(id: 'ad_p_ok', lastName: '中継ぎ', isPitcher: true, mainPos: '投手', age: 25, proYears: 4, salary: 3000, prevApps: 25, prevInnings: 89);
-    final pAt30 = Player(id: 'ad_p_no', lastName: '先発', isPitcher: true, mainPos: '投手', age: 25, proYears: 4, salary: 3000, prevApps: 5, prevInnings: 90);
-    expect(TransferEngine.activeDraftEligible(pUnder30, 2027), isTrue);
-    expect(TransferEngine.activeDraftEligible(pAt30, 2027), isFalse);
+    // 各球団の自動選出は最低20名で、若手・主力が保護されやすい
+    final pool = TransferEngine.autoSelectActiveDraftPool(my, 2027);
+    expect(pool.length, TransferEngine.activeDraftRequiredCount(my, 2027));
+    expect(pool.length, lessThanOrEqualTo(TransferEngine.activeDraftMinPick));
 
     // 2) 自球団自由契約→再契約（育成含む）は「再契約」になり移籍記事にならない
     final p = my.players.firstWhere((x) => !x.ikusei);
@@ -1734,5 +1740,193 @@ void main() {
     expect(hist[39]?.any((e) => e.$2 == promo.registeredName && e.$3 == '背番号決定'), isTrue);
     expect(hist[110]?.where((e) => e.$2 == longP.registeredName), hasLength(2));
     expect(hist[98]?.single.$2, longP.registeredName);
+  });
+
+  test('新人王はNPB準拠（ドラフト外外国人・提携選手は除外、5年目以内かつ前年まで投手30回/野手60打席以内は対象）', () {
+    // 1) ドラフト外の海外選手・提携選手は1年目でも対象外
+    final foreignNonDraft = Player(
+      id: 'roy_f1',
+      lastName: 'スミス',
+      isPitcher: false,
+      nationality: '海外',
+      proYears: 1,
+      draftInfo: '外国人選手（2026年・3Aから）',
+      abroad: ['2025\u3000MLB・ARI\u3000100試合'],
+    );
+    expect(AwardsEngine.isRookieEligible(foreignNonDraft), isFalse);
+
+    final partner = Player(
+      id: 'roy_pt',
+      lastName: 'ミラー',
+      isPitcher: true,
+      nationality: '海外',
+      proYears: 1,
+      partnerMlb: 'NYY',
+    );
+    expect(AwardsEngine.isRookieEligible(partner), isFalse);
+
+    // 2) ドラフト経由の外国人選手は対象
+    final foreignDrafted = Player(
+      id: 'roy_fd',
+      lastName: 'チェン',
+      isPitcher: true,
+      nationality: '海外',
+      proYears: 1,
+      draftInfo: '2026年ドラフト2位（大学）',
+      draftYear: 2026,
+    );
+    expect(AwardsEngine.isRookieEligible(foreignDrafted), isTrue);
+
+    // 3) 日本人5年目以内：前年まで投手30回(90アウト)以内 / 野手60打席以内は対象、超過・6年目は対象外
+    final pitOk = Player(id: 'roy_p5', lastName: '投手', isPitcher: true, proYears: 5, career: PlayerStats(inningsPitched: 90));
+    final pitOver = Player(id: 'roy_po', lastName: '投手', isPitcher: true, proYears: 3, career: PlayerStats(inningsPitched: 91));
+    final pitYr6 = Player(id: 'roy_p6', lastName: '投手', isPitcher: true, proYears: 6, career: PlayerStats(inningsPitched: 0));
+    expect(AwardsEngine.isRookieEligible(pitOk), isTrue);
+    expect(AwardsEngine.isRookieEligible(pitOver), isFalse);
+    expect(AwardsEngine.isRookieEligible(pitYr6), isFalse);
+
+    final batOk = Player(id: 'roy_b5', lastName: '野手', isPitcher: false, proYears: 4, career: PlayerStats(atBats: 50, walks: 10));
+    final batOver = Player(id: 'roy_bo', lastName: '野手', isPitcher: false, proYears: 2, career: PlayerStats(atBats: 51, walks: 10));
+    expect(AwardsEngine.isRookieEligible(batOk), isTrue);
+    expect(AwardsEngine.isRookieEligible(batOver), isFalse);
+  });
+
+  test('ポストシーズン・オールスターの1戦ずつ表記フォーマット（○/●/△）', () {
+    expect(
+      AwardsEngine.formatGameLine(date: '2026-10-01', awayName: '東新', homeName: 'ラクテル', awayScore: 5, homeScore: 3),
+      '10/1 ○東新 5-3 ラクテル●',
+    );
+    expect(
+      AwardsEngine.formatGameLine(date: '2026-10-02', awayName: '東新', homeName: 'ラクテル', awayScore: 2, homeScore: 2),
+      '10/2 △東新 2-2 ラクテル△',
+    );
+  });
+
+  test('現役ドラフトは各球団が提出した20名プールからのみ指名され、未選出の若手は守られる', () {
+    final t1 = Team(id: 'T1', name: '球団1', shortName: '球1', league: 'CL', players: [
+      Player(id: 't1_star', lastName: '有望若手', isPitcher: false, mainPos: '遊撃手', age: 20, contactLeft: 80, contactRight: 80, power: 80, talent: 85),
+      for (var i = 0; i < 22; i++)
+        Player(id: 't1_$i', lastName: '選手$i', isPitcher: i.isEven, mainPos: i.isEven ? '投手' : '外野手', age: 28, contactLeft: 50, contactRight: 50),
+    ]);
+    final t2 = Team(id: 'T2', name: '球団2', shortName: '球2', league: 'CL', players: [
+      for (var i = 0; i < 22; i++)
+        Player(id: 't2_$i', lastName: '他選手$i', isPitcher: i.isEven, mainPos: i.isEven ? '投手' : '外野手', age: 28, contactLeft: 50, contactRight: 50),
+    ]);
+    final pool1 = TransferEngine.autoSelectActiveDraftPool(t1, 2027);
+    expect(pool1, hasLength(20));
+    expect(pool1.any((p) => p.id == 't1_star'), isFalse);
+
+    final moves = TransferEngine.runActiveDraft([t1, t2], 2027, (t, cands) => cands.first);
+    expect(moves, hasLength(2));
+    expect(moves.any((m) => m.$3.id == 't1_star'), isFalse);
+  });
+
+  testWidgets('SeasonAwardsBody はオールスター・ポストシーズンの1戦ずつ結果を表示する', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    final t0 = app.teams[0];
+    final t1 = app.teams[1];
+    final aw = {
+      'year': 2026,
+      'champion': t0.id,
+      'leagues': {
+        'CL': {'pennant': t0.id, 'games': 156, 'qualifiedPa': 483, 'qualifiedIp': 156, 'titles': [], 'mvp': {'ranking': []}, 'rookie': {'ranking': []}, 'b9': [], 'gg': []},
+        'PL': {'pennant': app.teams[6].id, 'games': 156, 'qualifiedPa': 483, 'qualifiedIp': 156, 'titles': [], 'mvp': {'ranking': []}, 'rookie': {'ranking': []}, 'b9': [], 'gg': []},
+      },
+      'sawamura': {'none': true},
+      'comeback': {'none': true},
+      'series': [
+        {
+          'id': 'JS',
+          'label': '日本シリーズ',
+          'high': t0.id,
+          'low': t1.id,
+          'winner': t0.id,
+          'mvp': 'テスト選手',
+          'score': '4勝0敗',
+          'games': [
+            {'date': '2026-10-17', 'away': t1.id, 'home': t0.id, 'awayScore': 3, 'homeScore': 5},
+          ],
+        },
+      ],
+      'allStarGames': [
+        {'date': '2026-07-14', 'away': 'CL_ALLSTAR', 'home': 'PL_ALLSTAR', 'awayScore': 4, 'homeScore': 2, 'mvp': '球宴MVP選手'},
+      ],
+    };
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SeasonAwardsBody(app: app, year: 2026, awards: aw),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('10/17'), findsOneWidget);
+    expect(find.textContaining('3-5'), findsOneWidget);
+    expect(find.textContaining('7/14 ○A選抜 4-2 B選抜●'), findsOneWidget);
+  });
+
+  testWidgets('ActiveDraftScreen はステップ1で最低20名選出してステップ2へ進める', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      app.myTeamId = app.teams.first.id;
+    });
+    await tester.pumpWidget(MaterialApp(home: ActiveDraftScreen(app: app)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('① 自球団の放出候補を選出'), findsOneWidget);
+    expect(find.textContaining('提出リストを確定して指名へ'), findsOneWidget);
+    await tester.tap(find.textContaining('提出リストを確定して指名へ'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('② 他球団の提出リストから1名指名'), findsOneWidget);
+  });
+
+  test('外国人選手はオフでもシーズン中でも来日1年目になり、元NPB選手は復帰時に以前のNPB年数+1になる', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    app.startYear = 2027;
+    app.offAfterSeason = true;
+    app.currentDate = DateTime(2026, 11, 20);
+
+    final fOff = Player(id: 'f_off', lastName: 'オフ来日', isPitcher: false, nationality: '海外', mainPos: '外野手', salary: 500, proYears: 3);
+    app.foreignPool.add(fOff);
+    final err1 = app.signForeign(fOff, salary: 1000, years: 1);
+    expect(err1, isNull);
+    expect(fOff.proYears, 1);
+
+    // シーズン途中（5月）に外国人獲得 → 1年目
+    app.offAfterSeason = false;
+    app.currentDate = DateTime(2027, 5, 10);
+    final fMid = Player(id: 'f_mid', lastName: '途中来日', isPitcher: true, nationality: '海外', mainPos: '投手', salary: 500, proYears: 4);
+    app.foreignPool.add(fMid);
+    final err2 = app.signForeign(fMid, salary: 1000, years: 1);
+    expect(err2, isNull);
+    expect(fMid.proYears, 1);
+
+    // NPB 5年目の選手が独立リーグから日本球界復帰 → 6年目
+    final indyTeam = OTeam(id: 'IND1', name: '高知', short: '高知', leagueId: 'JP1', players: []);
+    final ob = Player(id: 'npb_ret', lastName: '復帰選手', isPitcher: false, nationality: '日本', mainPos: '内野手', proYears: 5, salary: 500, age: 27);
+    indyTeam.players.add(ob);
+    app.otherWorld = OtherWorld(teams: [indyTeam], simDate: DateTime(2027, 5, 10), seasonYear: 2027, fromNpb: {'npb_ret': '2026年11月 戦力外'});
+    for (var day = 0; day < 60; day++) {
+      app.currentDate = DateTime(2027, 5, 10).add(Duration(days: day * 7));
+      final r = app.offerOtherPlayer(ob, salary: 5000, years: 1);
+      if (r == null) break;
+    }
+    expect(my.players.contains(ob), isTrue);
+    expect(ob.proYears, 6);
   });
 }
