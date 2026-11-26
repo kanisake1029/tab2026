@@ -259,7 +259,7 @@ extension OffseasonOps on AppState {
     final r = Random(currentDate.year * 641);
     tenders = [];
     for (final t in leagueTeams) {
-      for (final p in t.players.where((p) => p.ikusei && p.ikuseiYears >= 3)) {
+      for (final p in t.players.where((p) => p.ikusei && p.ikuseiYears >= 3 && !p.isPartner)) {
         final c = <String, dynamic>{'pid': p.id, 'from': t.id, 'offers': <String, int>{}, 'match': false};
         // 元の球団（CPU）は、見込みがあれば同じ条件で支配下に上げる
         if (t.id != myTeamId && RosterEngine.freeSlots(t) > 0 && cpuValue(t, p) >= 52 + r.nextInt(6)) c['match'] = true;
@@ -1560,6 +1560,7 @@ extension OffseasonOps on AppState {
   String? releasePlayer(Player p) {
     final my = myTeam;
     if (my == null) return '球団が選ばれていません';
+    if (p.isPartner) return '提携選手は${p.partnerUntil}年オフの提携期間満了まで自由契約・戦力外にできません';
     final pitchers = my.players.where((x) => x.isPitcher).length, fielders = my.players.length - pitchers;
     if (p.isPitcher && pitchers <= 14) return '投手が足りなくなります';
     if (!p.isPitcher && fielders <= 12) return '野手が足りなくなります';
@@ -1897,6 +1898,7 @@ extension OffseasonOps on AppState {
     final wait = tradeWait(partner);
     if (wait > 0) return '${teamShort(partner)}とは、あと$wait日たたないとトレードできません';
     if (givePicks.any((x) => pickOwnerOf(x.$1, x.$2) != my.id) || getPicks.any((x) => pickOwnerOf(x.$1, x.$2) != partner.id)) return '持っていない指名権が入っています';
+    if ([...give, ...get].any((p) => p.isPartner)) return '提携選手は提携期間中トレードできません';
     if ([...give, ...get].any((p) => p.ikusei) && ![...give, ...get].every((p) => p.ikusei)) return '育成選手は、育成選手同士でしかトレードできません';
     final shGive = give.where((p) => !p.ikusei).length, shGet = get.where((p) => !p.ikusei).length;
     if (RosterEngine.shihaikaCount(my) - shGive + shGet > RosterEngine.maxShihaika) return '自球団の支配下が70人を超えます';
@@ -1983,8 +1985,8 @@ extension OffseasonOps on AppState {
       final aNeed = RosterEngine.posNames.followedBy(['投手']).reduce((x, y) => RosterEngine.need(a, x) >= RosterEngine.need(a, y) ? x : y);
       final bNeed = RosterEngine.posNames.followedBy(['投手']).reduce((x, y) => RosterEngine.need(b, x) >= RosterEngine.need(b, y) ? x : y);
       if (aNeed == bNeed || RosterEngine.need(a, aNeed) < 0.25 || RosterEngine.need(b, bNeed) < 0.25) continue;
-      final fromB = b.players.where((p) => !p.ikusei && p.mainPosition == aNeed && !p.foreignSlot).toList()..sort((x, y) => RosterEngine.value(y).compareTo(RosterEngine.value(x)));
-      final fromA = a.players.where((p) => !p.ikusei && p.mainPosition == bNeed && !p.foreignSlot).toList()..sort((x, y) => RosterEngine.value(y).compareTo(RosterEngine.value(x)));
+      final fromB = b.players.where((p) => !p.ikusei && p.mainPosition == aNeed && !p.foreignSlot && !p.isPartner).toList()..sort((x, y) => RosterEngine.value(y).compareTo(RosterEngine.value(x)));
+      final fromA = a.players.where((p) => !p.ikusei && p.mainPosition == bNeed && !p.foreignSlot && !p.isPartner).toList()..sort((x, y) => RosterEngine.value(y).compareTo(RosterEngine.value(x)));
       if (fromB.length < 2 || fromA.length < 2) continue;
       // 主力（各位置の1番手）は出さない
       final x = fromA[1 + r.nextInt(fromA.length - 1)];

@@ -1414,4 +1414,56 @@ extension RepairOps on AppState {
     if (changed) _preCache = null;
     return changed;
   }
+
+  /// 既存セーブの現在プレイ中の提携選手（および未選択の提携枠候補）に才能+10・向上心+20を一度だけ付与する。
+  bool _boostCurrentPartnerPlayers(Map<String, String> kv, Map<String, String> dirtyKv) {
+    const kKey = 'partnerBoostV1';
+    if (kv[kKey] == '1') return false;
+    var changed = false;
+    void boost(Player p) {
+      final nt = (p.talent + 10).clamp(1, 100);
+      final na = (p.ambition + 20).clamp(1, 100);
+      if (nt != p.talent || na != p.ambition) {
+        p.talent = nt;
+        p.ambition = na;
+        changed = true;
+      }
+    }
+
+    for (final t in teams) {
+      for (final p in t.players) {
+        if (p.isPartner) boost(p);
+      }
+    }
+    for (final fa in freeAgents) {
+      if (fa.player.isPartner) boost(fa.player);
+    }
+    for (final slot in partnerSlots) {
+      final cands = slot['cands'];
+      if (cands is! List) continue;
+      for (final item in cands) {
+        if (item is! Map) continue;
+        final t0 = (item['talent'] as num?)?.toInt();
+        final a0 = (item['ambition'] as num?)?.toInt();
+        if (t0 != null) {
+          final t1 = (t0 + 10).clamp(1, 100);
+          if (t1 != t0) {
+            item['talent'] = t1;
+            changed = true;
+          }
+        }
+        if (a0 != null) {
+          final a1 = (a0 + 20).clamp(1, 100);
+          if (a1 != a0) {
+            item['ambition'] = a1;
+            changed = true;
+          }
+        }
+      }
+    }
+    kv[kKey] = '1';
+    dirtyKv[kKey] = '1';
+    if (changed) _preCache = null;
+    return changed;
+  }
 }

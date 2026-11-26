@@ -1429,23 +1429,24 @@ class _RosterManageScreenState extends State<RosterManageScreen> {
                       style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                       child: const Text('支配下登録'),
                     ),
-                  TextButton(
-                    onPressed: () async {
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (d) => AlertDialog(
-                          title: Text('${p.registeredName}に戦力外を通告しますか？'),
-                          content: const Text('自由契約の一覧に移ります。どこの球団とも契約しなければ、1月31日を過ぎると引退します。'),
-                          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('やめる')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('通告する'))],
-                        ),
-                      );
-                      if (ok != true || !context.mounted) return;
-                      _toast(context, app.releasePlayer(p), '戦力外を通告しました');
-                      setState(() {});
-                    },
-                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: Colors.redAccent),
-                    child: const Text('戦力外'),
-                  ),
+                  if (!p.isPartner)
+                    TextButton(
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (d) => AlertDialog(
+                            title: Text('${p.registeredName}に戦力外を通告しますか？'),
+                            content: const Text('自由契約の一覧に移ります。どこの球団とも契約しなければ、1月31日を過ぎると引退します。'),
+                            actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('やめる')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('通告する'))],
+                          ),
+                        );
+                        if (ok != true || !context.mounted) return;
+                        _toast(context, app.releasePlayer(p), '戦力外を通告しました');
+                        setState(() {});
+                      },
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: Colors.redAccent),
+                      child: const Text('戦力外'),
+                    ),
                   // 育成再契約：支配下の選手、または育成満了（3年）の選手。オフシーズンだけ
                   if (!p.ikusei || p.ikuseiYears >= 3)
                     TextButton(

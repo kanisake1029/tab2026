@@ -2179,4 +2179,110 @@ void main() {
     expect(find.textContaining(ace.registeredName), findsOneWidget);
     expect(find.text('ポスティング不成立・未更改'), findsOneWidget);
   });
+
+  test('提携枠候補は才能・向上心が高く伸びしろが長い', () {
+    for (final value in [65.0, 80.0, 95.0]) {
+      final cands = ForeignEngine.partnerProspects(2027, Random(value.toInt()), value, 'ニューヨーク・ヤンキース');
+      expect(cands.length, 5);
+      for (final p in cands) {
+        expect(p.age, inInclusiveRange(19, 23));
+        expect(p.talent, greaterThanOrEqualTo(70));
+        expect(p.ambition, greaterThanOrEqualTo(75));
+        expect(p.growthRate, greaterThanOrEqualTo(1.8));
+        expect(p.primeStart, greaterThanOrEqualTo(p.age + 4));
+        expect(p.riseLen, greaterThanOrEqualTo(3));
+        expect(p.primeLen, greaterThanOrEqualTo(5));
+      }
+    }
+  });
+
+  test('提携枠ブースト: 既存セーブの提携選手に才能+10・向上心+20（100上限）が一度だけ適用される', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase(NativeDatabase.memory());
+    final app1 = AppState(db);
+    while (!app1.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final p1 = app1.teams.first.players.firstWhere((p) => !p.ikusei);
+    p1.partnerMlb = 'ニューヨーク・ヤンキース';
+    p1.talent = 65;
+    p1.ambition = 70;
+    final p2 = app1.teams.first.players.lastWhere((p) => !p.ikusei && p.id != p1.id);
+    p2.partnerMlb = 'ロサンゼルス・ドジャース';
+    p2.talent = 95;
+    p2.ambition = 90;
+    await app1.saveData();
+    await db.setKv('partnerBoostV1', '');
+
+    final app2 = AppState(db);
+    while (!app2.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final boosted1 = app2.teams.first.players.firstWhere((p) => p.id == p1.id);
+    final boosted2 = app2.teams.first.players.firstWhere((p) => p.id == p2.id);
+    expect(boosted1.talent, 75);
+    expect(boosted1.ambition, 90);
+    expect(boosted2.talent, 100);
+    expect(boosted2.ambition, 100);
+
+    // 2回目の読み込みでは再ブーストされない
+    final app3 = AppState(db);
+    while (!app3.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final again1 = app3.teams.first.players.firstWhere((p) => p.id == p1.id);
+    expect(again1.talent, 75);
+    expect(again1.ambition, 90);
+    await db.close();
+  });
+
+  test('提携選手は期間中に自由契約・戦力外・交渉決裂退団・トレード・現役ドラフト不可、満了後は通常外国人扱い', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase(NativeDatabase.memory());
+    final app = AppState(db);
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams.first;
+    final other = app.teams[1];
+    app.myTeamId = my.id;
+    app.currentDate = DateTime(2026, 11, 10);
+
+    final p = my.players.firstWhere((x) => !x.ikusei);
+    p.nationality = '海外';
+    p.faService = 0;
+    p.partnerMlb = 'ニューヨーク・ヤンキース';
+    p.partnerUntil = 2030;
+    p.trust = 0;
+    p.salary = 2000;
+
+    // 提携期間中は外国人枠外
+    expect(p.isPartner, isTrue);
+    expect(p.foreignSlot, isFalse);
+
+    // 戦力外・自由契約・転任・引退勧告・トレード・現役ドラフト・CPU戦力外は不可
+    expect(app.releasePlayer(p), isNotNull);
+    expect(my.players.contains(p), isTrue);
+    expect(app.offerStaffRole(p, '打撃'), isNotNull);
+    expect(app.adviseRetire(p), isNotNull);
+    expect(TransferEngine.activeDraftEligible(p, 2026), isFalse);
+    expect(TransferEngine.cpuReleases(my).contains(p), isFalse);
+
+    app.currentDate = DateTime(2026, 6, 1);
+    expect(app.proposeTrade(other, [p], [], 0), isNotNull);
+
+    // 大幅減俸＋信頼0でも契約交渉決裂で自由契約にならない
+    app.currentDate = DateTime(2026, 11, 10);
+    for (var i = 0; i < 5; i++) {
+      app.offerRenewal(p, 450, 1);
+      expect(my.players.contains(p), isTrue);
+      expect(app.freeAgents.any((f) => f.player.id == p.id), isFalse);
+    }
+
+    // 提携期間満了後に残留した場合、通常外国人枠として扱われる
+    p.partnerMlb = '';
+    expect(p.isPartner, isFalse);
+    expect(p.foreignSlot, isTrue);
+    await db.close();
+  });
 }

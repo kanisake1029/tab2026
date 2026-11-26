@@ -81,7 +81,7 @@ extension ContractOps on AppState {
     // 保留：信頼が下がる。信頼が低く、大きな減俸なら退団することがある
     p.trust = (p.trust - 2 - (tries > 2 ? 2 : 0)).clamp(0, 100);
     final cut = 1 - salary / max(1, p.salary);
-    if (cut > 0.25 && p.trust < 40) {
+    if (!p.isPartner && cut > 0.25 && p.trust < 40) {
       final chance = ((cut - 0.25) * 1.6 + (40 - p.trust) / 80 + (tries - 1) * 0.05).clamp(0.0, 0.85);
       if (r.nextDouble() < chance) {
         RosterEngine.removePlayer(my, p);
@@ -165,6 +165,7 @@ extension ContractOps on AppState {
   String offerStaffRole(Player p, String role) {
     final my = myTeam;
     if (my == null || !my.players.contains(p)) return '自球団の選手ではありません';
+    if (p.isPartner) return '提携選手は提携期間中、転任を打診できません';
     final r = Random(p.id.hashCode ^ role.hashCode ^ currentDate.day);
     final chance = ((p.age >= 34 ? 0.8 : (p.age >= 31 ? 0.5 : (p.age >= 28 ? 0.2 : 0.05))) + (p.trust - 50) / 100 - (p.ovr >= 70 ? 0.25 : 0)).clamp(0.02, 0.95);
     if (r.nextDouble() >= chance) {
@@ -187,6 +188,7 @@ extension ContractOps on AppState {
   String adviseRetire(Player p) {
     final my = myTeam;
     if (my == null || !my.players.contains(p)) return '自球団の選手ではありません';
+    if (p.isPartner) return '提携選手は提携期間中、引退勧告できません';
     final r = Random(p.id.hashCode ^ 0x7e ^ currentDate.day);
     final chance = ((p.age >= 36 ? 0.85 : (p.age >= 33 ? 0.6 : (p.age >= 30 ? 0.3 : 0.08))) + (p.trust - 50) / 120 - (p.ovr >= 65 ? 0.2 : 0)).clamp(0.02, 0.95);
     if (r.nextDouble() < chance) {

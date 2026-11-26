@@ -267,25 +267,43 @@ extension OtherOps on AppState {
     _joinOther(p, t, '${currentDate.year}年${currentDate.month}月 $howで${mlb.name}へ（元$fromShort）');
   }
 
-  /// 提携枠の候補：流出先の大リーグ球団の傘下（3A・2A・1A）の、25歳以下・成長率1.50以上の若手から、価値に釣り合う5人（足りなければほかの球団の傘下からも）
+  /// 提携枠の候補：流出先の大リーグ球団の傘下（3A・2A・1A）の、才能・向上心が高く伸びしろの長い若手から5人
   List<Player> _orgProspects(OTeam mlb, double value, int year, Random r) {
     final w = otherWorld!;
-    bool ok(Player p) => p.age <= 25 && p.nationality == '海外' && p.growthRate >= 1.5 && !w.fromNpb.containsKey(p.id);
+    bool baseOk(Player p) => p.age <= 25 && p.nationality == '海外' && p.growthRate >= 1.5 && !w.fromNpb.containsKey(p.id);
+    bool eliteOk(Player p) => baseOk(p) && p.age <= 24 && p.talent >= 65 && p.ambition >= 70 && p.growthRate >= 1.7;
     bool minor(OTeam t) => t.leagueId == 'AAA' || t.leagueId == 'AA' || t.leagueId == 'A';
-    final pool = [
-      for (final t in w.teams.where((t) => t.org == mlb.id && minor(t)))
+    final orgMinors = w.teams.where((t) => t.org == mlb.id && minor(t)).toList();
+    final otherMinors = w.teams.where((t) => t.org != mlb.id && t.org.isNotEmpty && minor(t)).toList();
+    final pool = <Player>[
+      for (final t in orgMinors)
         for (final p in t.players)
-          if (ok(p)) p,
+          if (eliteOk(p)) p,
     ];
     if (pool.length < 5) {
-      pool.addAll([
-        for (final t in w.teams.where((t) => t.org != mlb.id && t.org.isNotEmpty && minor(t)))
-          for (final p in t.players)
-            if (ok(p)) p,
-      ]);
+      final seen = pool.map((p) => p.id).toSet();
+      for (final t in otherMinors) {
+        for (final p in t.players) {
+          if (eliteOk(p) && seen.add(p.id)) pool.add(p);
+        }
+      }
+    }
+    if (pool.length < 5) {
+      final seen = pool.map((p) => p.id).toSet();
+      for (final t in [...orgMinors, ...otherMinors]) {
+        for (final p in t.players) {
+          if (baseOk(p) && seen.add(p.id)) pool.add(p);
+        }
+      }
     }
     final target = 44 + (value - 65) * 0.6 + 6;
-    pool.sort((a, b) => ((a.ovr + a.talent * 0.3) - target).abs().compareTo(((b.ovr + b.talent * 0.3) - target).abs()));
+    double score(Player p) {
+      GrowthCurve.starts(p);
+      final runway = (p.primeStart + p.primeLen) - p.age;
+      return ((p.ovr + p.talent * 0.3) - target).abs() - p.talent * 0.25 - p.ambition * 0.2 - runway * 1.2;
+    }
+
+    pool.sort((a, b) => score(a).compareTo(score(b)));
     return [
       for (final p in pool.take(5))
         () {
@@ -294,6 +312,12 @@ extension OtherOps on AppState {
           c.career = PlayerStats();
           c.proYears = 1;
           c.faService = 0;
+          c.talent = max(c.talent, 72).clamp(1, 100);
+          c.ambition = max(c.ambition, 78).clamp(1, 100);
+          GrowthCurve.starts(c);
+          c.primeStart = max(c.primeStart, max(26, c.age + 4));
+          c.riseLen = max(c.riseLen, 3);
+          c.primeLen = max(c.primeLen, 5);
           c.salary = round50(estimateSalary(c) * 0.6);
           c.draftInfo = '提携選手（${mlb.name}から・$year年）';
           return c;

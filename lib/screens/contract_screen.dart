@@ -367,30 +367,40 @@ class _ContractScreenState extends State<ContractScreen> {
                   },
                   child: const Text('育成で再契約'),
                 ),
-              OutlinedButton(onPressed: () => _role(c, p, coach: true), child: const Text('コーチに転任')),
-              OutlinedButton(onPressed: () => _role(c, p, coach: false), child: const Text('スカウトに転任')),
-              OutlinedButton(
-                onPressed: () async {
-                  if (!await _confirm('${p.registeredName}に引退を勧めますか？（断られると信頼が下がり、信頼が低いと退団します）')) return;
-                  final msg = app.adviseRetire(p);
-                  if (c.mounted) Navigator.pop(c);
-                  _toast(msg);
-                  setState(() {});
-                },
-                child: const Text('引退勧告'),
-              ),
-              OutlinedButton(
-                onPressed: () async {
-                  if (!await _confirm('${p.registeredName}を自由契約にしますか？')) return;
-                  final err = app.releasePlayer(p);
-                  if (c.mounted) Navigator.pop(c);
-                  _toast(err ?? '${p.registeredName}を自由契約にしました');
-                  setState(() {});
-                },
-                style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
-                child: const Text('自由契約'),
-              ),
+              if (!p.isPartner) ...[
+                OutlinedButton(onPressed: () => _role(c, p, coach: true), child: const Text('コーチに転任')),
+                OutlinedButton(onPressed: () => _role(c, p, coach: false), child: const Text('スカウトに転任')),
+                OutlinedButton(
+                  onPressed: () async {
+                    if (!await _confirm('${p.registeredName}に引退を勧めますか？（断られると信頼が下がり、信頼が低いと退団します）')) return;
+                    final msg = app.adviseRetire(p);
+                    if (c.mounted) Navigator.pop(c);
+                    _toast(msg);
+                    setState(() {});
+                  },
+                  child: const Text('引退勧告'),
+                ),
+                OutlinedButton(
+                  onPressed: () async {
+                    if (!await _confirm('${p.registeredName}を自由契約にしますか？')) return;
+                    final err = app.releasePlayer(p);
+                    if (c.mounted) Navigator.pop(c);
+                    _toast(err ?? '${p.registeredName}を自由契約にしました');
+                    setState(() {});
+                  },
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+                  child: const Text('自由契約'),
+                ),
+              ],
             ]),
+            if (p.isPartner)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '提携選手（${p.partnerMlb}・${p.partnerUntil}年オフまで）は期間中の自由契約・引退・転任・トレードはできません（年俸交渉・育成再契約は可）。',
+                  style: const TextStyle(fontSize: 11, color: _sub),
+                ),
+              ),
             const SizedBox(height: 6),
             const Text('転任・引退は、ベテランほど受け入れやすく、信頼が高いほど受け入れやすい。主力は断りやすい。育成への切り替えは、これまでどおり自動です。', style: TextStyle(fontSize: 11, color: _sub)),
           ]),

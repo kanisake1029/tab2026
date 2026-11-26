@@ -162,7 +162,7 @@ class TransferEngine {
       return (counts[pos] ?? 0) > min;
     }
 
-    final shihaika = t.players.where((p) => !p.ikusei).toList()..sort((a, b) => RosterEngine.value(a).compareTo(RosterEngine.value(b)));
+    final shihaika = t.players.where((p) => !p.ikusei && !p.isPartner).toList()..sort((a, b) => RosterEngine.value(a).compareTo(RosterEngine.value(b)));
     var count = shihaika.length;
     var released = 0;
     for (final p in shihaika) {
@@ -451,7 +451,7 @@ class TransferEngine {
   /// 現役ドラフトの選出対象（提出リストに入れられる選手）：
   /// 支配下・日本人扱い・FA権なし・そのオフに入団した選手でないこと。育成選手は対象外。
   static bool activeDraftEligible(Player p, int offYear) {
-    return !p.ikusei && !p.foreignSlot && !p.hasFA && p.offJoin != offYear && p.draftYear != offYear;
+    return !p.ikusei && !p.foreignSlot && !p.isPartner && !p.hasFA && p.offJoin != offYear && p.draftYear != offYear;
   }
 
   /// 各球団が最低限選出すべき人数（基本20名、対象が20名未満なら全員）

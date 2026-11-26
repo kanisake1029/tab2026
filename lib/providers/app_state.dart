@@ -13,6 +13,7 @@ import '../utils/initial_teams_data.dart';
 import '../utils/initial_data_format.dart';
 import '../engine/match_simulator.dart';
 import '../engine/condition_engine.dart';
+import '../engine/growth_curve.dart';
 import '../engine/growth_engine.dart';
 import '../engine/trust_engine.dart';
 import '../engine/farm_engine.dart';

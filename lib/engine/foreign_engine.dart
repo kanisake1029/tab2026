@@ -10,6 +10,7 @@ import '../utils/player_traits.dart';
 import '../utils/salary_utils.dart';
 import 'draft_engine.dart';
 import 'fielding_gen.dart';
+import 'growth_curve.dart';
 import 'pitch_catalog.dart';
 
 /// 外国人選手：毎年12月1日の一覧（支配下120人・育成60人）、出身国、海外での成績、環境適応力
@@ -342,20 +343,24 @@ class ForeignEngine {
   }
 
   /// 提携枠の候補（仕様書 3.3）：流出した選手を獲った大リーグ球団が出すプロスペクト。
-  ///  value（流出した選手の価値）に釣り合わせる：価値が高いほど、今の力も才能も高い若手
+  ///  value（流出した選手の価値）に釣り合わせる：価値が高いほど、今の力も才能も高く伸びしろの長い若手
   static List<Player> partnerProspects(int year, Random r, double value, String mlbTeam, {int count = 5}) {
     final out = <Player>[];
     for (var i = 0; i < count; i++) {
-      final age = 20 + r.nextInt(6); // 25歳以下
-      final mean = (44 + (value - 65) * 0.6 + (age - 20) * 1.5 + _g(r) * 3).clamp(38.0, 68.0);
+      final age = 19 + r.nextInt(5); // 19〜23歳（伸びしろ重視）
+      final mean = (44 + (value - 65) * 0.6 + (age - 19) * 1.5 + _g(r) * 3).clamp(38.0, 68.0);
       final p = make(year, r, ikusei: false, age: age, mean: mean);
-      p.talent = (60 + (value - 65) * 0.8 + _g(r) * 8).round().clamp(40, 99);
-      p.ambition = (60 + _g(r) * 12).round().clamp(30, 99);
-      // 提携の候補は成長率1.50以上
-      while (p.growthRate < 1.5 && (p.talent < 99 || p.ambition < 99)) {
+      p.talent = (76 + (value - 65) * 0.5 + _g(r) * 6).round().clamp(70, 99);
+      p.ambition = (80 + _g(r) * 7).round().clamp(75, 99);
+      // 提携の候補は成長率1.80以上
+      while (p.growthRate < 1.8 && (p.talent < 99 || p.ambition < 99)) {
         p.talent = (p.talent + 3).clamp(1, 99);
         p.ambition = (p.ambition + 3).clamp(1, 99);
       }
+      GrowthCurve.starts(p);
+      p.primeStart = max(p.primeStart, max(27, age + 4 + r.nextInt(3)));
+      p.riseLen = max(p.riseLen, 3);
+      p.primeLen = max(p.primeLen, 5 + r.nextInt(3));
       p.salary = round50(estimateSalary(p) * 0.6);
       p.draftInfo = '提携選手（$mlbTeamから・$year年）';
       out.add(p);
