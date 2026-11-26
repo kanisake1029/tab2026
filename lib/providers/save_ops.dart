@@ -147,18 +147,23 @@ extension SaveOps on AppState {
         if (p.openStats.games > 0 || p.openStats.pitchApps > 0) p.openStats = PlayerStats();
       }
       try {
-        final prevRows = await (db.select(db.seasonRecords)..where((t) => t.season.equals(startYear - 1) & t.kind.equals('player'))).get();
-        for (final r in prevRows) {
-          final j = jsonDecode(r.json) as Map<String, dynamic>;
-          final st = PlayerStats();
-          if (j['stats'] is Map) st.add(PlayerStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map)));
-          if (j['splits'] is List) {
-            for (final sp in j['splits'] as List) {
-              if (sp is Map && sp['stats'] is Map) st.add(PlayerStats.fromJson(Map<String, dynamic>.from(sp['stats'] as Map)));
+        void loadInto(List<SeasonRecord> rows, Map<String, PlayerStats> target) {
+          for (final r in rows) {
+            final j = jsonDecode(r.json) as Map<String, dynamic>;
+            final st = PlayerStats();
+            if (j['stats'] is Map) st.add(PlayerStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map)));
+            if (j['splits'] is List) {
+              for (final sp in j['splits'] as List) {
+                if (sp is Map && sp['stats'] is Map) st.add(PlayerStats.fromJson(Map<String, dynamic>.from(sp['stats'] as Map)));
+              }
             }
+            target[r.refId] = st;
           }
-          prevSeasonStats[r.refId] = st;
         }
+        final prevRows = await (db.select(db.seasonRecords)..where((t) => t.season.equals(startYear - 1) & t.kind.equals('player'))).get();
+        loadInto(prevRows, prevSeasonStats);
+        final prev2Rows = await (db.select(db.seasonRecords)..where((t) => t.season.equals(startYear - 2) & t.kind.equals('player'))).get();
+        loadInto(prev2Rows, prev2SeasonStats);
       } catch (e) {
         debugPrint('LOAD PREV STATS ERROR: $e');
       }

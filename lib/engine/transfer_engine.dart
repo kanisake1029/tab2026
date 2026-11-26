@@ -198,23 +198,54 @@ class TransferEngine {
     return s.games >= 20 ? 0.95 : 0.80;
   }
 
-  /// 成績に応じた契約更改の昇給上限倍率（1.0以下＝現状維持まで・成績不振や1軍出場僅少で倍増などの過大要求を防ぐ）
-  static double maxRaiseMult(Player p, {PlayerStats? stats}) {
+  /// 成績に応じた契約更改の昇給上限倍率（1.0以下＝現状維持まで）。
+  ///  前年比（試合数・稼働増／横ばい・一定試合数／悪化）＋成績水準に基づき判定する。
+  static double maxRaiseMult(Player p, {PlayerStats? stats, PlayerStats? prevStats}) {
     final s = stats ?? p.seasonStats;
+    final hasPrev = prevStats != null && (prevStats.games > 0 || prevStats.pitchApps > 0 || prevStats.inningsPitched > 0 || prevStats.plateAppearances > 0);
     if (p.isPitcher) {
       final ip = s.inningsPitched / 3;
-      if (ip < 10 && s.games < 10) return 1.0;
-      if ((ip >= 20 || s.games >= 15) && s.era >= 5.00) return 1.0;
+      final apps = s.apps;
+      if (ip < 30 && apps < 15) return 1.0;
+      if (s.era >= 5.00) return 1.0;
+
+      if (hasPrev) {
+        final prevIp = prevStats.inningsPitched / 3;
+        final prevApps = prevStats.apps;
+        if ((apps <= prevApps - 10 && ip <= prevIp - 25) || (prevIp >= 20 && s.era >= prevStats.era + 0.50)) return 1.0;
+        final improved = ip >= prevIp + 25 || apps >= prevApps + 10 || (prevIp >= 20 && s.era <= prevStats.era - 0.40) || s.wins >= prevStats.wins + 3 || (s.saves + s.holds) >= (prevStats.saves + prevStats.holds) + 8;
+        if (!improved) {
+          if ((ip >= 100 || apps >= 40) && (prevIp < 20 || s.era <= prevStats.era + 0.40)) {
+            return p.salary >= 10000 ? 1.05 : 1.15;
+          }
+          return 1.0;
+        }
+      }
+
       if (s.era >= 4.00 && s.wins < 8 && (s.saves + s.holds) < 15) return 1.05;
-      if ((ip >= 120 && s.era <= 3.20) || s.wins >= 10 || (s.games >= 40 && s.era <= 3.00) || (s.saves + s.holds) >= 25) return 2.0;
-      if ((ip >= 60 && s.era < 4.00) || (s.games >= 25 && s.era < 3.80)) return 1.45;
+      if ((ip >= 120 && s.era <= 3.20) || s.wins >= 10 || (apps >= 40 && s.era <= 3.00) || (s.saves + s.holds) >= 25) return 2.0;
+      if ((ip >= 60 && s.era < 4.00) || (apps >= 25 && s.era < 3.80)) return 1.45;
       return 1.15;
     }
+
     final pa = s.plateAppearances;
-    if (pa < 30 && s.games < 15) return 1.0;
+    if (pa < 100 && s.games < 30) return 1.0;
     final avg = s.battingAverage;
     final ops = s.ops;
     if (avg < 0.200 || ops < 0.580) return 1.0;
+
+    if (hasPrev) {
+      final prevPa = prevStats.plateAppearances;
+      if ((s.games <= prevStats.games - 15 && pa <= prevPa - 60) || ops <= prevStats.ops - 0.050) return 1.0;
+      final improved = s.games >= prevStats.games + 15 || pa >= prevPa + 60 || ops >= prevStats.ops + 0.040 || s.homeRuns >= prevStats.homeRuns + 5;
+      if (!improved) {
+        if ((s.games >= 100 || pa >= 350) && ops >= prevStats.ops - 0.040) {
+          return p.salary >= 10000 ? 1.05 : 1.15;
+        }
+        return 1.0;
+      }
+    }
+
     if (avg < 0.230 && ops < 0.650) return 1.05;
     if (pa >= 400 && (avg >= 0.280 || ops >= 0.800 || s.homeRuns >= 20)) return 2.0;
     if (pa >= 250 && (avg >= 0.255 || ops >= 0.720 || s.homeRuns >= 12)) return 1.5;
@@ -222,14 +253,14 @@ class TransferEngine {
     return ops >= 0.750 ? 1.2 : 1.1;
   }
 
-  /// 契約更改。複数年契約は年数を減らすだけ。上げ幅は成績に応じた上限まで、下げ幅は NPB の減額制限（−25%）まで
-  static int renewSalary(Player p, {PlayerStats? stats}) {
+  /// 契約更改。複数年契約は年数を減らすだけ。上げ幅は成績・前年比に応じた上限まで、下げ幅は NPB の減額制限（1億超−40%・以下−25%）まで
+  static int renewSalary(Player p, {PlayerStats? stats, PlayerStats? prevStats}) {
     p.prevSalary = p.salary;
     if (p.contractYears > 1) {
       p.contractYears--;
       return p.salary;
     }
-    p.salary = renewTarget(p, stats: stats);
+    p.salary = renewTarget(p, stats: stats, prevStats: prevStats);
     p.contractYears = 1;
     return p.salary;
   }
@@ -241,18 +272,19 @@ class TransferEngine {
     return (1.75 - (p.ovr - 80) * 0.075).clamp(1.0, 1.75);
   }
 
-  /// 契約更改の目安の年俸（今季の働きから。年俸は書き換えない。成績不振時は現年俸以下に抑え、低く見積もる分は許容する）
-  static int renewTarget(Player p, {PlayerStats? stats}) {
+  /// 契約更改の目安の年俸（今季の働きと前年比から。年俸は書き換えない。成績不振・横ばい未定着時は現年俸以下に抑え、低く見積もる分は許容する）
+  static int renewTarget(Player p, {PlayerStats? stats, PlayerStats? prevStats}) {
     final s = stats ?? p.seasonStats;
     final perf = performance(p, stats: s);
-    final cap = maxRaiseMult(p, stats: s);
+    final cap = maxRaiseMult(p, stats: s, prevStats: prevStats);
     final base = estimateSalary(p) * _topSalaryMult(p) * (p.faCount > 0 ? 1.15 : 1.0);
     final estTarget = (base * perf).round();
-    final lo = (p.salary * 0.75).round();
+    final minMult = p.salary > 10000 ? 0.60 : 0.75; // NPB 減額制限：1億超 −40%、1億以下 −25%
+    final lo = (p.salary * minMult).round();
     final hi = (p.salary * cap).round();
     int sal;
     if (cap <= 1.0) {
-      final salaryBased = (p.salary * perf.clamp(0.75, 1.0)).round();
+      final salaryBased = (p.salary * perf.clamp(minMult, 1.0)).round();
       sal = min(estTarget, salaryBased).clamp(lo, max(lo, p.salary));
     } else {
       sal = estTarget.clamp(lo, max(lo, hi));

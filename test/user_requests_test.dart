@@ -2104,6 +2104,24 @@ void main() {
     final starStats = PlayerStats(games: 145, atBats: 520, hits: 162, doubles: 30, homeRuns: 32, rbi: 98, walks: 65);
     expect(TransferEngine.maxRaiseMult(star, stats: starStats), 2.0);
     expect(TransferEngine.renewTarget(star, stats: starStats), greaterThan(star.salary));
+
+    // 4) 前年比テスト：試合数・OPSが大きく下がったら打率.260でも昇給なし
+    final prevGood = PlayerStats(games: 140, atBats: 500, hits: 145, doubles: 25, homeRuns: 20, walks: 55);
+    final curDrop = PlayerStats(games: 95, atBats: 320, hits: 83, doubles: 12, homeRuns: 7, walks: 25);
+    expect(TransferEngine.maxRaiseMult(star, stats: curDrop, prevStats: prevGood), 1.0);
+    expect(TransferEngine.renewTarget(star, stats: curDrop, prevStats: prevGood), lessThanOrEqualTo(star.salary));
+
+    // 5) 100試合以上＋横ばい（若手1億未満=1.15、1億以上=1.05）＆1億超の減額制限40%
+    final steadyStats = PlayerStats(games: 138, atBats: 495, hits: 142, doubles: 24, homeRuns: 19, walks: 52);
+    expect(TransferEngine.maxRaiseMult(star, stats: steadyStats, prevStats: prevGood), 1.15);
+    final highPaid = Player(id: 'ct_hi', lastName: '高年俸', isPitcher: false, salary: 20000, age: 32);
+    expect(TransferEngine.maxRaiseMult(highPaid, stats: steadyStats, prevStats: prevGood), 1.05);
+    expect(TransferEngine.renewTarget(highPaid, stats: slumpStats), 12000); // 2億の-40% = 1億2000万
+
+    // 6) 試合数増（80→130試合）＋成績維持なら昇給上限が開く
+    final prevSub = PlayerStats(games: 80, atBats: 240, hits: 64, homeRuns: 5, walks: 20);
+    final curReg = PlayerStats(games: 130, atBats: 460, hits: 132, doubles: 20, homeRuns: 16, walks: 45);
+    expect(TransferEngine.maxRaiseMult(star, stats: curReg, prevStats: prevSub), 2.0);
   });
 
   testWidgets('契約更改画面は未更改選手を上に・更改済み選手を下に表示し、希望金額を青字で表示する', (tester) async {

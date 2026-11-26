@@ -1644,7 +1644,7 @@ extension OffseasonOps on AppState {
         if (moved.contains(p.id) || p.draftYear == y) continue;
         if (t.id == myTeamId && renewSigned.contains(p.id)) continue; // 11月に更改が済んだ（年数もそのとき決めた）
         final old = p.salary;
-        TransferEngine.renewSalary(p, stats: lastSeasonStatsOf(p));
+        TransferEngine.renewSalary(p, stats: lastSeasonStatsOf(p), prevStats: priorSeasonStatsOf(p));
         if (t.id == myTeamId) {
           before += old;
           after += p.salary;

@@ -28,14 +28,19 @@ class _ContractScreenState extends State<ContractScreen> {
 
   String _statsLine(Player p) {
     final s = app.lastSeasonStatsOf(p);
+    final prev = app.priorSeasonStatsOf(p);
+    final hasPrev = prev != null && (prev.games > 0 || prev.pitchApps > 0 || prev.inningsPitched > 0);
     if (s == null || (s.games == 0 && s.pitchApps == 0 && s.inningsPitched == 0)) return '前季1軍 出場なし';
     if (p.isPitcher) {
       final ip = s.inningsPitched;
       final ipText = '${ip ~/ 3}${ip % 3 == 0 ? '' : '.${ip % 3}'}';
-      return '前季1軍 ${s.apps > 0 ? s.apps : s.games}登板 ${ipText}回 ${s.wins}勝${s.losses}敗 防${ip == 0 ? '-' : s.era.toStringAsFixed(2)}';
+      final curApps = s.apps > 0 ? s.apps : s.games;
+      final yoy = hasPrev ? '（前年 ${prev.apps > 0 ? prev.apps : prev.games}→$curApps登板）' : '';
+      return '前季1軍 $curApps登板 ${ipText}回 ${s.wins}勝${s.losses}敗 防${ip == 0 ? '-' : s.era.toStringAsFixed(2)}$yoy';
     }
     final avg = s.atBats == 0 ? '-' : s.battingAverage.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '');
-    return '前季1軍 ${s.games}試合 打率$avg ${s.homeRuns}本 ${s.rbi}点';
+    final yoy = hasPrev ? '（前年 ${prev.games}→${s.games}試合）' : '';
+    return '前季1軍 ${s.games}試合 打率$avg ${s.homeRuns}本 ${s.rbi}点$yoy';
   }
 
   Widget _badge(String label, Color bg, Color fg) => Container(
@@ -150,7 +155,7 @@ class _ContractScreenState extends State<ContractScreen> {
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
           child: Text(
             app.renewalOpen
-                ? '11月が契約更改の期間です（まだ $left人）。年俸は50万円単位、年数は1〜12年で提示できます。何度でも提示できますが、断られるたびに信頼が下がり、信頼の低い選手に大きな減俸を出すと退団することがあります。'
+                ? '11月が契約更改の期間です（まだ $left人）。年俸は50万円単位、年数は1〜12年で提示できます（減額制限：1億超−40%・以下−25%）。信頼の低い選手に大きな減俸を出すと退団することがあります。'
                     '12月1日に、まだの選手は希望額（1年）で更改します。年俸の総額 ${formatSalary(total)}'
                 : '契約更改は11月です（12月1日に、まだの選手は希望額で更改します）。今は見るだけです。年俸の総額 ${formatSalary(total)}',
             style: const TextStyle(fontSize: 12, color: _sub, height: 1.5),
