@@ -420,7 +420,7 @@ class _PlayerEditorState extends State<PlayerEditor> {
         _field('成長期(年)', _numBox('riseLen', p.riseLen, (v) => p.riseLen = v, width: 64, min: 1, max: 5), width: 68),
         _field('全盛期(年)', _numBox('primeLen', p.primeLen, (v) => p.primeLen = v, width: 64, min: 1, max: 15), width: 68),
         _field('過渡期(年)', _numBox('transLen', p.transLen, (v) => p.transLen = v, width: 64, min: 1, max: 6), width: 68),
-        _field('弾道', _dropdown<int>(p.trajectory.clamp(1, 4), const [(1, '1'), (2, '2'), (3, '3'), (4, '4')], (v) => p.trajectory = v), width: 64),
+        _field('弾道', _dropdown<int>(p.trajectory.clamp(1, 4), const [(1, '1'), (2, '2'), (3, '3'), (4, '4')], (v) => p.setTrajectory(v)), width: 64),
       ]),
     ]);
   }

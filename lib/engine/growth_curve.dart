@@ -74,7 +74,7 @@ class GrowthCurve {
     return (s[1] + p.phaseShift, s[2] - 1 + p.phaseShift);
   }
 
-  /// 円熟（約2割）：過渡期に入っても技術（ミート・制球など）が伸び続け、衰退期も技術の衰えが半分
+  /// 円熟（約2割）：過渡期・衰退期に入っても身体能力が衰える一方で技術（ミート・チャンス・守備適性・送球・捕球・制球など）が伸びる
   static bool mature(Player p) {
     var h = 0x811c9dc5;
     for (final c in p.id.codeUnits) {

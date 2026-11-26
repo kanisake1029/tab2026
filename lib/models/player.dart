@@ -263,6 +263,19 @@ class Player {
   int proYears;
 
   int trajectory;
+  int trajectoryVal; // 弾道の内部数値（1〜100。平均打球角度 0〜20° を比例配分）
+  static const double maxLaunchAngle = 20.0;
+  static int trajectoryFromVal(int v) => ((v.clamp(1, 100) - 1) ~/ 25 + 1).clamp(1, 4);
+  static int defaultTrajectoryVal(int traj) => ((traj.clamp(1, 4) - 1) * 25 + 13).clamp(1, 100);
+  double get launchAngle => (trajectoryVal.clamp(1, 100) / 100.0) * maxLaunchAngle;
+  void setTrajectoryVal(int v) {
+    trajectoryVal = v.clamp(1, 100);
+    trajectory = trajectoryFromVal(trajectoryVal);
+  }
+  void setTrajectory(int t) {
+    trajectory = t.clamp(1, 4);
+    trajectoryVal = defaultTrajectoryVal(trajectory);
+  }
   int contactLeft;
   int contactRight;
   int power;
@@ -406,6 +419,7 @@ class Player {
     this.draftCustomAge = 24,
     this.proYears = 1,
     this.trajectory = 2,
+    int? trajectoryVal,
     this.contactLeft = 50,
     this.contactRight = 50,
     this.power = 50,
@@ -503,6 +517,7 @@ class Player {
     this.playStreak = 0,
     this.playStreakBest = 0,
   }) : spinAxisSet = spinAxis,
+       trajectoryVal = (trajectoryVal != null && trajectoryVal > 0) ? trajectoryVal.clamp(1, 100) : defaultTrajectoryVal(trajectory),
        faService = faService ?? (proYears - 1).clamp(0, 30), // 開始時はプロ9年目以上が FA 権を持つ
        exp = exp ?? {},
        potential = potential ?? {},
@@ -704,6 +719,7 @@ class Player {
       'draftCustomAge': draftCustomAge,
       'proYears': proYears,
       'trajectory': trajectory,
+      'trajectoryVal': trajectoryVal,
       'contactLeft': contactLeft,
       'contactRight': contactRight,
       'power': power,
@@ -860,6 +876,7 @@ class Player {
       draftCustomAge: json['draftCustomAge'],
       proYears: json['proYears'],
       trajectory: json['trajectory'],
+      trajectoryVal: json['trajectoryVal'] as int?,
       contactLeft: json['contactLeft'],
       contactRight: json['contactRight'],
       power: json['power'],

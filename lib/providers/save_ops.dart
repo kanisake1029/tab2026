@@ -142,6 +142,11 @@ extension SaveOps on AppState {
     }
     _roundSalaries();
     Player.showOpen = openPeriod;
+    if (offAfterSeason || currentDate.year < startYear) {
+      for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
+        if (p.openStats.games > 0 || p.openStats.pitchApps > 0) p.openStats = PlayerStats();
+      }
+    }
     if (openPeriod) {
       for (final t in teams) {
         for (final p in t.players) {

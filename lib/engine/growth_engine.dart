@@ -75,6 +75,7 @@ class GrowthEngine {
     GrowthStat('contactLeft', '対左ミート', 'bat', (p) => p.contactLeft, (p, v) => p.contactLeft = v, batterOnly: true),
     GrowthStat('contactRight', '対右ミート', 'bat', (p) => p.contactRight, (p, v) => p.contactRight = v, batterOnly: true),
     GrowthStat('power', 'パワー', 'bat', (p) => p.power, (p, v) => p.power = v, curve: 15, batterOnly: true),
+    GrowthStat('trajectoryVal', '弾道', 'bat', (p) => p.trajectoryVal, (p, v) => p.setTrajectoryVal(v), curve: 15, batterOnly: true),
     GrowthStat('eye', '選球眼', 'bat', (p) => p.eye, (p, v) => p.eye = v, body: true, batterOnly: true),
     GrowthStat('clutch', 'チャンス', 'bat', (p) => p.clutch, (p, v) => p.clutch = v, base: 1500, curve: 15, batterOnly: true),
     GrowthStat('run', '走力', 'field', (p) => p.run, (p, v) => p.run = v, curve: 15, body: true, batterOnly: true),
@@ -177,14 +178,21 @@ class GrowthEngine {
     return GrowthPhase.decline;
   }
 
-  /// 1つ前の成長フェーズに戻す（過渡期 → 全盛期の最後の年、衰退期 → 過渡期の最後の年）
+  /// 1つ前の成長フェーズに戻し、戻った先の成長フェーズが新たに3年間（固定）続くように後ろへずらす
+  ///  （endOfSeason では p.age += 1 の直前に呼ばれるため、当年＋翌季から3年間＝計4年が戻り先フェーズに収まるよう調整する）
   static void revertPhase(Player p) {
-    final s = GrowthCurve.starts(p);
-    final a = phaseAge(p);
+    GrowthCurve.starts(p);
     final ph = phaseOf(p);
-    final target = ph == GrowthPhase.decline ? s[3] - 1 : s[2] - 1;
-    if (ph != GrowthPhase.decline && ph != GrowthPhase.transition) return;
-    p.phaseShift += max(1, a - target);
+    if (ph == GrowthPhase.decline) {
+      if (p.transLen < 4) p.transLen = 4;
+      p.phaseShift = (p.age + 4) - (p.primeStart + p.primeLen + p.transLen);
+    } else if (ph == GrowthPhase.transition) {
+      if (p.primeLen < 4) p.primeLen = 4;
+      p.phaseShift = (p.age + 4) - (p.primeStart + p.primeLen);
+    } else if (ph == GrowthPhase.prime) {
+      if (p.riseLen < 4) p.riseLen = 4;
+      p.phaseShift = (p.age + 4) - p.primeStart;
+    }
   }
 
   // ---------- EXP の加減 ----------
@@ -245,7 +253,7 @@ class GrowthEngine {
   }
 
   // ---------- 練習 ----------
-  static const _batterMenu = ['対左ミート', '対右ミート', 'パワー', '選球眼', 'チャンス', '走力', '肩力', '送球', '捕球', '守備'];
+  static const _batterMenu = ['対左ミート', '対右ミート', 'パワー', '弾道', '選球眼', 'チャンス', '走力', '肩力', '送球', '捕球', '守備'];
   // 投手の球種の練習：全球種のキレ・重さ、変化球の変化量
   static const pitchSharp = 'キレ（全球種）', pitchHeavy = '重さ（全球種）', pitchBreak = '変化量（変化球）';
   /// 経験値が2倍になる練習（ミートは対左・対右に分けたので、片方に絞る分を2倍に）
@@ -253,7 +261,7 @@ class GrowthEngine {
   static const _pitcherMenu = ['球速', '球威', '制球', 'クイック', 'スタミナ', 'ピンチ'];
   static const _bodyMenu = ['体力', '回復力'];
   static const _menuKeys = {
-    '対左ミート': ['contactLeft'], '対右ミート': ['contactRight'], 'パワー': ['power'], '選球眼': ['eye'], 'チャンス': ['clutch'], '走力': ['run'],
+    '対左ミート': ['contactLeft'], '対右ミート': ['contactRight'], 'パワー': ['power'], '弾道': ['trajectoryVal'], '選球眼': ['eye'], 'チャンス': ['clutch'], '走力': ['run'],
     '肩力': ['arm'], '送球': ['throwAccuracy'], '捕球': ['catchSkill'],
     '球速': ['velocity'], '球威': ['pitchPower'], '制球': ['control'], 'クイック': ['quick'], 'スタミナ': ['stamina'], 'ピンチ': ['clutchPitching'],
     '体力': ['maxEnergy'], '回復力': ['recovery'],
@@ -290,6 +298,7 @@ class GrowthEngine {
   /// 練習メニューの能力の今の値（画面に添える。球種の練習は全球種の平均）
   static String menuValue(Player p, String menu) {
     if (menu == '球速') return '${p.velocity}km';
+    if (menu == '弾道') return '${p.trajectory}（${p.launchAngle.toStringAsFixed(1)}°）';
     final t = practiceTargets(p, menu: menu);
     if (t.isEmpty) return '';
     final v = t.map((s) => s.get(p)).reduce((a, b) => a + b) / t.length;
@@ -386,7 +395,7 @@ class GrowthEngine {
           if (groups.isEmpty) continue;
           final keys = {for (final s in targets) s.key};
           for (final s in statsOf(p)) {
-            if (!groups.contains(s.group) || keys.contains(s.key) || s.key == 'velocity') continue; // 球速は広がらない（直接の練習と試合だけ）
+            if (!groups.contains(s.group) || keys.contains(s.key) || s.key == 'velocity' || s.key == 'trajectoryVal') continue; // 球速・弾道は他の練習から広がらない
             addExp(p, s, plain * phaseMult(p, s, ph) * practiceSpill * (coach == null ? 1.0 : coach(t, p, s)));
           }
         }
@@ -459,9 +468,29 @@ class GrowthEngine {
     return changes;
   }
 
-  /// 1年分の衰え：体の能力は過渡期から、技術は衰退期から落ちる（球種・守備適性も含む）
+  /// 円熟の選手が過渡期・衰退期に技術でカバーして伸ばせる能力か（ミート・チャンス・守備適性・送球・捕球・制球・ピンチ・クイック・キレ）
+  static bool isMatureTechStat(GrowthStat s) =>
+      s.key == 'contactLeft' ||
+      s.key == 'contactRight' ||
+      s.key == 'clutch' ||
+      s.key == 'throwAccuracy' ||
+      s.key == 'catchSkill' ||
+      s.key.startsWith('field') ||
+      s.key == 'control' ||
+      s.key == 'clutchPitching' ||
+      s.key == 'quick' ||
+      s.key.endsWith(':sharpness');
+
+  /// 1年分の衰え：体の能力は過渡期から、技術は衰退期から落ちる（球種・守備適性も含む）。
+  ///  円熟の選手は過渡期・衰退期に身体能力が衰える一方で、技術でカバーできる能力は上昇する。
   static void decline(Player p, GrowthPhase phase, Random rnd) {
+    final mature = GrowthCurve.mature(p);
     for (final s in allStatsOf(p)) {
+      if (mature && (phase == GrowthPhase.transition || phase == GrowthPhase.decline) && isMatureTechStat(s)) {
+        final boost = (phase == GrowthPhase.transition ? 1.4 : 0.9) * (0.7 + rnd.nextDouble() * 0.6) * s.weight;
+        if (boost > 0) addExp(p, s, boost * needExp(s, s.get(p)));
+        continue;
+      }
       final pts = _declinePoints(phase, s, p, rnd) * shiftDeclineMult(p, s.key);
       if (pts > 0) addExp(p, s, -pts * needExp(s, s.get(p)));
     }
@@ -486,15 +515,17 @@ class GrowthEngine {
   }
 
   /// 衰えの量（能力の段階数／年）。±30%の個人差
-  ///  体の能力：過渡期 2.0・衰退期 3.8。技術：過渡期 0・衰退期 1.7（円熟の選手は半分）
+  ///  体の能力（円熟選手はパワーも含む）：過渡期 2.0・衰退期 3.8。技術：過渡期 0・衰退期 1.7（円熟の選手は技術は別枠で上昇）
   static double _declinePoints(GrowthPhase phase, GrowthStat s, Player p, Random rnd) {
+    if (s.key == 'trajectoryVal') return 0; // 打球角度は年齢で自動低下しない
+    final isBody = s.body || (GrowthCurve.mature(p) && s.key == 'power');
     double d;
     switch (phase) {
       case GrowthPhase.transition:
-        d = s.body ? 2.0 : 0;
+        d = isBody ? 2.0 : 0;
         break;
       case GrowthPhase.decline:
-        d = s.body ? 3.8 : 1.7 * (GrowthCurve.mature(p) ? 0.5 : 1.0);
+        d = isBody ? 3.8 : 1.7 * (GrowthCurve.mature(p) ? 0.5 : 1.0);
         break;
       default:
         return 0;

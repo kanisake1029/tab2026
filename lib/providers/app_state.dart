@@ -1056,6 +1056,7 @@ class AppState extends ChangeNotifier {
     _cpuReassignAll();
     _ensureManagers();
     offAfterSeason = true;
+    Player.showOpen = openPeriod;
     _addNews(['${startYear}年度になりました。全員が1つ歳をとりました']);
   }
 
@@ -1502,8 +1503,9 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// オープン戦の期間（その年の公式戦の初日より前）か
+  /// オープン戦の期間（その年の公式戦の初日より前。シーズン終了直後のオフは除外）か
   bool get openPeriod {
+    if (offAfterSeason || currentDate.year != startYear) return false;
     DateTime? first;
     for (final m in matches) {
       if (m.matchType != 'LEAGUE' && m.matchType != 'INTERLEAGUE') continue;
@@ -1933,6 +1935,7 @@ class AppState extends ChangeNotifier {
       t.farmRotationIndex = 0;
       t.thirdRotationIndex = 0;
       for (var p in t.players) {
+        p.openStats = PlayerStats();
         p.seasonStats = PlayerStats();
         p.farmStats = PlayerStats();
         p.thirdStats = PlayerStats();

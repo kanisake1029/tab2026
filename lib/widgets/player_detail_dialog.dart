@@ -1210,30 +1210,37 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
             children: [
               const SizedBox(width: 80, child: Text('弾道', style: TextStyle(color: Colors.black87, fontSize: 15))),
               const Spacer(),
-              if (widget.isReadOnly)
-                Text(p.trajectory.toString(), style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16))
+              if (widget.isReadOnly) ...[
+                Text(p.trajectory.toString(), style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(width: 6),
+                Text('${p.launchAngle.toStringAsFixed(1)}°', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+              ]
               else
-                SizedBox(
-                  width: 70,
-                  child: DropdownButtonFormField<int>(
-                    isExpanded: true,
-                    value: p.trajectory,
-                    dropdownColor: Colors.white,
-                    style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
-                    decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8)),
-                    items: [1, 2, 3, 4].map((e) => DropdownMenuItem(value: e, child: Text(e.toString()))).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => p.trajectory = val);
-                        if (widget.onRosterChanged != null) widget.onRosterChanged!();
-                      }
-                    },
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('${p.launchAngle.toStringAsFixed(1)}°', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                  const SizedBox(width: 6),
+                  SizedBox(
+                    width: 70,
+                    child: DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      value: p.trajectory,
+                      dropdownColor: Colors.white,
+                      style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
+                      decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8)),
+                      items: [1, 2, 3, 4].map((e) => DropdownMenuItem(value: e, child: Text(e.toString()))).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => p.setTrajectory(val));
+                          if (widget.onRosterChanged != null) widget.onRosterChanged!();
+                        }
+                      },
+                    ),
                   ),
-                ),
+                ]),
             ],
           ),
           const SizedBox(height: 6),
-          LinearProgressIndicator(value: p.trajectory / 4, backgroundColor: Colors.grey.shade200, color: tColor, minHeight: 5),
+          LinearProgressIndicator(value: p.trajectoryVal / 100, backgroundColor: Colors.grey.shade200, color: tColor, minHeight: 5),
         ],
       ),
     );

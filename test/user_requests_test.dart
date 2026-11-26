@@ -11,6 +11,7 @@ import 'package:npb_pennant_app/engine/condition_engine.dart';
 import 'package:npb_pennant_app/engine/foreign_engine.dart';
 import 'package:npb_pennant_app/engine/game_news.dart';
 import 'package:npb_pennant_app/engine/growth_curve.dart';
+import 'package:npb_pennant_app/engine/growth_engine.dart';
 import 'package:npb_pennant_app/engine/item_news.dart';
 import 'package:npb_pennant_app/engine/match_simulator.dart';
 import 'package:npb_pennant_app/engine/other_league_engine.dart';
@@ -1928,5 +1929,107 @@ void main() {
     }
     expect(my.players.contains(ob), isTrue);
     expect(ob.proYears, 6);
+  });
+
+  test('シーズン終了後の翌年度にはオープン戦成績がリセットされ openPeriod が false になる', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final p = app.teams.first.players.first;
+    p.openStats = PlayerStats(games: 15, atBats: 40, hits: 14);
+    app.offAfterSeason = true;
+    app.resetSeason(keepDate: true);
+    expect(p.openStats.games, 0);
+    expect(p.openStats.hits, 0);
+    expect(app.openPeriod, isFalse);
+  });
+
+  test('成長フェーズが戻ると、戻ったフェーズが新たに3年間固定となり後ろにずれる', () {
+    // 過渡期(31歳) → 全盛期へ戻り
+    final p1 = Player(id: 'rev1', lastName: '戻り1', isPitcher: false, age: 31, primeStart: 27, riseLen: 2, primeLen: 4, transLen: 2);
+    expect(GrowthEngine.phaseOf(p1), GrowthPhase.transition);
+    GrowthEngine.revertPhase(p1);
+    expect(GrowthEngine.phaseOf(p1), GrowthPhase.prime); // 31歳（当年）
+    expect(GrowthEngine.phaseOf(p1, age: 32), GrowthPhase.prime); // 1年目
+    expect(GrowthEngine.phaseOf(p1, age: 33), GrowthPhase.prime); // 2年目
+    expect(GrowthEngine.phaseOf(p1, age: 34), GrowthPhase.prime); // 3年目
+    expect(GrowthEngine.phaseOf(p1, age: 35), GrowthPhase.transition); // 4年目に過渡期へ
+
+    // 衰退期(33歳) → 過渡期へ戻り（transLen=2 でも 4 に拡張されて3年間固定になる）
+    final p2 = Player(id: 'rev2', lastName: '戻り2', isPitcher: false, age: 33, primeStart: 27, riseLen: 2, primeLen: 4, transLen: 2);
+    expect(GrowthEngine.phaseOf(p2), GrowthPhase.decline);
+    GrowthEngine.revertPhase(p2);
+    expect(GrowthEngine.phaseOf(p2), GrowthPhase.transition); // 33歳（当年）
+    expect(GrowthEngine.phaseOf(p2, age: 34), GrowthPhase.transition); // 1年目
+    expect(GrowthEngine.phaseOf(p2, age: 35), GrowthPhase.transition); // 2年目
+    expect(GrowthEngine.phaseOf(p2, age: 36), GrowthPhase.transition); // 3年目
+    expect(GrowthEngine.phaseOf(p2, age: 37), GrowthPhase.decline); // 4年目に衰退期へ
+  });
+
+  test('円熟の選手は過渡期・衰退期に身体能力が衰える一方で技術系能力が上昇する', () {
+    // GrowthCurve.mature(p) == true になる ID を探索
+    var matureId = '';
+    for (var i = 0; i < 100; i++) {
+      final cand = Player(id: 'mat_$i', lastName: '円熟', isPitcher: false);
+      if (GrowthCurve.mature(cand)) {
+        matureId = cand.id;
+        break;
+      }
+    }
+    expect(matureId, isNotEmpty);
+
+    final p = Player(
+      id: matureId,
+      lastName: '熟練',
+      isPitcher: false,
+      mainPos: '遊撃手',
+      age: 32,
+      primeStart: 27,
+      riseLen: 2,
+      primeLen: 4,
+      transLen: 3,
+      contactLeft: 60,
+      contactRight: 60,
+      clutch: 60,
+      throwAccuracy: 60,
+      catchSkill: 60,
+      fieldSS: 60,
+      run: 70,
+      arm: 70,
+      power: 70,
+    );
+    expect(GrowthEngine.phaseOf(p), GrowthPhase.transition);
+    final runBefore = p.run, armBefore = p.arm, powerBefore = p.power;
+    final contactBefore = p.contactLeft, catchBefore = p.catchSkill, fieldBefore = p.fieldSS;
+    for (var y = 0; y < 3; y++) {
+      GrowthEngine.decline(p, GrowthPhase.transition, Random(100 + y));
+    }
+    expect(p.run, lessThan(runBefore));
+    expect(p.arm, lessThan(armBefore));
+    expect(p.power, lessThan(powerBefore));
+    expect(p.contactLeft, greaterThan(contactBefore));
+    expect(p.catchSkill, greaterThan(catchBefore));
+    expect(p.fieldSS, greaterThan(fieldBefore));
+  });
+
+  test('弾道が練習メニューに含まれ、1〜100と0〜20°が比例配分されて練習で成長する', () {
+    final p = Player(id: 'traj_1', lastName: '強打', isPitcher: false, trajectory: 3, trajectoryVal: 75);
+    expect(p.launchAngle, closeTo(15.0, 1e-9));
+    p.setTrajectoryVal(100);
+    expect(p.trajectory, 4);
+    expect(p.launchAngle, closeTo(20.0, 1e-9));
+    p.setTrajectoryVal(50);
+    expect(p.trajectory, 2);
+    expect(p.launchAngle, closeTo(10.0, 1e-9));
+
+    expect(GrowthEngine.practiceOptions(p), contains('弾道'));
+    expect(GrowthEngine.menuValue(p, '弾道'), '2（10.0°）');
+
+    p.practiceInstruction = '弾道';
+    final t = Team(id: 'T1', name: 'テスト', shortName: 'テス', league: 'CL', players: [p]);
+    GrowthEngine.advanceDays([t], DateTime(2026, 2, 1), DateTime(2026, 3, 1));
+    expect(p.trajectoryVal, greaterThan(50));
   });
 }

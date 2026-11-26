@@ -484,7 +484,7 @@ class _ScoutReportState extends State<ScoutReport> {
       );
 
   List<Widget> _battingLines() => [
-        _abilityLine('弾道', p.trajectory * 25, shown: '${p.trajectory}'),
+        _abilityLine('弾道', p.trajectoryVal, shown: '${p.trajectory}', note: '${p.launchAngle.toStringAsFixed(1)}°'),
         _abilityLine('ミート', p.contact),
         _abilityLine('　対左', p.contactLeft),
         _abilityLine('　対右', p.contactRight),
