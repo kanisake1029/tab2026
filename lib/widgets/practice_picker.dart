@@ -10,7 +10,7 @@ Future<String?> showPracticePicker(BuildContext context, Player p) {
   final own = GrowthEngine.ownMenus(p).toSet();
   final cur = opts.contains(p.practiceInstruction) ? p.practiceInstruction : 'おまかせ';
   final groups = <(String, List<String>)>[
-    ('打撃', ['対左ミート', '対右ミート', 'パワー', '選球眼', 'チャンス']),
+    ('打撃', ['対左ミート', '対右ミート', 'パワー', '弾道', '選球眼', 'チャンス']),
     ('走塁・守備', ['走力', '肩力', '送球', '捕球', '守備']),
     ('投球', GrowthEngine.pitcherMenu),
     ('球種', [GrowthEngine.pitchSharp, GrowthEngine.pitchHeavy, GrowthEngine.pitchBreak]),
@@ -93,7 +93,7 @@ Widget _cell(BuildContext c, String m, String v, bool sel) => InkWell(
         ),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           FittedBox(fit: BoxFit.scaleDown, child: Text(m.replaceAll('（全球種）', '').replaceAll('（変化球）', ''), maxLines: 1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
-          if (v.isNotEmpty) Text(v, style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w700)),
+          if (v.isNotEmpty) FittedBox(fit: BoxFit.scaleDown, child: Text(v, maxLines: 1, style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w700))),
         ]),
       ),
     );

@@ -199,11 +199,12 @@ class _ScoutReportState extends State<ScoutReport> {
       );
 
   /// 能力の1行（項目・ランク・数値・補足）
-  Widget _abilityLine(String label, int v, {String? shown, String note = ''}) => Container(
+  Widget _abilityLine(String label, int v, {String? shown, String note = '', String leftNote = ''}) => Container(
         padding: const EdgeInsets.symmetric(vertical: 2.5),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF5F5F4)))),
         child: Row(children: [
           Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: _ink))),
+          if (leftNote.isNotEmpty) ...[Text(leftNote, style: const TextStyle(fontSize: 9.5, color: _sub)), const SizedBox(width: 4)],
           SizedBox(width: 20, child: _grade(v, size: 13)),
           SizedBox(width: 38, child: Text(shown ?? '$v', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()]))),
           if (note.isNotEmpty) ...[const SizedBox(width: 4), Text(note, style: const TextStyle(fontSize: 9.5, color: _sub))],
@@ -484,7 +485,7 @@ class _ScoutReportState extends State<ScoutReport> {
       );
 
   List<Widget> _battingLines() => [
-        _abilityLine('弾道', p.trajectoryVal, shown: '${p.trajectory}', note: '${p.launchAngle.toStringAsFixed(1)}°'),
+        _abilityLine('弾道', p.trajectoryVal, shown: '${p.trajectory}', leftNote: '${p.launchAngle.toStringAsFixed(1)}°'),
         _abilityLine('ミート', p.contact),
         _abilityLine('　対左', p.contactLeft),
         _abilityLine('　対右', p.contactRight),

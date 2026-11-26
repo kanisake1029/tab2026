@@ -1211,9 +1211,9 @@ class _PlayerDetailDialogState extends State<PlayerDetailDialog> {
               const SizedBox(width: 80, child: Text('弾道', style: TextStyle(color: Colors.black87, fontSize: 15))),
               const Spacer(),
               if (widget.isReadOnly) ...[
-                Text(p.trajectory.toString(), style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(width: 6),
                 Text('${p.launchAngle.toStringAsFixed(1)}°', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                const SizedBox(width: 6),
+                Text(p.trajectory.toString(), style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
               ]
               else
                 Row(mainAxisSize: MainAxisSize.min, children: [
