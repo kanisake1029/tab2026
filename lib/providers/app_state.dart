@@ -96,6 +96,7 @@ class AppState extends ChangeNotifier {
   List<Prospect> prospects = [];      // 次のドラフトの候補
   int draftDoneYear = 0;              // 指名を終えたドラフトの年
   int activeDraftYear = 0;            // 現役ドラフトを終えた年
+  Map<String, PlayerStats> prevSeasonStats = {}; // 前季（startYear - 1）の1軍成績（オフの契約更改査定・表示用）
   int prepDraftYear = 0;              // ゲーム開始直後のドラフトの前に、CPU 球団の戦力外を済ませた年
   List<String> scoutLog = [];         // スカウトの週報
   List<Map<String, dynamic>> tradeTips = []; // スカウトのトレード候補（毎月1日）
@@ -1031,6 +1032,13 @@ class AppState extends ChangeNotifier {
     offAfterSeason = false;
   }
 
+  /// 契約更改の査定・表示に使う直近1軍成績（今季に試合があれば今季分、オフ等でリセット済みなら前季分）
+  PlayerStats? lastSeasonStatsOf(Player p) {
+    final s = p.seasonStats;
+    if (s.games > 0 || s.pitchApps > 0 || s.inningsPitched > 0 || s.plateAppearances > 0) return s;
+    return prevSeasonStats[p.id];
+  }
+
   /// 年度の切り替え（全日程が終わってシーズンを締めたとき）：全員が1つ歳をとり、プロ年数＋1、今季の成績を0に、新しい日程。
   ///  オフ（ドラフト・FA・契約更改）は新しい年度の出来事になる
   void _rollover() {
@@ -1038,6 +1046,11 @@ class AppState extends ChangeNotifier {
     _newYearCleanup();
     pendingComp = [];
     for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
+      final snap = PlayerStats()..add(p.seasonStats);
+      for (final sp in p.seasonSplits) {
+        if (sp['stats'] is Map) snap.add(PlayerStats.fromJson(Map<String, dynamic>.from(sp['stats'] as Map)));
+      }
+      prevSeasonStats[p.id] = snap;
       p.prevGames = p.seasonStats.games;
       p.prevApps = p.seasonStats.apps;
       p.prevInnings = p.seasonStats.inningsPitched;

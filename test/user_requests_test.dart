@@ -25,6 +25,7 @@ import 'package:npb_pennant_app/models/player.dart';
 import 'package:npb_pennant_app/providers/app_state.dart';
 import 'package:npb_pennant_app/screens/active_draft_screen.dart';
 import 'package:npb_pennant_app/screens/awards_screen.dart';
+import 'package:npb_pennant_app/screens/contract_screen.dart';
 import 'package:npb_pennant_app/widgets/awards_view.dart';
 import 'package:npb_pennant_app/screens/number_board_screen.dart';
 import 'package:npb_pennant_app/screens/office_screen.dart';
@@ -2039,5 +2040,91 @@ void main() {
     final t = Team(id: 'T1', name: 'テスト', shortName: 'テス', league: 'CL', players: [p]);
     GrowthEngine.advanceDays([t], DateTime(2026, 2, 1), DateTime(2026, 3, 1));
     expect(p.trajectoryVal, greaterThan(50));
+  });
+
+  test('契約更改で1割台や1軍未出場の選手は能力が高くても昇給・倍増要求せず、好成績選手のみ昇給する', () async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState(AppDatabase(NativeDatabase.memory()));
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+
+    // 1) OVRが高くても打率1割台（.180）なら現年俸以下（倍増要求しない）
+    final slump = Player(
+      id: 'ct_slump',
+      lastName: '不振選手',
+      isPitcher: false,
+      mainPos: '遊撃手',
+      age: 26,
+      proYears: 5,
+      contactLeft: 78,
+      contactRight: 78,
+      power: 78,
+      salary: 2000,
+      trust: 20, // 信頼が低くても上限超えの要求をしない
+    );
+    final slumpStats = PlayerStats(games: 60, atBats: 200, hits: 36, homeRuns: 2, walks: 10);
+    app.prevSeasonStats[slump.id] = slumpStats;
+    expect(TransferEngine.maxRaiseMult(slump, stats: slumpStats), 1.0);
+    expect(TransferEngine.renewTarget(slump, stats: slumpStats), lessThanOrEqualTo(slump.salary));
+    expect(app.renewAsk(slump), lessThanOrEqualTo(slump.salary));
+
+    // 2) 1軍未出場でも同様に昇給要求しない
+    final unused = Player(
+      id: 'ct_unused',
+      lastName: '二軍暮らし',
+      isPitcher: true,
+      mainPos: '投手',
+      age: 24,
+      proYears: 4,
+      velocity: 152,
+      pitchPower: 75,
+      control: 70,
+      salary: 1500,
+      trust: 25,
+    );
+    app.prevSeasonStats[unused.id] = PlayerStats();
+    expect(app.renewAsk(unused), lessThanOrEqualTo(unused.salary));
+
+    // 3) 好成績の主力はしっかり昇給できる
+    final star = Player(
+      id: 'ct_star',
+      lastName: '活躍選手',
+      isPitcher: false,
+      mainPos: '外野手',
+      age: 26,
+      proYears: 5,
+      contactLeft: 80,
+      contactRight: 80,
+      power: 82,
+      salary: 1500,
+    );
+    final starStats = PlayerStats(games: 145, atBats: 520, hits: 162, doubles: 30, homeRuns: 32, rbi: 98, walks: 65);
+    expect(TransferEngine.maxRaiseMult(star, stats: starStats), 2.0);
+    expect(TransferEngine.renewTarget(star, stats: starStats), greaterThan(star.salary));
+  });
+
+  testWidgets('契約更改画面は未更改選手を上に・更改済み選手を下に表示し、希望金額を青字で表示する', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      final my = app.teams.first;
+      app.myTeamId = my.id;
+      app.currentDate = DateTime(2026, 11, 10);
+      final signed = my.players.firstWhere((p) => !p.ikusei && p.contractYears == 1);
+      app.renewSigned.add(signed.id);
+    });
+    await tester.pumpWidget(MaterialApp(home: ContractScreen(app: app)));
+    await tester.pumpAndSettle();
+    expect(find.text('未更改選手'), findsOneWidget);
+    expect(find.textContaining('希望 '), findsWidgets);
+    await tester.scrollUntilVisible(find.text('更改済み・対象外'), 500, scrollable: find.byType(Scrollable).first);
+    expect(find.text('更改済み・対象外'), findsOneWidget);
   });
 }

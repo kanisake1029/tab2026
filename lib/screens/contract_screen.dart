@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../engine/coach_engine.dart';
 import '../engine/other_league_engine.dart';
 import '../engine/transfer_engine.dart';
-import '../engine/trust_engine.dart';
 import '../models/amateur.dart';
 import '../models/player.dart';
 import '../providers/app_state.dart';
@@ -27,12 +26,120 @@ class _ContractScreenState extends State<ContractScreen> {
 
   void _toast(String s) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
 
+  String _statsLine(Player p) {
+    final s = app.lastSeasonStatsOf(p);
+    if (s == null || (s.games == 0 && s.pitchApps == 0 && s.inningsPitched == 0)) return '前季1軍 出場なし';
+    if (p.isPitcher) {
+      final ip = s.inningsPitched;
+      final ipText = '${ip ~/ 3}${ip % 3 == 0 ? '' : '.${ip % 3}'}';
+      return '前季1軍 ${s.apps > 0 ? s.apps : s.games}登板 ${ipText}回 ${s.wins}勝${s.losses}敗 防${ip == 0 ? '-' : s.era.toStringAsFixed(2)}';
+    }
+    final avg = s.atBats == 0 ? '-' : s.battingAverage.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '');
+    return '前季1軍 ${s.games}試合 打率$avg ${s.homeRuns}本 ${s.rbi}点';
+  }
+
+  Widget _badge(String label, Color bg, Color fg) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+        child: Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: fg)),
+      );
+
+  Widget _sectionHeader(String title, int count, Color color) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
+        child: Row(children: [
+          Container(width: 4, height: 15, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 6),
+          Text(title, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: color)),
+          const SizedBox(width: 6),
+          _badge('$count人', color.withValues(alpha: 0.12), color),
+        ]),
+      );
+
+  Widget _playerCard(Player p, {required bool isPending}) {
+    final ask = app.renewAsk(p);
+    final prefY = app.renewPreferredYears(p);
+    final isNew = p.draftYear == app.currentDate.year;
+    final isMulti = app.inMultiYear(p);
+    final isDone = app.renewalDone(p);
+
+    Widget statusBadge;
+    if (isPending) {
+      statusBadge = _badge('未更改', const Color(0xFFDBEAFE), const Color(0xFF1D4ED8));
+    } else if (isDone) {
+      statusBadge = _badge('更改済み${p.contractYears > 1 ? '（${p.contractYears}年）' : ''}', const Color(0xFFDCFCE7), const Color(0xFF15803D));
+    } else if (isMulti) {
+      statusBadge = _badge('複数年（残${p.contractYears}年）', const Color(0xFFE2E8F0), const Color(0xFF475569));
+    } else if (isNew) {
+      statusBadge = _badge('新人（来年から）', const Color(0xFFE2E8F0), const Color(0xFF475569));
+    } else {
+      statusBadge = _badge('対象外', const Color(0xFFE2E8F0), const Color(0xFF475569));
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      color: isPending ? Colors.white : const Color(0xFFF1F5F9),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: isPending ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0)),
+      ),
+      child: InkWell(
+        onTap: () => _open(p),
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+          child: Row(children: [
+            if (isPending) ...[
+              Container(width: 3.5, height: 42, decoration: BoxDecoration(color: const Color(0xFF2563EB), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                      '${p.registeredName}　${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳',
+                      style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: isPending ? _ink : _sub),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  statusBadge,
+                ]),
+                const SizedBox(height: 4),
+                Wrap(spacing: 10, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Text('今 ${formatSalary(p.salary)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _ink)),
+                  if (isPending)
+                    Text(
+                      '希望 ${formatSalary(ask)}（${prefY}年）',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF1D4ED8)),
+                    ),
+                  Text('信頼 ${p.trust}・愛着 ${p.teamLove}', style: const TextStyle(fontSize: 11.5, color: _sub)),
+                ]),
+                const SizedBox(height: 2),
+                Text(_statsLine(p), style: const TextStyle(fontSize: 11, color: _sub)),
+              ]),
+            ),
+            IconButton(
+              icon: const Icon(Icons.person_search_outlined, size: 20),
+              tooltip: '選手詳細',
+              onPressed: () => showPlayerDetail(context, app, p, allowActions: false),
+            ),
+            const Icon(Icons.chevron_right, color: _sub),
+          ]),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final my = app.myTeam;
     if (my == null) return const Scaffold(body: Center(child: Text('球団が選ばれていません')));
-    final list = my.players.where((p) => p.ikusei == _ikusei).toList()..sort((a, b) => b.salary.compareTo(a.salary));
-    final left = my.players.where((p) => !app.renewalDone(p) && !app.inMultiYear(p) && p.draftYear != app.currentDate.year).length;
+    final allInTab = my.players.where((p) => p.ikusei == _ikusei).toList()..sort((a, b) => b.salary.compareTo(a.salary));
+    bool isPending(Player p) => !app.renewalDone(p) && !app.inMultiYear(p) && p.draftYear != app.currentDate.year;
+    final pendingList = allInTab.where(isPending).toList();
+    final doneList = allInTab.where((p) => !isPending(p)).toList();
+    final left = my.players.where(isPending).length;
     final total = my.players.fold<int>(0, (a, p) => a + p.salary);
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F4),
@@ -78,10 +185,14 @@ class _ContractScreenState extends State<ContractScreen> {
               color: const Color(0xFFEFF6FF),
               child: ListTile(
                 title: Text('${fa.player.registeredName}　${fa.player.isPitcher ? '投手' : fa.player.mainPosition}　${fa.player.age}歳', style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text(
-                  '前年 ${formatSalary(fa.player.salary)}　希望 ${formatSalary(app.renewAsk(fa.player))}（${app.renewPreferredYears(fa.player)}年）　優先期限 12/14まで　信頼 ${fa.player.trust}・愛着 ${fa.player.teamLove}',
-                  style: const TextStyle(fontSize: 12),
-                ),
+                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Wrap(spacing: 10, runSpacing: 2, children: [
+                    Text('前年 ${formatSalary(fa.player.salary)}', style: const TextStyle(fontSize: 12)),
+                    Text('希望 ${formatSalary(app.renewAsk(fa.player))}（${app.renewPreferredYears(fa.player)}年）', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Color(0xFF1D4ED8))),
+                    Text('優先期限 12/14まで　信頼 ${fa.player.trust}・愛着 ${fa.player.teamLove}', style: const TextStyle(fontSize: 12)),
+                  ]),
+                  Text(_statsLine(fa.player), style: const TextStyle(fontSize: 11, color: _sub)),
+                ]),
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   IconButton(
                     icon: const Icon(Icons.person_search_outlined, size: 20),
@@ -95,26 +206,14 @@ class _ContractScreenState extends State<ContractScreen> {
             ),
           const SizedBox(height: 8),
         ],
-        for (final p in list)
-          Card(
-            margin: const EdgeInsets.only(bottom: 6),
-            child: ListTile(
-              title: Text('${p.registeredName}　${p.isPitcher ? '投手' : p.mainPosition}　${p.age}歳', style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text(
-                '今 ${formatSalary(p.salary)}${app.inMultiYear(p) ? '　複数年契約中（残り${p.contractYears}年）' : app.renewalDone(p) ? '　更改済み${p.contractYears > 1 ? '（${p.contractYears}年）' : ''}' : p.draftYear == app.currentDate.year ? '　新人（来年から）' : '　希望 ${formatSalary(app.renewAsk(p))}（${app.renewPreferredYears(p)}年）'}　信頼 ${p.trust}・愛着 ${p.teamLove}',
-                style: const TextStyle(fontSize: 12),
-              ),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(
-                  icon: const Icon(Icons.person_search_outlined, size: 20),
-                  tooltip: '選手詳細',
-                  onPressed: () => showPlayerDetail(context, app, p, allowActions: false),
-                ),
-                const Icon(Icons.chevron_right),
-              ]),
-              onTap: () => _open(p),
-            ),
-          ),
+        if (pendingList.isNotEmpty) ...[
+          _sectionHeader('未更改選手', pendingList.length, const Color(0xFF1D4ED8)),
+          for (final p in pendingList) _playerCard(p, isPending: true),
+        ],
+        if (doneList.isNotEmpty) ...[
+          _sectionHeader('更改済み・対象外', doneList.length, const Color(0xFF475569)),
+          for (final p in doneList) _playerCard(p, isPending: false),
+        ],
       ]),
     );
   }

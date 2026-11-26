@@ -12,11 +12,18 @@ extension ContractOps on AppState {
   /// 複数年契約の途中（今年は更改しない）
   bool inMultiYear(Player p) => p.contractYears > 1 && !renewSigned.contains(p.id);
 
-  /// 選手の希望額（50万円単位）。信頼が低いほど高めに言う
+  /// 選手の希望額（50万円単位）。信頼が低いほど高めに言う（成績不振時は現年俸上限を厳守）
   int renewAsk(Player p) {
-    final t = TransferEngine.renewTarget(p);
-    final a = t * (1 + (50 - p.trust).clamp(-20, 40) / 250);
-    return max(p.ikusei ? 250 : 450, (a / 50).round() * 50);
+    final st = lastSeasonStatsOf(p);
+    final t = TransferEngine.renewTarget(p, stats: st);
+    final cap = TransferEngine.maxRaiseMult(p, stats: st);
+    final raw = t * (1 + (50 - p.trust).clamp(-20, 40) / 250);
+    final floor = p.ikusei ? 250 : 450;
+    var ask = max(floor, (raw / 50).round() * 50);
+    if (cap <= 1.0) {
+      ask = min(ask, max(floor, p.salary));
+    }
+    return ask;
   }
 
   /// 選手の希望年数
