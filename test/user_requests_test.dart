@@ -2145,4 +2145,38 @@ void main() {
     await tester.scrollUntilVisible(find.text('更改済み・対象外'), 500, scrollable: find.byType(Scrollable).first);
     expect(find.text('更改済み・対象外'), findsOneWidget);
   });
+
+  testWidgets('ポスティング希望選手は12月1日まで契約更改に表示されず交渉不可、不成立なら12月から更改できる', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    late Player ace;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      final my = app.teams.first;
+      app.myTeamId = my.id;
+      app.currentDate = DateTime(2026, 11, 10);
+      ace = my.players.firstWhere((p) => !p.ikusei && p.contractYears == 1);
+      app.postingAsk[ace.id] = 'ok';
+    });
+
+    // 11月：ポスティング交渉中は契約更改画面に表示されず、offerRenewal も不可
+    expect(app.canRenewPlayer(ace), isFalse);
+    expect(app.offerRenewal(ace, ace.salary, 1), contains('ポスティング交渉中'));
+    await tester.pumpWidget(MaterialApp(home: ContractScreen(app: app)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(ace.registeredName), findsNothing);
+
+    // 12月1日：ポスティング不成立で残留 → 未更改選手に表示され、12月中に年俸交渉できる
+    app.currentDate = DateTime(2026, 12, 1);
+    app.postingAsk.clear();
+    app.postingFailedRenew.add(ace.id);
+    expect(app.canRenewPlayer(ace), isTrue);
+    await tester.pumpWidget(MaterialApp(home: ContractScreen(app: app)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(ace.registeredName), findsOneWidget);
+    expect(find.text('ポスティング不成立・未更改'), findsOneWidget);
+  });
 }

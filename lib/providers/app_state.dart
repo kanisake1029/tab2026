@@ -143,6 +143,7 @@ class AppState extends ChangeNotifier {
   Map<String, String> lastTradeWith = {};
   /// 自球団の選手のポスティングの希望（選手 ID → 'ask' まだ決めていない／'ok' 認めた／'no' 認めなかった）
   Map<String, String> postingAsk = {};
+  Set<String> postingFailedRenew = {}; // 12/1ポスティング不成立で残留した自球団選手（12月中に契約更改可）
   /// 提携枠（球団ごと。ポスティング・海外FA で選手が流出した分）
   List<Map<String, dynamic>> partnerSlots = [];
   /// 自球団の提携選手で、期間が終わって日本に残りたい選手（優先交渉）
@@ -664,7 +665,7 @@ class AppState extends ChangeNotifier {
         'foreignPool': jsonEncode(foreignPool.map((p) => p.toJson()).toList()),
         'foreignWatch': jsonEncode(foreignWatch.toList()),
         'foreignWantPos': jsonEncode(foreignWantPos),
-        'renewals': jsonEncode({'s': renewSigned.toList(), 't': renewTries}),
+        'renewals': jsonEncode({'s': renewSigned.toList(), 't': renewTries, 'p': postingFailedRenew.toList()}),
         'pendingComp': jsonEncode(pendingComp.map((c) => c.toJson()).toList()),
         'compPicks': jsonEncode(compPicks),
         'pickOwner': jsonEncode(pickOwner),
@@ -1053,6 +1054,9 @@ class AppState extends ChangeNotifier {
     _requestBackup('${startYear}年度の終わり（年度替わりの前）');
     _newYearCleanup();
     pendingComp = [];
+    renewSigned = {};
+    renewTries = {};
+    postingFailedRenew = {};
     prev2SeasonStats = Map.of(prevSeasonStats);
     for (final p in [...teams.expand((t) => t.players), ...freeAgents.map((f) => f.player)]) {
       final snap = PlayerStats()..add(p.seasonStats);
@@ -1904,6 +1908,7 @@ class AppState extends ChangeNotifier {
       teamPolicy = {};
       lastTradeWith = {};
       postingAsk = {};
+      postingFailedRenew = {};
       partnerSlots = [];
       partnerStay = [];
       tenders = [];

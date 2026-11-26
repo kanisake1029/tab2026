@@ -493,6 +493,7 @@ extension SaveOps on AppState {
     final rn = j('renewals') as Map?;
     renewSigned = Set<String>.from(rn?['s'] ?? const []);
     renewTries = {for (final e in ((rn?['t'] as Map?) ?? const {}).entries) '${e.key}': (e.value as num).toInt()};
+    postingFailedRenew = Set<String>.from(rn?['p'] ?? const []);
     pendingComp = [for (final e in (j('pendingComp') as List? ?? [])) CompCase.fromJson(Map<String, dynamic>.from(e as Map))];
     compPicks = {for (final e in ((j('compPicks') as Map?) ?? {}).entries) '${e.key}': [for (final v in e.value as List) (v as num).toInt()]};
     pickOwner = Map<String, String>.from((j('pickOwner') as Map?) ?? {});

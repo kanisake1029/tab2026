@@ -84,7 +84,10 @@ extension OffseasonOps on AppState {
       final p = t?.players.firstWhere((p) => p.id == e.key);
       if (t == null || p == null) continue;
       if (e.value != 'ok') {
-        if (e.value == 'ask') _addNews(['ポスティング：${p.registeredName}の希望は、期限までに認めなかったため残留になりました']);
+        if (e.value == 'ask') {
+          if (t.id == myTeamId && !autoMode) postingFailedRenew.add(p.id);
+          _addNews(['ポスティング：${p.registeredName}の希望は、期限までに認めなかったため残留になりました${t.id == myTeamId ? '（契約更改画面から年俸交渉できます）' : ''}']);
+        }
         continue;
       }
       if (r.nextDouble() < TransferEngine.mlbSignChance(p)) {
@@ -92,7 +95,8 @@ extension OffseasonOps on AppState {
         _money(t.id, 'ポスティング', fee, '譲渡金 ${p.registeredName}');
         _departMlb(p, t, how: 'ポスティング', extra: '譲渡金${formatSalary(fee)}', r: r);
       } else {
-        _addNews(['ポスティング：${p.registeredName}（${teamShort(t)}）は大リーグの球団と契約に至らず、残留します']);
+        if (t.id == myTeamId && !autoMode) postingFailedRenew.add(p.id);
+        _addNews(['ポスティング：${p.registeredName}（${teamShort(t)}）は大リーグの球団と契約に至らず、残留します${t.id == myTeamId ? '（契約更改画面から年俸交渉できます）' : ''}']);
       }
     }
     postingAsk.clear();
@@ -1642,10 +1646,11 @@ extension OffseasonOps on AppState {
     for (final t in leagueTeams) {
       for (final p in t.players) {
         if (moved.contains(p.id) || p.draftYear == y) continue;
-        if (t.id == myTeamId && renewSigned.contains(p.id)) continue; // 11月に更改が済んだ（年数もそのとき決めた）
+        if (t.id == myTeamId && (renewSigned.contains(p.id) || postingFailedRenew.contains(p.id))) continue; // 11月に更改済み、またはポスティング不成立で12月中に交渉する選手
         final old = p.salary;
         TransferEngine.renewSalary(p, stats: lastSeasonStatsOf(p), prevStats: priorSeasonStatsOf(p));
         if (t.id == myTeamId) {
+          renewSigned.add(p.id);
           before += old;
           after += p.salary;
           if (old > 0 && (p.salary - old).abs() >= max(1000, old * 0.3)) notes.add('${p.registeredName} ${formatSalary(old)}→${formatSalary(p.salary)}');
@@ -1653,8 +1658,6 @@ extension OffseasonOps on AppState {
       }
     }
     _addNews(['契約更改：自球団の年俸総額 ${formatSalary(before)} → ${formatSalary(after)}${notes.isNotEmpty ? '（${notes.take(5).join('、')}）' : ''}（11月に更改しなかった選手は希望額で）']);
-    renewSigned = {};
-    renewTries = {};
   }
 
   // ───────── 外国人選手 ─────────
@@ -2001,9 +2004,20 @@ extension OffseasonOps on AppState {
 
   // ───────── 1月1日 ─────────
 
-  /// 年度更新の前に：FA の記録を片付ける（自由契約の選手は1月31日まで契約できる）
+  /// 年度更新の前に：FA の記録を片付け、12月末までに未更改のポスティング不成立選手を希望額で更改する
   void _newYearCleanup() {
     faCases = [];
+    if (postingFailedRenew.isNotEmpty) {
+      final my = myTeam;
+      if (my != null) {
+        for (final p in my.players.where((x) => postingFailedRenew.contains(x.id))) {
+          p.prevSalary = p.salary;
+          p.salary = renewAskFor(p, 1);
+          p.contractYears = 1;
+        }
+      }
+      postingFailedRenew.clear();
+    }
   }
 
   /// 2月1日：契約できなかった自由契約の選手は引退（OB へ）

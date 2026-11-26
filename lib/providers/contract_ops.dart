@@ -9,8 +9,21 @@ extension ContractOps on AppState {
   /// 今年の更改が済んだか
   bool renewalDone(Player p) => renewSigned.contains(p.id);
 
+  /// ポスティング希望中・交渉中（12月1日まで年俸交渉不可・非表示）
+  bool isPostingPending(Player p) => postingAsk[p.id] == 'ask' || postingAsk[p.id] == 'ok';
+
+  /// ポスティング不成立により12月から契約更改できる自球団選手か
+  bool isPostingFailedRenew(Player p) => postingFailedRenew.contains(p.id) && !renewSigned.contains(p.id);
+
   /// 複数年契約の途中（今年は更改しない）
   bool inMultiYear(Player p) => p.contractYears > 1 && !renewSigned.contains(p.id);
+
+  /// 今契約更改（年俸交渉）できるか
+  bool canRenewPlayer(Player p) {
+    if (isPostingPending(p)) return false;
+    if (isPostingFailedRenew(p)) return currentDate.month == 12;
+    return renewalOpen && !renewSigned.contains(p.id) && !inMultiYear(p) && p.draftYear != currentDate.year && p.offJoin != offseasonYear;
+  }
 
   /// 選手の希望額（50万円単位）。信頼が低いほど高めに言う（成績不振・未定着時は現年俸上限を厳守）
   int renewAsk(Player p) {
@@ -44,7 +57,8 @@ extension ContractOps on AppState {
   String offerRenewal(Player p, int salary, int years) {
     final my = myTeam;
     if (my == null || !my.players.contains(p)) return '自球団の選手ではありません';
-    if (!renewalOpen) return '契約更改は11月です';
+    if (isPostingPending(p)) return 'ポスティング交渉中のため12月1日まで年俸交渉できません';
+    if (!renewalOpen && !isPostingFailedRenew(p)) return '契約更改は11月です';
     if (renewSigned.contains(p.id)) return 'もう更改が済んでいます';
     salary = (salary / 50).round() * 50;
     years = years.clamp(1, 12);
@@ -58,6 +72,7 @@ extension ContractOps on AppState {
       p.salary = salary;
       p.contractYears = years;
       renewSigned.add(p.id);
+      postingFailedRenew.remove(p.id);
       if (salary > need * 1.1) TrustEngine.addTrust(p, 3, r);
       transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 契約更改 ${formatSalary(old)}→${formatSalary(salary)}${years > 1 ? '（$years年契約）' : ''}');
       updateAndSave();
@@ -136,10 +151,10 @@ extension ContractOps on AppState {
   /// まだの選手をまとめて希望額（1年）で更改する
   int renewAllAtAsk() {
     final my = myTeam;
-    if (my == null || !renewalOpen) return 0;
+    if (my == null) return 0;
     var n = 0;
     for (final p in List.of(my.players)) {
-      if (renewSigned.contains(p.id) || inMultiYear(p) || p.draftYear == currentDate.year) continue;
+      if (!canRenewPlayer(p)) continue;
       offerRenewal(p, renewAskFor(p, 1), 1);
       n++;
     }

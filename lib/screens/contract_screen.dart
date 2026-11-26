@@ -63,12 +63,14 @@ class _ContractScreenState extends State<ContractScreen> {
   Widget _playerCard(Player p, {required bool isPending}) {
     final ask = app.renewAsk(p);
     final prefY = app.renewPreferredYears(p);
-    final isNew = p.draftYear == app.currentDate.year;
+    final isNew = p.draftYear == app.currentDate.year || p.offJoin == app.offseasonYear;
     final isMulti = app.inMultiYear(p);
-    final isDone = app.renewalDone(p);
+    final isDone = app.renewalDone(p) || (app.currentDate.month >= 12 && !isPending && !isMulti && !isNew);
 
     Widget statusBadge;
-    if (isPending) {
+    if (app.isPostingFailedRenew(p)) {
+      statusBadge = _badge('ポスティング不成立・未更改', const Color(0xFFDBEAFE), const Color(0xFF1D4ED8));
+    } else if (isPending) {
       statusBadge = _badge('未更改', const Color(0xFFDBEAFE), const Color(0xFF1D4ED8));
     } else if (isDone) {
       statusBadge = _badge('更改済み${p.contractYears > 1 ? '（${p.contractYears}年）' : ''}', const Color(0xFFDCFCE7), const Color(0xFF15803D));
@@ -140,11 +142,12 @@ class _ContractScreenState extends State<ContractScreen> {
   Widget build(BuildContext context) {
     final my = app.myTeam;
     if (my == null) return const Scaffold(body: Center(child: Text('球団が選ばれていません')));
-    final allInTab = my.players.where((p) => p.ikusei == _ikusei).toList()..sort((a, b) => b.salary.compareTo(a.salary));
-    bool isPending(Player p) => !app.renewalDone(p) && !app.inMultiYear(p) && p.draftYear != app.currentDate.year;
+    final allInTab = my.players.where((p) => p.ikusei == _ikusei && !app.isPostingPending(p)).toList()..sort((a, b) => b.salary.compareTo(a.salary));
+    bool isPending(Player p) => app.canRenewPlayer(p);
     final pendingList = allInTab.where(isPending).toList();
     final doneList = allInTab.where((p) => !isPending(p)).toList();
-    final left = my.players.where(isPending).length;
+    final left = my.players.where((p) => app.canRenewPlayer(p)).length;
+    final hasPostingFailed = my.players.any((p) => app.isPostingFailedRenew(p));
     final total = my.players.fold<int>(0, (a, p) => a + p.salary);
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F4),
@@ -157,7 +160,9 @@ class _ContractScreenState extends State<ContractScreen> {
             app.renewalOpen
                 ? '11月が契約更改の期間です（まだ $left人）。年俸は50万円単位、年数は1〜12年で提示できます（減額制限：1億超−40%・以下−25%）。信頼の低い選手に大きな減俸を出すと退団することがあります。'
                     '12月1日に、まだの選手は希望額（1年）で更改します。年俸の総額 ${formatSalary(total)}'
-                : '契約更改は11月です（12月1日に、まだの選手は希望額で更改します）。今は見るだけです。年俸の総額 ${formatSalary(total)}',
+                : (hasPostingFailed
+                    ? 'ポスティング不成立で残留した選手の契約更改ができます（まだ $left人・12月31日まで）。年俸の総額 ${formatSalary(total)}'
+                    : '契約更改は11月です（12月1日に、まだの選手は希望額で更改します）。今は見るだけです。年俸の総額 ${formatSalary(total)}'),
             style: const TextStyle(fontSize: 12, color: _sub, height: 1.5),
           ),
         ),
@@ -170,7 +175,7 @@ class _ContractScreenState extends State<ContractScreen> {
             onSelectionChanged: (v) => setState(() => _ikusei = v.first),
           ),
           const Spacer(),
-          if (app.renewalOpen && left > 0)
+          if (left > 0)
             FilledButton(
               onPressed: () {
                 final n = app.renewAllAtAsk();
@@ -294,7 +299,7 @@ class _ContractScreenState extends State<ContractScreen> {
   Future<void> _open(Player p) async {
     var years = app.renewPreferredYears(p);
     var salary = app.renewalDone(p) ? p.salary : app.renewAskFor(p, years);
-    final canRenew = app.renewalOpen && !app.renewalDone(p) && !app.inMultiYear(p) && p.draftYear != app.currentDate.year;
+    final canRenew = app.canRenewPlayer(p);
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
