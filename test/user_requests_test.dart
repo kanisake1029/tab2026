@@ -523,20 +523,25 @@ void main() {
     }
     final my = app.teams.first;
     app.myTeamId = my.id;
-    // 1) 現役ドラフト: 出場数に関わらず支配下・日本人扱い・FA権なし（新規入団除く）は提出リスト対象、育成・FA権あり・新規入団は対象外
+    // 1) 現役ドラフト: 2年目以降の日本人選手（支配下・育成とも）が対象。1年目・外国人・FA権あり・新規入団は対象外
     final reg = Player(id: 'ad_reg', lastName: '主力', isPitcher: false, mainPos: '遊撃手', age: 25, proYears: 4, salary: 3000, prevGames: 40);
-    final iku = Player(id: 'ad_iku', lastName: '育成', isPitcher: false, mainPos: '遊撃手', age: 20, proYears: 1, ikusei: true);
+    final iku2 = Player(id: 'ad_iku2', lastName: '育成2年', isPitcher: false, mainPos: '遊撃手', age: 21, proYears: 2, ikusei: true);
+    final iku1 = Player(id: 'ad_iku1', lastName: '育成1年', isPitcher: false, mainPos: '遊撃手', age: 20, proYears: 1, ikusei: true);
+    final frn = Player(id: 'ad_frn', lastName: '助っ人', isPitcher: false, mainPos: '遊撃手', age: 27, proYears: 3, nationality: '海外');
     final faHold = Player(id: 'ad_fa', lastName: 'FA', isPitcher: false, mainPos: '遊撃手', age: 30, proYears: 9, faService: 8);
     final newJoin = Player(id: 'ad_new', lastName: '新人', isPitcher: false, mainPos: '遊撃手', age: 22, proYears: 1, draftYear: 2027);
     expect(TransferEngine.activeDraftEligible(reg, 2027), isTrue);
-    expect(TransferEngine.activeDraftEligible(iku, 2027), isFalse);
+    expect(TransferEngine.activeDraftEligible(iku2, 2027), isTrue);
+    expect(TransferEngine.activeDraftEligible(iku1, 2027), isFalse);
+    expect(TransferEngine.activeDraftEligible(frn, 2027), isFalse);
     expect(TransferEngine.activeDraftEligible(faHold, 2027), isFalse);
     expect(TransferEngine.activeDraftEligible(newJoin, 2027), isFalse);
 
-    // 各球団の自動選出は最低20名で、若手・主力が保護されやすい
+    // 各球団の自動選出は合計20名以上（対象20名未満なら全員）かつ支配下10名以上（育成が10名未満なら支配下で補う）
     final pool = TransferEngine.autoSelectActiveDraftPool(my, 2027);
     expect(pool.length, TransferEngine.activeDraftRequiredCount(my, 2027));
     expect(pool.length, lessThanOrEqualTo(TransferEngine.activeDraftMinPick));
+    expect(pool.where((x) => !x.ikusei).length, greaterThanOrEqualTo(TransferEngine.activeDraftRequiredShihaika(my, 2027)));
 
     // 2) 自球団自由契約→再契約（育成含む）は「再契約」になり移籍記事にならない
     final p = my.players.firstWhere((x) => !x.ikusei);
@@ -1807,13 +1812,13 @@ void main() {
 
   test('現役ドラフトは各球団が提出した20名プールからのみ指名され、未選出の若手は守られる', () {
     final t1 = Team(id: 'T1', name: '球団1', shortName: '球1', league: 'CL', players: [
-      Player(id: 't1_star', lastName: '有望若手', isPitcher: false, mainPos: '遊撃手', age: 20, contactLeft: 80, contactRight: 80, power: 80, talent: 85),
+      Player(id: 't1_star', lastName: '有望若手', isPitcher: false, mainPos: '遊撃手', age: 20, proYears: 2, contactLeft: 80, contactRight: 80, power: 80, talent: 85),
       for (var i = 0; i < 22; i++)
-        Player(id: 't1_$i', lastName: '選手$i', isPitcher: i.isEven, mainPos: i.isEven ? '投手' : '外野手', age: 28, contactLeft: 50, contactRight: 50),
+        Player(id: 't1_$i', lastName: '選手$i', isPitcher: i.isEven, mainPos: i.isEven ? '投手' : '外野手', age: 28, proYears: 5, contactLeft: 50, contactRight: 50),
     ]);
     final t2 = Team(id: 'T2', name: '球団2', shortName: '球2', league: 'CL', players: [
       for (var i = 0; i < 22; i++)
-        Player(id: 't2_$i', lastName: '他選手$i', isPitcher: i.isEven, mainPos: i.isEven ? '投手' : '外野手', age: 28, contactLeft: 50, contactRight: 50),
+        Player(id: 't2_$i', lastName: '他選手$i', isPitcher: i.isEven, mainPos: i.isEven ? '投手' : '外野手', age: 28, proYears: 5, contactLeft: 50, contactRight: 50),
     ]);
     final pool1 = TransferEngine.autoSelectActiveDraftPool(t1, 2027);
     expect(pool1, hasLength(20));

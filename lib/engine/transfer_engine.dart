@@ -444,20 +444,27 @@ class TransferEngine {
   /// 提携選手が申し出を受けるか：出場機会（その位置の層の薄さ）と期間（短いほど受けやすい）
   static double partnerAcceptChance(Team t, Player p, int years) => (0.45 + RosterEngine.need(t, p.mainPosition) * 0.4 + (5 - years) * 0.08).clamp(0.1, 0.95);
 
-  // ───────── 現役ドラフト（各球団 最低20名選出方式）─────────
+  // ───────── 現役ドラフト（2年目以降の日本人選手・合計20名以上／支配下10名以上選出方式）─────────
 
+  static const int activeDraftMinShihaika = 10;
   static const int activeDraftMinPick = 20;
 
   /// 現役ドラフトの選出対象（提出リストに入れられる選手）：
-  /// 支配下・日本人扱い・FA権なし・そのオフに入団した選手でないこと。育成選手は対象外。
+  /// 2年目以降の日本人選手（支配下・育成どちらも対象。外国人・提携選手・FA権保有・そのオフ入団を除く）。
   static bool activeDraftEligible(Player p, int offYear) {
-    return !p.ikusei && !p.foreignSlot && !p.isPartner && !p.hasFA && p.offJoin != offYear && p.draftYear != offYear;
+    return p.proYears >= 2 && p.nationality != '海外' && !p.isPartner && !p.hasFA && p.offJoin != offYear && p.draftYear != offYear;
   }
 
-  /// 各球団が最低限選出すべき人数（基本20名、対象が20名未満なら全員）
+  /// 球団ごとの必要選出人数（支配下10名以上・対象が10名未満なら全員）
+  static int activeDraftRequiredShihaika(Team t, int offYear) {
+    final c = t.players.where((p) => !p.ikusei && activeDraftEligible(p, offYear)).length;
+    return min(activeDraftMinShihaika, c);
+  }
+
+  /// 球団ごとの必要選出合計人数（基本20名・対象が20名未満なら全員）
   static int activeDraftRequiredCount(Team t, int offYear) {
-    final eligibleCount = t.players.where((p) => activeDraftEligible(p, offYear)).length;
-    return min(activeDraftMinPick, eligibleCount);
+    final c = t.players.where((p) => activeDraftEligible(p, offYear)).length;
+    return min(activeDraftMinPick, c);
   }
 
   /// 保護優先度（高いほどチームに残したい＝放出候補に回りにくい）。若手有望株と1軍主力を保護する
@@ -470,15 +477,26 @@ class TransferEngine {
     return RosterEngine.value(p) + regularBonus + youthBonus;
   }
 
-  /// CPU・おまかせ用の自動選出（保護優先度が低い順に最低20名を選出）
+  /// CPU・おまかせ用の自動選出（保護優先度が低い順に支配下10名以上を含めて合計20名を選出）
   static List<Player> autoSelectActiveDraftPool(Team t, int offYear) {
-    final req = activeDraftRequiredCount(t, offYear);
-    if (req <= 0) return const [];
-    final list = [
+    final reqTotal = activeDraftRequiredCount(t, offYear);
+    if (reqTotal <= 0) return const [];
+    final reqSh = activeDraftRequiredShihaika(t, offYear);
+    final sh = [
       for (final p in t.players)
-        if (activeDraftEligible(p, offYear)) p,
+        if (!p.ikusei && activeDraftEligible(p, offYear)) p,
     ]..sort((a, b) => activeDraftProtectScore(a).compareTo(activeDraftProtectScore(b)));
-    return list.take(req).toList();
+    final ik = [
+      for (final p in t.players)
+        if (p.ikusei && activeDraftEligible(p, offYear)) p,
+    ]..sort((a, b) => activeDraftProtectScore(a).compareTo(activeDraftProtectScore(b)));
+    final picked = <Player>[...sh.take(reqSh)];
+    final rem = reqTotal - picked.length;
+    if (rem > 0) picked.addAll(ik.take(rem));
+    if (picked.length < reqTotal) {
+      picked.addAll(sh.skip(reqSh).take(reqTotal - picked.length));
+    }
+    return picked;
   }
 
   /// 事前入札の集計：各球団の提出選手に入った票の総和を返す

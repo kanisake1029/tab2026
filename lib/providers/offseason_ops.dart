@@ -363,13 +363,14 @@ extension OffseasonOps on AppState {
           if (TransferEngine.activeDraftEligible(p, offseasonYear)) p,
       ]..sort((a, b) => TransferEngine.activeDraftProtectScore(a).compareTo(TransferEngine.activeDraftProtectScore(b)));
 
-  /// 球団ごとの必要選出人数（基本20名）
+  /// 球団ごとの必要選出人数（合計20名以上・支配下10名以上）
+  int activeDraftRequiredShihaika(Team t) => TransferEngine.activeDraftRequiredShihaika(t, offseasonYear);
   int activeDraftRequiredCount(Team t) => TransferEngine.activeDraftRequiredCount(t, offseasonYear);
 
-  /// 自球団のおまかせ提出リスト（20名）
+  /// 自球団のおまかせ提出リスト（計20名・支配下10名以上）
   List<Player> activeDraftDefaultMyPool() => myTeam == null ? const [] : TransferEngine.autoSelectActiveDraftPool(myTeam!, offseasonYear);
 
-  /// 他球団（CPU）の提出リスト（各球団20名）
+  /// 他球団（CPU）の提出リスト（計20名・支配下10名以上）
   Map<String, List<Player>> activeDraftCpuPools() => {
         for (final t in leagueTeams)
           if (t.id != myTeamId) t.id: TransferEngine.autoSelectActiveDraftPool(t, offseasonYear),
@@ -391,11 +392,13 @@ extension OffseasonOps on AppState {
     final pools = activeDraftCpuPools();
     final my = myTeam;
     if (my != null) {
-      final req = activeDraftRequiredCount(my);
+      final reqTotal = activeDraftRequiredCount(my);
+      final reqSh = activeDraftRequiredShihaika(my);
       final chosen = myPoolIds == null
           ? const <Player>[]
           : [for (final p in my.players) if (myPoolIds.contains(p.id) && TransferEngine.activeDraftEligible(p, offseasonYear)) p];
-      pools[my.id] = chosen.length >= req ? chosen : TransferEngine.autoSelectActiveDraftPool(my, offseasonYear);
+      final chosenSh = chosen.where((p) => !p.ikusei).length;
+      pools[my.id] = (chosen.length >= reqTotal && chosenSh >= reqSh) ? chosen : TransferEngine.autoSelectActiveDraftPool(my, offseasonYear);
     }
     return pools;
   }
@@ -435,7 +438,7 @@ extension OffseasonOps on AppState {
       logMove(p, '現役ドラフト', from, to);
       p.offJoin = offseasonYear;
       RosterEngine.addPlayer(to, p, pendingNumber: isBeforeOpeningDay());
-      lines.add('${teamShort(to)}：${p.registeredName}（${p.mainPosition}・${p.age}歳・元${teamShort(from)}）');
+      lines.add('${teamShort(to)}：${p.registeredName}（${p.ikusei ? '育成・' : ''}${p.mainPosition}・${p.age}歳・元${teamShort(from)}）');
       transactions.insert(0, '${_today()} 現役ドラフト ${p.registeredName} ${teamShort(from)} → ${teamShort(to)}');
     }
     activeDraftYear = currentDate.year;

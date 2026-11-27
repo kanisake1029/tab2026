@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../engine/transfer_engine.dart';
 import '../models/player.dart';
@@ -25,6 +26,7 @@ class ActiveDraftScreen extends StatefulWidget {
 class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
   int _step = 0; // 0=自球団の放出候補選出, 1=事前入札, 2=1巡目・連鎖指名
   String _posFilter = '全て';
+  String _regFilter = '全て';
   late final Set<String> _myPoolIds = {
     for (final p in widget.app.activeDraftDefaultMyPool()) p.id,
   };
@@ -172,9 +174,23 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
   Widget _step1SelectPool() {
     final my = app.myTeam;
     final eligible = app.activeDraftMyEligible();
-    final req = my == null ? 0 : app.activeDraftRequiredCount(my);
-    final filtered = eligible.where(_matchPos).toList();
-    final ok = _myPoolIds.length >= req;
+    final reqTotal = my == null ? 0 : app.activeDraftRequiredCount(my);
+    final reqSh = my == null ? 0 : app.activeDraftRequiredShihaika(my);
+    final selTotal = eligible.where((p) => _myPoolIds.contains(p.id)).length;
+    final selSh = eligible.where((p) => !p.ikusei && _myPoolIds.contains(p.id)).length;
+    final filtered = eligible.where((p) {
+      if (!_matchPos(p)) return false;
+      if (_regFilter == '支配下') return !p.ikusei;
+      if (_regFilter == '育成') return p.ikusei;
+      return true;
+    }).toList();
+    final ok = selTotal >= reqTotal && selSh >= reqSh;
+    final missSh = max(0, reqSh - selSh);
+    final missTotal = max(0, reqTotal - selTotal);
+    final missParts = [
+      if (missSh > 0) '支配下あと$missSh名',
+      if (missTotal > 0) '合計あと$missTotal名',
+    ];
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Container(
@@ -182,32 +198,41 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(10), border: Border.all(color: _line)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Text(
-                '① 自球団の放出候補を選出（最低$req名）',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: _navy),
-              ),
+          Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            Text(
+              '① 自球団の放出候補を選出（計$reqTotal名・支配下$reqSh名以上）',
+              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: _navy),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
-                color: ok ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                color: selTotal >= reqTotal ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                '選択中 ${_myPoolIds.length} / 最低$req名',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: ok ? const Color(0xFF166534) : const Color(0xFFB45309)),
+                '合計 $selTotal/$reqTotal名',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: selTotal >= reqTotal ? const Color(0xFF166534) : const Color(0xFFB45309)),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: selSh >= reqSh ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '支配下 $selSh/$reqSh名',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: selSh >= reqSh ? const Color(0xFF166534) : const Color(0xFFB45309)),
               ),
             ),
           ]),
           const SizedBox(height: 4),
           const Text(
-            '支配下・日本人扱い・FA権なし（新規入団除く）から最低20名を提出します。選ばなかった主力・若手は他球団に指名されません。',
+            '2年目以降の日本人選手（FA権なし・新規入団除く）から、支配下10名以上を含め合計20名以上を提出します（育成が10名未満なら支配下で補えます）。選ばなかった主力・若手は他球団に指名されません。',
             style: TextStyle(fontSize: 11.5, color: _sub),
           ),
           const SizedBox(height: 6),
-          Row(children: [
+          Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
             OutlinedButton.icon(
               onPressed: () => setState(() {
                 _myPoolIds
@@ -215,13 +240,19 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
                   ..addAll(app.activeDraftDefaultMyPool().map((p) => p.id));
               }),
               icon: const Icon(Icons.auto_fix_high, size: 16),
-              label: Text('おまかせ選出（$req名）', style: const TextStyle(fontSize: 12)),
+              label: Text('おまかせ選出（$reqTotal名）', style: const TextStyle(fontSize: 12)),
             ),
-            const SizedBox(width: 8),
             TextButton(
               onPressed: () => setState(() => _myPoolIds.clear()),
               child: const Text('すべて解除', style: TextStyle(fontSize: 12)),
             ),
+            for (final rf in const ['全て', '支配下', '育成'])
+              ChoiceChip(
+                label: Text(rf, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                selected: _regFilter == rf,
+                onSelected: (_) => setState(() => _regFilter = rf),
+                visualDensity: VisualDensity.compact,
+              ),
           ]),
         ]),
       ),
@@ -251,7 +282,7 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
                         child: InkWell(
                           onTap: () => showPlayerDetail(context, app, p, allowActions: false),
                           child: Text(
-                            '${p.registeredName}（${p.mainPosition}・${p.age}歳・プロ${p.proYears}年）',
+                            '${p.ikusei ? '[育成] ' : ''}${p.registeredName}（${p.mainPosition}・${p.age}歳・プロ${p.proYears}年）',
                             style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: _navy, decoration: TextDecoration.underline, decorationColor: Color(0xFFCBD5E1)),
                           ),
                         ),
@@ -276,7 +307,7 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
             onPressed: ok ? () => setState(() => _step = 1) : null,
             style: FilledButton.styleFrom(backgroundColor: _navy, foregroundColor: _lime, padding: const EdgeInsets.symmetric(vertical: 14)),
             child: Text(
-              ok ? '提出リストを確定して事前入札へ（${_myPoolIds.length}名）' : 'あと${req - _myPoolIds.length}名選んでください',
+              ok ? '提出リストを確定して事前入札へ（合計$selTotal名・支配下$selSh名）' : missParts.join(' / '),
               style: const TextStyle(fontWeight: FontWeight.w900),
             ),
           ),
@@ -335,7 +366,7 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
                     title: InkWell(
                       onTap: () => showPlayerDetail(context, app, p, allowActions: false),
                       child: Text(
-                        '${p.registeredName}（${_teamOf(p)}・${p.mainPosition}・${p.age}歳）',
+                        '${p.ikusei ? '[育成] ' : ''}${p.registeredName}（${_teamOf(p)}・${p.mainPosition}・${p.age}歳）',
                         style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: _navy, decoration: TextDecoration.underline, decorationColor: Color(0xFFCBD5E1)),
                       ),
                     ),
@@ -490,7 +521,7 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
                     title: InkWell(
                       onTap: () => showPlayerDetail(context, app, p, allowActions: false),
                       child: Text(
-                        '${p.registeredName}（${_teamOf(p)}・${p.mainPosition}・${p.age}歳）',
+                        '${p.ikusei ? '[育成] ' : ''}${p.registeredName}（${_teamOf(p)}・${p.mainPosition}・${p.age}歳）',
                         style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: _navy, decoration: TextDecoration.underline, decorationColor: Color(0xFFCBD5E1)),
                       ),
                     ),
@@ -528,7 +559,7 @@ class _ActiveDraftScreenState extends State<ActiveDraftScreen> {
       appBar: AppBar(
         backgroundColor: _navy,
         foregroundColor: Colors.white,
-        title: const Text('現役ドラフト（1巡目・最低20名選出）', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        title: const Text('現役ドラフト（1巡目・計20名/支配下10名以上）', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
       ),
       body: _step == 0 ? _step1SelectPool() : (_step == 1 ? _step2PreBid() : _step3Round1()),
     );
