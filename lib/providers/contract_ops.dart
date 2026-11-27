@@ -112,6 +112,7 @@ extension ContractOps on AppState {
       p.offJoin = offseasonYear;
       p.uniformNumber = RosterEngine.freeNumber(my, ikusei: true);
       renewSigned.add(p.id);
+      logMove(p, '自由契約から育成再契約', null, my);
       RosterEngine.addPlayer(my, p, pendingNumber: isBeforeOpeningDay());
       transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 優先交渉で育成再契約（${formatSalary(p.salary)}）');
       _addNews(['${p.registeredName}が優先交渉で${teamShort(my)}と育成選手として再契約しました（${formatSalary(p.salary)}）']);
@@ -132,6 +133,7 @@ extension ContractOps on AppState {
       p.contractYears = years;
       p.offJoin = offseasonYear;
       renewSigned.add(p.id);
+      logMove(p, '自由契約から再契約', null, my);
       RosterEngine.addPlayer(my, p, pendingNumber: isBeforeOpeningDay());
       transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 優先交渉で再契約（${formatSalary(salary)}・$years年）');
       _addNews(['${p.registeredName}が優先交渉で${teamShort(my)}と再契約しました（${formatSalary(salary)}・$years年）']);

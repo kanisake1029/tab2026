@@ -343,15 +343,20 @@ class _ScoutReportState extends State<ScoutReport> {
       ('成長', Text(GrowthEngine.phaseOf(p).label)),
       ('全盛期', Text(grow.replaceFirst('全盛期', '').trim())),
       ('練習', Text(GrowthEngine.practiceOptions(p).contains(p.practiceInstruction) && p.practiceInstruction != 'おまかせ' ? p.practiceInstruction : 'おまかせ（${GrowthEngine.autoPractice(p)}）')),
-      ('経歴', Text.rich(TextSpan(children: [
-        for (var i = 0; i < CareerPath.of(p).length; i++) ...[
-          if (i > 0) const TextSpan(text: ' → '),
-          TextSpan(
-            text: CareerPath.of(p)[i],
-            style: TextStyle(color: CareerPath.of(p)[i].endsWith('*') ? _sub : null),
-          ),
-        ],
-      ]))),
+      ('経歴', FutureBuilder<(List<(int, String, PlayerStats, PlayerStats)>, List<PreYear>)>(
+        future: _both,
+        builder: (context, snap) {
+          final hist = snap.data?.$1 ?? const <(int, String, PlayerStats, PlayerStats)>[];
+          final pre = snap.data?.$2 ?? const <PreYear>[];
+          final steps = _unifiedCareer(pre, hist);
+          return Text.rich(TextSpan(children: [
+            for (var i = 0; i < steps.length; i++) ...[
+              if (i > 0) const TextSpan(text: ' → '),
+              TextSpan(text: steps[i]),
+            ],
+          ]));
+        },
+      )),
     ];
     return _infoGrid(items, wide: const {'経歴', '練習', '元NPB'});
   }
@@ -601,16 +606,35 @@ class _ScoutReportState extends State<ScoutReport> {
   }
 
   /// 別リーグ（海外・独立）の来歴行を成績表の列へ変換する（古い順）
+  List<String> _unifiedCareer(List<PreYear> pre, List<(int, String, PlayerStats, PlayerStats)> hist) {
+    final sy = app.startYear as int;
+    final stints = <(int, String)>[];
+    for (final y in pre) {
+      if (y.teamId.isNotEmpty) stints.add((y.year, _teamName(y.teamId)));
+    }
+    for (final h in hist) {
+      final tid = h.$2.split('/').lastWhere((x) => x.isNotEmpty, orElse: () => '');
+      if (tid.isNotEmpty) stints.add((h.$1, _teamName(tid)));
+    }
+    final ot = _otherTeam;
+    final t = _team;
+    final curLabel = ot != null ? _otherTableTeam : (t != null ? _teamName(t.id) : null);
+    return CareerPath.unified(p, npbStints: stints, currentTeamLabel: curLabel, currentYear: sy);
+  }
+
   List<List<String>> _abroadRows() {
     final out = <List<String>>[];
+    final seen = <String>{};
     final lineRe = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)\s*[　 ]\s*(.+)$');
+    final aligned = p.abroadStats.length == p.abroad.length;
     for (var i = p.abroad.length - 1; i >= 0; i--) {
       final line = p.abroad[i];
       final lm = lineRe.firstMatch(line);
       if (lm == null) continue;
-      final year = lm.group(1)!, lg = lm.group(2)!, body = lm.group(3)!;
+      final year = lm.group(1)!, lg = lm.group(2)!.replaceAll(RegExp(r'\s+'), ''), body = lm.group(3)!;
       if (_tblPitch ? !body.contains('防御率') : !body.contains('打率')) continue;
-      final s = i < p.abroadStats.length ? p.abroadStats[i] : AbroadStats.fromLine(p, line, isPitcher: _tblPitch);
+      if (!seen.add('$year|$lg')) continue;
+      final s = aligned ? p.abroadStats[i] : AbroadStats.fromLine(p, line, isPitcher: _tblPitch);
       final yNum = int.tryParse(year);
       final label = (yNum != null && yNum < 2026 && !lg.endsWith('*')) ? '$lg*' : lg;
       out.add(_cells(year, label, s));
@@ -724,7 +748,8 @@ class _ScoutReportState extends State<ScoutReport> {
             rows.add(_cells('$sy', _teamName('${sp['team']}', initial: true), st));
             total.add(st);
           }
-          if ((now.games > 0 || now.pitchApps > 0) && !closed) {
+          final hasSyAbroad = _otherTeam != null && p.abroad.any((l) => l.startsWith('$sy'));
+          if ((now.games > 0 || now.pitchApps > 0) && !closed && !hasSyAbroad) {
             final curTeamLabel = _otherTeam != null
                 ? _otherTableTeam
                 : (t == null ? '−' : _teamName([...p.seasonTeams, t.id].join('/'), initial: true));
@@ -1201,8 +1226,8 @@ class _ScoutReportState extends State<ScoutReport> {
             }
             l.sort((a, b) => a.$1.compareTo(b.$1));
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _title(p.nationality == '海外' ? '来日までの経歴' : 'プロに入るまでの経歴'),
-              for (final x in CareerPath.of(p)) Text('・$x', style: TextStyle(fontSize: 11.5, height: 1.4, color: x.endsWith('*') ? _sub : _ink)),
+              _title('経歴'),
+              for (final x in _unifiedCareer(pre, hist)) Text('・$x', style: const TextStyle(fontSize: 11.5, height: 1.4, color: _ink)),
               const SizedBox(height: 6),
               _title('年表（入団・移籍・記録）'),
               if (l.isEmpty) const Text('年表の記録はまだありません', style: TextStyle(fontSize: 11, color: _sub)),

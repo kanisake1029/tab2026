@@ -2410,4 +2410,70 @@ void main() {
     expect(moves12.map((m) => m.$2.id).toSet().length, 12);
     await db.close();
   });
+
+  test('経歴修正: 独立リーグ選手に大卒が付かず、統一フォーマット・育成再契約記録・同一球団まとめニュースが動く', () async {
+    SharedPreferences.setMockInitialValues({});
+    // 1) 独立リーグ選手に「大学」が付かない
+    final indy = Player(id: 'indy_u', lastName: '独立', isPitcher: false, mainPos: '遊撃手', age: 25, proYears: 2);
+    final derived = CareerPath.derive(indy, '独立', last: 'BC・新潟');
+    expect(derived.any((s) => s.startsWith('大学')), isFalse);
+
+    indy.amPath = ['高校　大阪高（大阪）', '大学　大和大', '独立　BC・新潟'];
+    expect(CareerPath.amateurSteps(indy).any((s) => s.startsWith('大学')), isFalse);
+
+    // 2) 統一経歴フォーマット（高校→大学→東新(2024〜2026)→MLB・LAA(2027〜2028)→広島(2029〜2030)）
+    final exNpb = Player(
+      id: 'ex_npb',
+      lastName: '復帰',
+      isPitcher: false,
+      mainPos: '外野手',
+      age: 29,
+      amPath: ['高校　大阪高（大阪）', '大学　大和大'],
+      abroad: [
+        '2028　MLB・LAA　120試合 打率.270 15本 55打点 OPS.790',
+        '2027　MLB・LAA　110試合 打率.260 12本 45打点 OPS.760',
+      ],
+    );
+    final uni = CareerPath.unified(
+      exNpb,
+      npbStints: [
+        (2024, '東新'),
+        (2025, '東新'),
+        (2026, '東新'),
+        (2029, '広島'),
+        (2030, '広島'),
+      ],
+    );
+    expect(uni, ['大阪高', '大和大', '東新（2024〜2026）', 'MLB・LAA（2027〜2028）', '広島（2029〜2030）']);
+
+    // 3) 育成再契約が moves と 年表(chron) に残る
+    final db = AppDatabase(NativeDatabase.memory());
+    final app = AppState(db);
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    final my = app.teams.first;
+    app.myTeamId = my.id;
+    app.matches.clear();
+    app.seasonFinished = true;
+    app.offAfterSeason = true;
+    app.draftDoneYear = 2026;
+    app.currentDate = DateTime(2026, 11, 20);
+    final p = my.players.firstWhere((x) => !x.ikusei);
+    final err = app.reSignIkusei(p);
+    expect(err, isNull);
+    expect(p.moves.any((m) => m.contains('育成再契約')), isTrue);
+    final chronList = await app.chronicleOf(app.startYear);
+    expect(chronList.any((c) => c['pid'] == p.id && '${c['t']}'.contains('育成再契約')), isTrue);
+
+    // 4) 同一球団・複数選手のまとめニュース
+    final ps = my.players.take(3).toList();
+    final faBatch = ItemNews.teamEventBatch('11/10', my, ps, kind: 'fa_declare', topic: NewsTopic.transfer, myTeamId: my.id);
+    expect(faBatch.headline, contains('3選手'));
+    expect(faBatch.headline, contains('FA宣言'));
+    final prBatch = ItemNews.teamEventBatch('7/20', my, ps, kind: 'promote', topic: NewsTopic.transfer, myTeamId: my.id);
+    expect(prBatch.headline, contains('3選手'));
+    expect(prBatch.headline, contains('支配下登録'));
+    await db.close();
+  });
 }

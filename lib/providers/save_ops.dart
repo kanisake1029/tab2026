@@ -222,6 +222,7 @@ extension SaveOps on AppState {
     if (_repairProYearsOnJoin(kv, dirtyKv)) needSave = true;
     if (await _repairRoyAndSeriesHistory(kv, dirtyKv)) needSave = true;
     if (_boostCurrentPartnerPlayers(kv, dirtyKv)) needSave = true;
+    if (await _repairCareerAndChronicleV1(kv, dirtyKv)) needSave = true;
 
     // 出身：日本人には都道府県、外国人は8か国（ベネズエラ・プエルトリコ → ドミニカ、カナダ → アメリカ）
     if (kv['originV2'] != '1') {

@@ -28,7 +28,13 @@ class CareerPath {
 
   /// アマチュア・独立までの経歴（_abroad を除く）
   static List<String> amateurSteps(Player p) {
-    if (p.amPath.isNotEmpty) return List<String>.from(p.amPath);
+    if (p.amPath.isNotEmpty) {
+      final list = List<String>.from(p.amPath);
+      if (list.any((s) => s.startsWith('独立'))) {
+        list.removeWhere((s) => s.startsWith('大学'));
+      }
+      return list;
+    }
     if (p.nationality == '海外') {
       final o = p.origin.isEmpty ? '海外' : p.origin;
       return ['出身　$o'];
@@ -125,10 +131,8 @@ class CareerPath {
     final out = <String>[];
     final hs = cat == '高校' && last != null ? last : '${_town(r, pf)}${_hsSuf[r.nextInt(_hsSuf.length)]}高';
     out.add('高校　$hs（${prefShort(NameData2.prefectures[pf].$1)}）');
-    // 社会人・独立は、大学を経ていることもある（23歳以上のみ）
-    final entryAge = p.age - max(1, p.proYears) + 1;
-    final canUniv = p.age >= 23 && (cat != '独立' || entryAge >= 23);
-    final univ = cat == '大学' || ((cat == '社会人' || cat == '独立') && canUniv && r.nextDouble() < 0.45);
+    // 社会人のみ、23歳以上なら大学を経ていることもある（独立リーグは高卒扱い＝大学を付けない）
+    final univ = cat == '大学' || (cat == '社会人' && p.age >= 23 && r.nextDouble() < 0.45);
     if (univ) {
       final upf = r.nextDouble() < 0.6 ? pf : r.nextInt(NameData2.prefectures.length);
       out.add('大学　${cat == '大学' && last != null ? last : '${_town(r, upf)}${_univSuf[r.nextInt(_univSuf.length)]}'}');
@@ -175,5 +179,70 @@ class CareerPath {
     if (k.startsWith('2A')) return 3;
     if (k.startsWith('1A')) return 2;
     return 1;
+  }
+
+  /// 統一経歴フォーマット：
+  /// 例：`['大阪高', '大和大', '東新（2024〜2026）', 'MLB・LAA（2027〜2028）', '広島（2029〜2030）']`
+  static List<String> unified(
+    Player p, {
+    List<(int, String)> npbStints = const [],
+    String? currentTeamLabel,
+    int? currentYear,
+  }) {
+    final steps = amateurSteps(p);
+    final cleanAm = <String>[];
+    final hasAbroadData = p.abroad.isNotEmpty;
+    for (final s in steps) {
+      if (hasAbroadData && s.startsWith('独立　')) continue;
+      if (s.startsWith('出身　')) {
+        cleanAm.add(s.substring(3).trim());
+        continue;
+      }
+      var body = s.replaceFirst(RegExp(r'^(高校|大学|社会人|独立)[　 ]+'), '').trim();
+      if (s.startsWith('高校　')) {
+        body = body.replaceFirst(RegExp(r'（[^）]+）$'), '').trim();
+      }
+      if (body.isNotEmpty) cleanAm.add(body);
+    }
+
+    final byYear = <int, List<String>>{};
+    void addYear(int y, String label) {
+      final clean = label.replaceAll('*', '').trim();
+      if (clean.isEmpty) return;
+      final list = byYear.putIfAbsent(y, () => []);
+      if (!list.contains(clean)) list.add(clean);
+    }
+
+    for (final (y, lbl) in npbStints) {
+      addYear(y, lbl);
+    }
+    final lineRe = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)');
+    for (final l in p.abroad.reversed) {
+      final m = lineRe.firstMatch(l);
+      if (m == null) continue;
+      addYear(int.parse(m.group(1)!), m.group(2)!);
+    }
+    if (currentTeamLabel != null && currentYear != null && !byYear.containsKey(currentYear)) {
+      addYear(currentYear, currentTeamLabel);
+    }
+
+    if (byYear.isEmpty) return cleanAm;
+    final years = byYear.keys.toList()..sort();
+    final merged = <(String, int, int)>[];
+    for (final y in years) {
+      final list = byYear[y]!;
+      list.sort((a, b) => _rank(b).compareTo(_rank(a)));
+      final lbl = list.join('／');
+      if (merged.isNotEmpty && merged.last.$1 == lbl && merged.last.$3 == y - 1) {
+        final prev = merged.removeLast();
+        merged.add((lbl, prev.$2, y));
+      } else {
+        merged.add((lbl, y, y));
+      }
+    }
+    return [
+      ...cleanAm,
+      for (final s in merged) '${s.$1}（${s.$2 == s.$3 ? '${s.$2}' : '${s.$2}〜${s.$3}'}）',
+    ];
   }
 }

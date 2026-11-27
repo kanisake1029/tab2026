@@ -447,11 +447,8 @@ class OtherLeagueEngine {
       for (final p in t.players) {
         final s = p.seasonStats;
         if (s.games > 0) {
-          p.abroad.insert(0, recordLine(p, lg, t, year));
-          p.abroadStats.insert(0, PlayerStats.fromJson(s.toJson()));
+          appendAbroadRecord(p, recordLine(p, lg, t, year), s);
         }
-        if (p.abroad.length > 30) p.abroad.removeLast();
-        if (p.abroadStats.length > 30) p.abroadStats.removeLast();
         p.seasonStats = PlayerStats(); // 通算（NPB の1軍）には足さない。他リーグの成績は来歴の行に残る
       }
       t.w = 0;
@@ -462,19 +459,47 @@ class OtherLeagueEngine {
 
   static String _f3(double v) => v.toStringAsFixed(3).replaceFirst(RegExp(r'^0'), '');
 
+  /// abroad と abroadStats の対応を保ちつつ1行追加（同一年・同チームは重複させず上書き）
+  static void appendAbroadRecord(Player p, String line, PlayerStats stats) {
+    final m = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)').firstMatch(line);
+    if (m != null) {
+      final y = m.group(1)!, lg = m.group(2)!;
+      final idx = p.abroad.indexWhere((x) => RegExp('^$y\\s*[　 ]+${RegExp.escape(lg)}(?:\\s|[　 ])').hasMatch(x));
+      if (idx >= 0) {
+        p.abroad[idx] = line;
+        if (p.abroadStats.length == p.abroad.length) {
+          p.abroadStats[idx] = PlayerStats.fromJson(stats.toJson());
+        } else {
+          p.abroadStats.clear();
+        }
+        return;
+      }
+    }
+    final aligned = p.abroadStats.length == p.abroad.length;
+    p.abroad.insert(0, line);
+    if (aligned) {
+      p.abroadStats.insert(0, PlayerStats.fromJson(stats.toJson()));
+    } else {
+      p.abroadStats.clear();
+    }
+    if (p.abroad.length > 30) p.abroad.removeLast();
+    if (p.abroadStats.length > 30) p.abroadStats.removeLast();
+  }
+
   /// 来歴の1行（ForeignEngine と同じ形「2026　MLB・LAD　120試合 打率.280 15本 60打点 OPS.800」）。3文字略称を使う
   static String recordLine(Player p, OLeague lg, OTeam t, int year) {
     final s = p.seasonStats;
-    final code = teamCode(t);
+    final lgName = lg.name.replaceAll('リーグ', '').replaceAll(RegExp(r'\s+'), '');
+    final code = teamCode(t).replaceAll(RegExp(r'\s+'), '');
     if (p.isPitcher) {
       final ip = s.inningsPitched;
       final era = ip == 0 ? 0.0 : s.earnedRuns * 27 / ip;
-      return '$year　${lg.name}・$code　${s.pitchApps}試合 ${s.wins}勝${s.losses}敗${s.saves > 0 ? '${s.saves} S' : ''} 防御率${era.toStringAsFixed(2)} ${ip ~/ 3}${ip % 3 == 0 ? '' : '.${ip % 3}'}回 ${s.pitcherStrikeouts}奪三振';
+      return '$year　$lgName・$code　${s.pitchApps}試合 ${s.wins}勝${s.losses}敗${s.saves > 0 ? '${s.saves} S' : ''} 防御率${era.toStringAsFixed(2)} ${ip ~/ 3}${ip % 3 == 0 ? '' : '.${ip % 3}'}回 ${s.pitcherStrikeouts}奪三振';
     }
     final pa = s.atBats + s.walks + s.sacFlies;
     final obp = pa == 0 ? 0.0 : (s.hits + s.walks) / pa;
     final slg = s.atBats == 0 ? 0.0 : s.totalBases / s.atBats;
-    return '$year　${lg.name}・$code　${s.games}試合 打率${s.atBats == 0 ? '-' : _f3(s.battingAverage)} ${s.homeRuns}本 ${s.rbi}打点 OPS${_f3(obp + slg)}';
+    return '$year　$lgName・$code　${s.games}試合 打率${s.atBats == 0 ? '-' : _f3(s.battingAverage)} ${s.homeRuns}本 ${s.rbi}打点 OPS${_f3(obp + slg)}';
   }
 
   /// 1月1日：年を取り、力が変わり（若手は伸び、ベテランは落ちる）、引退・昇格と降格・新しい選手の補充

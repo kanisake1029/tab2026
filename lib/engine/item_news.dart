@@ -1066,6 +1066,76 @@ class ItemNews {
     );
   }
 
+  /// 同一球団の複数選手まとめ記事（FA宣言・自由契約・支配下登録・育成/自由契約再契約）
+  static ItemNews teamEventBatch(
+    String date,
+    Team? team,
+    List<Player> players, {
+    required String kind, // 'fa_declare' | 'free_release' | 'promote' | 're_sign'
+    required NewsTopic topic,
+    String? myTeamId,
+  }) {
+    final r = Random(Object.hash(date, team?.id, kind, players.length, players.first.id));
+    final critic = NewsTalk.critics[r.nextInt(NewsTalk.critics.length)];
+    final t = team == null ? '' : _short(team);
+    final lead = players.first;
+    final tag = t.isEmpty ? '' : '【$t】';
+    final (action, head, positive, minePool, otherPool, comment) = switch (kind) {
+      'fa_declare' => (
+          'FA宣言',
+          players.length == 1 ? '$tag${lead.registeredName}がFA宣言' : '$tag${lead.registeredName}ら${players.length}選手がFA宣言',
+          false,
+          [for (final p in players.take(4)) '${p.registeredName}には残ってほしい…', '宣言残留もあるはず', '誠意を見せて引き止めてくれ'],
+          [for (final p in players.take(3)) '${p.registeredName}争奪戦になりそう', 'うちも獲りにいくべきやろ'],
+          '他球団の評価を聞いた上での判断も含め、今後の交渉が注目される',
+        ),
+      'free_release' => (
+          '自由契約',
+          players.length == 1 ? '$tag${lead.registeredName}が自由契約' : '$tag${lead.registeredName}ら${players.length}選手が自由契約',
+          false,
+          [for (final p in players.take(4)) '${p.registeredName}どうなるんやろ', '育成再契約などの動きがあるかも'],
+          [for (final p in players.take(3)) '${p.registeredName}まだやれるやろ', '調査する球団が出そう'],
+          '今後、再契約や他球団からのオファーがあるか注目したい',
+        ),
+      'promote' => (
+          '支配下登録',
+          players.length == 1 ? '$tag${lead.registeredName}を支配下登録' : '$tag${lead.registeredName}ら${players.length}選手を支配下登録',
+          true,
+          [for (final p in players.take(4)) '${p.registeredName}支配下昇格おめでとう！', '1軍での活躍が楽しみ', '頑張って這い上がってきたな'],
+          ['$tの育成からまた出てきたか', '層の厚さがすごいな'],
+          '2軍・3軍でのアピールが実を結び、1軍戦力としての期待がかかる',
+        ),
+      _ => (
+          '再契約',
+          players.length == 1 ? '$tag${lead.registeredName}と再契約' : '$tag${lead.registeredName}ら${players.length}選手と再契約',
+          true,
+          [for (final p in players.take(4)) '${p.registeredName}また応援できる！', '来季の巻き返しに期待'],
+          ['$tがしっかり戦力を残したな', '来季どう起用するか注目'],
+          'チーム事情も踏まえた再契約となり、来季の奮起に期待がかかる',
+        ),
+    };
+    final names = players.map((p) => '${p.registeredName}（${p.age}歳・${p.isPitcher ? '投手' : p.mainPosition}）').join('、');
+    final body = <String>[
+      '${t.isEmpty ? '' : '$tの'}$names${players.length > 1 ? 'の計${players.length}選手' : ''}について$actionが発表された。',
+      if (players.length > 1) '■対象選手',
+      for (final p in players) '${NewsTalk.prof(p)}　${NewsTalk.stats(p)}',
+      '野球評論家の$critic氏は「${NewsTalk.strength(lead)}には光るものがある。$comment」と話す。',
+    ];
+    final nmMine = ['名無しの${t.isEmpty ? '野球' : t}ファン', '${t.isEmpty ? '' : t}一筋30年', 'ライトスタンドの民'];
+    final nmOther = ['他球団ファン', '野球好きの会社員', '中立の野球ファン'];
+    return ItemNews(
+      topic,
+      date,
+      body.first,
+      head,
+      body,
+      players.length == 1 ? lead : null,
+      team,
+      fanList(r, minePool, nmMine, positive: positive),
+      fanList(r, otherPool, nmOther, positive: true),
+    );
+  }
+
   /// ドラフト指名結果の球団別まとめ記事（1人だけの羅列ではなく球団ごとに整理）
   static ItemNews draftSummary(String date, Team team, List<({String round, Player player, String school})> picks, {String? myTeamId}) {
     final r = Random(Object.hash(date, team.id, picks.length));

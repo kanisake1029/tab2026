@@ -1037,12 +1037,22 @@ class _HomeScreenState extends State<HomeScreen> {
       return topic.name;
     }
 
+    final faDecGroups = <String, (DateTime, Team?, List<Player>)>{};
+    final freeRelGroups = <String, (DateTime, Team?, List<Player>)>{};
+    final promoteGroups = <String, (DateTime, Team?, List<Player>)>{};
+    final reSignGroups = <String, (DateTime, Team?, List<Player>)>{};
+    void addGroup(Map<String, (DateTime, Team?, List<Player>)> map, DateTime d, Team? t, Player p) {
+      final key = '${d.year}/${d.month}/${d.day}|${t?.id ?? ''}';
+      final g = map.putIfAbsent(key, () => (d, t, <Player>[]));
+      if (!g.$3.any((x) => x.id == p.id)) g.$3.add(p);
+    }
+
     // 過去3年分：newsLog[selYear]（今年分は app.news も重複なくマージ）
     final rawNews = <String>[
       ...?app.newsLog[selYear],
       if (selYear == today.year) ...app.news,
     ].toSet().toList();
-    // お知らせから（まとめ行・戦力外個別行・FA宣言まとめ行は下の生成で綺麗に束ねる）
+    // お知らせから（まとめ行・戦力外・FA宣言・自由契約退団・支配下登録・再契約は下の球団×日付バッチで束ねる）
     for (final n in rawNews) {
       final (date, text) = NewsKind.split(n);
       if (text.startsWith('ドラフト1位：') || text.startsWith('自球団の指名：') || text.startsWith('FA 宣言：') || text.startsWith('FA宣言：') || text.endsWith('に戦力外を通告しました')) continue;
@@ -1050,7 +1060,25 @@ class _HomeScreenState extends State<HomeScreen> {
       if (topic == null) continue;
       final p = playerInText(text, everyone);
       if (p == null) continue;
+      final d = dayOf(date);
+      final tm = teamOf(p) ?? app.teams.where((t) => text.contains(teamShort(t))).firstOrNull;
       final tag = eventTagOf(text, topic);
+      if (tag == 'fa_dec') {
+        addGroup(faDecGroups, d, tm, p);
+        continue;
+      }
+      if (tag == 'promote') {
+        addGroup(promoteGroups, d, tm, p);
+        continue;
+      }
+      if (tag == 're_sign' || (text.contains('育成選手として再契約'))) {
+        addGroup(reSignGroups, d, tm, p);
+        continue;
+      }
+      if (text.contains('自由契約になりました') || (text.contains('契約満了：') && text.contains('自由契約'))) {
+        addGroup(freeRelGroups, d, tm, p);
+        continue;
+      }
       if (!seenEvents.add('${p.id}|$date|$tag')) continue;
       final involved = <(Player, Team?)>[];
       if (text.contains('トレード成立')) {
@@ -1059,7 +1087,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (x.registeredName.length >= 2 && text.contains(x.registeredName) && seen.add(x.registeredName)) involved.add((x, teamOf(x)));
         }
       }
-      dated.add((dayOf(date), ItemNews.of(date, text, topic, player: p, team: teamOf(p) ?? app.teams.where((t) => text.contains(teamShort(t))).firstOrNull, myTeamId: app.myTeamId, stars: stars, involved: involved)));
+      dated.add((d, ItemNews.of(date, text, topic, player: p, team: tm, myTeamId: app.myTeamId, stars: stars, involved: involved)));
       if (dated.length >= 160) break;
     }
 
@@ -1114,17 +1142,14 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // FA宣言（進行中の faCases および transactions の履歴から）
+    // FA宣言（進行中の faCases および transactions の履歴から → 球団×日付ごとにまとめる）
     if (selYear == today.year && app.faCases.isNotEmpty) {
       final dFa = app.faDeclareDate(selYear);
-      final md = '${dFa.month}/${dFa.day}';
       for (final f in app.faCases) {
         final p = everyone.where((x) => x.id == f.playerId).firstOrNull;
         final from = teamById(f.fromTeamId);
         if (p == null || from == null) continue;
-        if (!seenEvents.add('${p.id}|$md|fa_dec')) continue;
-        final text = '${teamShort(from)}の${p.registeredName}がFA宣言（${f.rank}ランク）';
-        dated.add((dFa, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: from, myTeamId: app.myTeamId, stars: stars)));
+        addGroup(faDecGroups, dFa, from, p);
       }
     }
     final faDecRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)\s+FA宣言（([^）]+)）');
@@ -1134,16 +1159,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final y = int.parse(m.group(1)!);
       if (y != selYear) continue;
       final d = DateTime(y, int.parse(m.group(2)!), int.parse(m.group(3)!));
-      final md = '${d.month}/${d.day}';
       final name = m.group(5)!;
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
-      if (p == null || !seenEvents.add('${p.id}|$md|fa_dec')) continue;
+      if (p == null) continue;
       final t = app.teams.where((x) => teamShort(x) == m.group(4)).firstOrNull ?? teamOf(p);
-      final text = '${m.group(4)}の$nameがFA宣言（${m.group(6)}）';
-      dated.add((d, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
+      addGroup(faDecGroups, d, t, p);
     }
 
-    // 戦力外・自由契約からの獲得・再契約（入団の記録から）
+    // 戦力外・自由契約からの獲得・再契約（入団の記録から：同一球団再契約はまとめ、他球団からの獲得は個別）
     final faSignRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)と(育成)?(再)?契約（自由契約・([^）]+)）');
     for (final tx in app.transactions.take(500)) {
       final m = faSignRe.firstMatch(tx);
@@ -1154,12 +1177,55 @@ class _HomeScreenState extends State<HomeScreen> {
       final md = '${d.month}/${d.day}';
       final name = m.group(5)!;
       final p = everyone.where((x) => x.registeredName == name).firstOrNull;
-      if (p == null || !seenEvents.add('${p.id}|$md|free_sign')) continue;
+      if (p == null) continue;
       final ik = m.group(6) != null;
       final re = m.group(7) != null;
       final t = app.teams.where((x) => teamShort(x) == m.group(4)).firstOrNull ?? teamOf(p);
-      final text = '${m.group(4)}が自由契約の$nameと${ik ? '育成' : ''}${re ? '再' : ''}契約（${m.group(8)}）';
+      if (re) {
+        addGroup(reSignGroups, d, t, p);
+        continue;
+      }
+      if (!seenEvents.add('${p.id}|$md|free_sign')) continue;
+      final text = '${m.group(4)}が自由契約の$nameと${ik ? '育成' : ''}契約（${m.group(8)}）';
       dated.add((d, ItemNews.of(md, text, NewsTopic.transfer, player: p, team: t, myTeamId: app.myTeamId, stars: stars)));
+    }
+
+    // 育成再契約・支配下登録・契約満了自由契約（transactions から補完して球団×日付でまとめる）
+    final ikReSignRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)\s+育成再契約');
+    final promoteRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)\s+支配下登録');
+    for (final tx in app.transactions.take(500)) {
+      final mIk = ikReSignRe.firstMatch(tx);
+      if (mIk != null && int.parse(mIk.group(1)!) == selYear) {
+        final d = DateTime(selYear, int.parse(mIk.group(2)!), int.parse(mIk.group(3)!));
+        final p = everyone.where((x) => x.registeredName == mIk.group(5)).firstOrNull;
+        if (p != null) {
+          final t = app.teams.where((x) => teamShort(x) == mIk.group(4)).firstOrNull ?? teamOf(p);
+          addGroup(reSignGroups, d, t, p);
+        }
+        continue;
+      }
+      final mPr = promoteRe.firstMatch(tx);
+      if (mPr != null && int.parse(mPr.group(1)!) == selYear) {
+        final d = DateTime(selYear, int.parse(mPr.group(2)!), int.parse(mPr.group(3)!));
+        final p = everyone.where((x) => x.registeredName == mPr.group(5)).firstOrNull;
+        if (p != null) {
+          final t = app.teams.where((x) => teamShort(x) == mPr.group(4)).firstOrNull ?? teamOf(p);
+          addGroup(promoteGroups, d, t, p);
+        }
+      }
+    }
+
+    for (final g in faDecGroups.values) {
+      dated.add((g.$1, ItemNews.teamEventBatch('${g.$1.month}/${g.$1.day}', g.$2, g.$3, kind: 'fa_declare', topic: NewsTopic.transfer, myTeamId: app.myTeamId)));
+    }
+    for (final g in freeRelGroups.values) {
+      dated.add((g.$1, ItemNews.teamEventBatch('${g.$1.month}/${g.$1.day}', g.$2, g.$3, kind: 'free_release', topic: NewsTopic.release, myTeamId: app.myTeamId)));
+    }
+    for (final g in promoteGroups.values) {
+      dated.add((g.$1, ItemNews.teamEventBatch('${g.$1.month}/${g.$1.day}', g.$2, g.$3, kind: 'promote', topic: NewsTopic.transfer, myTeamId: app.myTeamId)));
+    }
+    for (final g in reSignGroups.values) {
+      dated.add((g.$1, ItemNews.teamEventBatch('${g.$1.month}/${g.$1.day}', g.$2, g.$3, kind: 're_sign', topic: NewsTopic.transfer, myTeamId: app.myTeamId)));
     }
 
     // 新外国人の入団（入団の記録から）

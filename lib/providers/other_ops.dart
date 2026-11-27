@@ -410,8 +410,7 @@ extension OtherOps on AppState {
     final back = w.fromNpb.containsKey(p.id);
     // 今季ここまでの他リーグの成績を来歴に残してから NPB へ
     if (p.seasonStats.games > 0) {
-      p.abroad.insert(0, OtherLeagueEngine.recordLine(p, lg, t, lg.seasonYear(currentDate)));
-      p.abroadStats.insert(0, PlayerStats.fromJson(p.seasonStats.toJson()));
+      OtherLeagueEngine.appendAbroadRecord(p, OtherLeagueEngine.recordLine(p, lg, t, lg.seasonYear(currentDate)), p.seasonStats);
     }
     t.players.remove(p);
     OtherLeagueEngine.fillRoster(t, w.seasonYear, Random(p.id.hashCode));

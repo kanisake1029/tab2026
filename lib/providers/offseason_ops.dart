@@ -1528,8 +1528,14 @@ extension OffseasonOps on AppState {
     final from = teamById(fa.fromTeamId);
     final sameTeam = from != null && from.id == t.id;
     if (from != null && !sameTeam) midSeasonMove(p, from, t);
-    logMove(p, sameTeam ? (ikusei ? '自由契約から育成再契約' : '自由契約から再契約') : (ikusei ? '自由契約から育成契約' : '自由契約から入団'), sameTeam ? null : from, t);
+    final how = sameTeam ? (ikusei ? '自由契約から育成再契約' : '自由契約から再契約') : (ikusei ? '自由契約から育成契約' : '自由契約から入団');
+    logMove(p, how, sameTeam ? null : from, t);
+    final sameRosterSnap = sameTeam && _rosterSnap?[p.id]?.$1 == t.id;
     RosterEngine.addPlayer(t, p, pendingNumber: isBeforeOpeningDay());
+    if (sameRosterSnap) {
+      final numText = isBeforeOpeningDay() ? '' : '背番号${p.uniformText}。';
+      _chron(currentDate, t.id, 'join', '${_pos(p)} ${p.registeredName}(${p.age})が$how。', pid: p.id, pt: '自由契約から${t.name}と${ikusei ? '育成' : ''}再契約。$numText');
+    }
     if (sameTeam) {
       transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName}と${ikusei ? '育成' : ''}再契約（自由契約・${formatSalary(p.salary)}${p.contractYears > 1 ? '・${p.contractYears}年' : ''}）');
       _addNews(['${teamShort(t)}が自由契約の${p.registeredName}と${ikusei ? '育成' : ''}再契約（${formatSalary(p.salary)}）']);
@@ -1592,6 +1598,8 @@ extension OffseasonOps on AppState {
     p.prevSalary = p.salary;
     p.salary = min(p.salary, 600);
     p.contractYears = 1;
+    logMove(p, '育成再契約', null, my);
+    _chron(currentDate, my.id, 'reg', '${_pos(p)} ${p.registeredName}(${p.age})と育成再契約。', pid: p.id, pt: '${my.name}と育成再契約。');
     final numTag = isBeforeOpeningDay() ? '' : '（背番号${p.uniformNumber}）';
     final newsNumTag = isBeforeOpeningDay() ? '' : '・背番号${p.uniformNumber}';
     transactions.insert(0, '${_today()} ${teamShort(my)} ${p.registeredName} 育成再契約$numTag');

@@ -1466,4 +1466,126 @@ extension RepairOps on AppState {
     if (changed) _preCache = null;
     return changed;
   }
+
+  /// 経歴・他リーグ年度別・育成/自由契約再契約の年表修復（既存セーブおよびS25開発者版スロット1向け）
+  Future<bool> _repairCareerAndChronicleV1(Map<String, String> kv, Map<String, String> dirtyKv) async {
+    const kKey = 'careerChronFixV1';
+    if (kv[kKey] == '1') return false;
+    var changed = false;
+
+    void cleanPlayer(Player p) {
+      if (p.amPath.isNotEmpty && p.amPath.any((s) => s.startsWith('独立'))) {
+        final before = p.amPath.length;
+        p.amPath.removeWhere((s) => s.startsWith('大学'));
+        if (p.amPath.length != before) changed = true;
+      }
+      if (p.abroad.isNotEmpty) {
+        final seen = <String>{};
+        final deduped = <String>[];
+        final lineRe = RegExp(r'^(\d{4})\s*[　 ]\s*([^　 ]+)\s*[　 ](.+)$');
+        for (final line in p.abroad) {
+          final m = lineRe.firstMatch(line);
+          if (m == null) {
+            deduped.add(line);
+            continue;
+          }
+          final key = '${m.group(1)}|${m.group(2)!.replaceAll(RegExp(r'\s+'), '')}';
+          if (seen.add(key)) deduped.add(line);
+        }
+        if (deduped.length != p.abroad.length) {
+          p.abroad
+            ..clear()
+            ..addAll(deduped);
+          p.abroadStats.clear();
+          changed = true;
+        } else if (p.abroadStats.isNotEmpty && p.abroadStats.length != p.abroad.length) {
+          p.abroadStats.clear();
+          changed = true;
+        }
+      }
+    }
+
+    for (final t in teams) {
+      for (final p in t.players) {
+        cleanPlayer(p);
+      }
+    }
+    for (final fa in freeAgents) {
+      cleanPlayer(fa.player);
+    }
+    if (otherWorld != null) {
+      for (final ot in otherWorld!.teams) {
+        for (final p in ot.players) {
+          cleanPlayer(p);
+        }
+      }
+    }
+
+    // transactions から育成再契約・自由契約再契約の年表/movesを補完
+    final allPlayers = <Player>[
+      for (final t in teams) ...t.players,
+      for (final fa in freeAgents) fa.player,
+    ];
+    final ikRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)\s+育成再契約');
+    final faRe = RegExp(r'^(\d+)/(\d+)/(\d+)\s+(\S+)\s+(.+?)と(育成)?再契約（自由契約');
+    final dirtyChronYears = <int>{};
+
+    Future<List<Map<String, dynamic>>> loadChron(int y) async {
+      final mem = chronYears[y];
+      if (mem != null) return mem;
+      final raw = kv['chron_$y'];
+      if (raw != null && raw.isNotEmpty) {
+        final list = [for (final e in jsonDecode(raw) as List) Map<String, dynamic>.from(e as Map)];
+        chronYears[y] = list;
+        return list;
+      }
+      final list = <Map<String, dynamic>>[];
+      chronYears[y] = list;
+      return list;
+    }
+
+    for (final tx in transactions) {
+      final mIk = ikRe.firstMatch(tx);
+      final mFa = mIk == null ? faRe.firstMatch(tx) : null;
+      final m = mIk ?? mFa;
+      if (m == null) continue;
+      final y = int.parse(m.group(1)!), mo = int.parse(m.group(2)!), da = int.parse(m.group(3)!);
+      final tShort = m.group(4)!, name = m.group(5)!;
+      final t = teams.where((x) => teamShort(x) == tShort).firstOrNull;
+      final p = (t?.players ?? allPlayers).where((x) => x.registeredName == name).firstOrNull ??
+          allPlayers.where((x) => x.registeredName == name).firstOrNull;
+      if (t == null || p == null) continue;
+      final ymd = '$y-${mo.toString().padLeft(2, '0')}-${da.toString().padLeft(2, '0')}';
+      final isIk = mIk != null;
+      final ikFree = mFa != null && mFa.group(6) != null;
+      final moveLabel = isIk ? '育成再契約' : (ikFree ? '自由契約から育成再契約' : '自由契約から再契約');
+      final moveText = '${y}年${mo}月${da}日 $moveLabelで${t.name}へ';
+      if (!p.moves.any((mv) => mv.contains('${y}年') && mv.contains('再契約'))) {
+        p.moves.add(moveText);
+        changed = true;
+      }
+      final list = await loadChron(y);
+      final hasChron = list.any((e) => e['pid'] == p.id && '${e['d']}'.startsWith('$y-') && ('${e['pt']}'.contains('再契約') || '${e['t']}'.contains('再契約')));
+      if (!hasChron) {
+        list.add({
+          'd': ymd,
+          'team': t.id,
+          'k': isIk ? 'reg' : 'join',
+          't': '${_pos(p)} ${p.registeredName}(${p.age})と$moveLabel。',
+          'pid': p.id,
+          'pt': isIk ? '${t.name}と育成再契約。' : '自由契約から${t.name}と${ikFree ? '育成' : ''}再契約。',
+        });
+        dirtyChronYears.add(y);
+        changed = true;
+      }
+    }
+
+    for (final y in dirtyChronYears) {
+      dirtyKv['chron_$y'] = jsonEncode(chronYears[y]);
+    }
+    kv[kKey] = '1';
+    dirtyKv[kKey] = '1';
+    if (changed) _preCache = null;
+    return changed;
+  }
 }
