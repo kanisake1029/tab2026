@@ -1128,10 +1128,13 @@ class _HomeScreenState extends State<HomeScreen> {
       if (draftList == null || draftList.isEmpty) continue;
       final byTeam = <String, List<({String round, Player player, String school})>>{};
       for (final e in draftList) {
-        final tid = '${e['team'] ?? ''}', pid = '${e['pid'] ?? ''}';
+        final tid = '${e['team'] ?? ''}', pid = '${e['id'] ?? e['pid'] ?? ''}';
         final p = everyone.where((x) => x.id == pid).firstOrNull;
         if (p == null) continue;
-        final round = e['round'] == '補償' ? '補償' : '${e['ikusei'] == true ? '育成' : ''}${e['round']}位';
+        final lbl = '${e['label'] ?? ''}'.trim();
+        final round = lbl.isNotEmpty
+            ? lbl
+            : (e['comp'] == true ? '${e['round']}.5位' : '${e['ikusei'] == true ? '育成' : ''}${e['round']}位');
         byTeam.putIfAbsent(tid, () => []).add((round: round, player: p, school: '${e['school'] ?? ''}'));
       }
       final dd = DateTime(selYear, 10, 31);

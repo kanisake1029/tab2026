@@ -986,7 +986,7 @@ class _ScoutReportState extends State<ScoutReport> {
     final teamId = pre.isNotEmpty ? pre.first.teamId : (hist.isNotEmpty ? hist.first.$2.split('/').first : (_team?.id ?? ''));
     final tn = _teamName(teamId);
     if (p.draftInfo.isNotEmpty) {
-      final dm = RegExp(r'(?:(\d{4})年\s*)?ドラフト(育成)?(\d+)位').firstMatch(p.draftInfo);
+      final dm = RegExp(r'(?:(\d{4})年\s*)?ドラフト(育成)?(\d+(?:\.5)?)位').firstMatch(p.draftInfo);
       if (dm != null) {
         final y = dm.group(1) ?? '${p.draftYear > 0 ? p.draftYear : entry - 1}';
         final ik = dm.group(2) ?? '';

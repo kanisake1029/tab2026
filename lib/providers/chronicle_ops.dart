@@ -165,7 +165,7 @@ extension ChronicleOps on AppState {
       final body = last.replaceFirst(RegExp(r'^\d{4}年\d+月\d+日\s*'), '');
       return (body, body);
     }
-    final m = RegExp(r'(?:(\d{4})年\s*)?ドラフト(育成)?(\d+)位').firstMatch(p.draftInfo);
+    final m = RegExp(r'(?:(\d{4})年\s*)?ドラフト(育成)?(\d+(?:\.5)?)位').firstMatch(p.draftInfo);
     if (m != null && p.moves.isEmpty) {
       final y = m.group(1) ?? '${p.draftYear > 0 ? p.draftYear : currentDate.year}';
       final ik = m.group(2) ?? '';
