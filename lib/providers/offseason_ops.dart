@@ -950,7 +950,7 @@ extension OffseasonOps on AppState {
       _amOnDrafted(pk.prospect, t, s.year, pk.label);
       (draftBook[s.year] ??= []).add({
         'round': pk.round, 'label': pk.label, 'team': t.id, 'id': p.id, 'name': p.registeredName, 'pos': p.mainPosition,
-        'cat': pk.prospect.category, 'school': pk.prospect.school, 'lottery': pk.lottery, 'ikusei': pk.ikusei, 'comp': pk.comp,
+        'cat': pk.prospect.category, 'school': pk.prospect.school, 'lottery': pk.lottery, 'ikusei': pk.ikusei, 'comp': pk.comp, 'traded': pk.traded,
         'snap': p.toJson(),
       });
       if (t.id == myTeamId) mine.add('${pk.label} ${p.registeredName}（${p.mainPosition}・${pk.prospect.school}）');

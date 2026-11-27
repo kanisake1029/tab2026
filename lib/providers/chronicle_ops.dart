@@ -165,12 +165,13 @@ extension ChronicleOps on AppState {
       final body = last.replaceFirst(RegExp(r'^\d{4}年\d+月\d+日\s*'), '');
       return (body, body);
     }
-    final m = RegExp(r'(?:(\d{4})年\s*)?ドラフト(育成)?(\d+(?:\.5)?)位').firstMatch(p.draftInfo);
+    final m = RegExp(r'(?:(\d{4})年\s*)?ドラフト(育成)?(\d+(?:\.5)?)位(（譲渡）)?').firstMatch(p.draftInfo);
     if (m != null && p.moves.isEmpty) {
       final y = m.group(1) ?? '${p.draftYear > 0 ? p.draftYear : currentDate.year}';
       final ik = m.group(2) ?? '';
       final r = m.group(3)!;
-      return ('$ikドラフト$r位で入団', '$y年$ikドラフト$r位で${t.name}へ入団。（FA${p.faNeed}年）');
+      final tr = m.group(4) ?? '';
+      return ('$ikドラフト$r位$trで入団', '$y年$ikドラフト$r位$trで${t.name}へ入団。（FA${p.faNeed}年）');
     }
     if (p.nationality == '海外') return ('来日して入団', '来日して${t.name}に入団。');
     return ('入団', '${t.name}に入団。');

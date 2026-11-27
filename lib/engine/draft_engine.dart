@@ -277,10 +277,11 @@ class DraftPick {
   final bool ikusei;
   final bool lottery; // 1位の抽選で引き当てた
   final bool comp;    // 補償の巡（round 1 → 1.5位、round 2 → 2.5位）
-  DraftPick(this.round, this.teamId, this.prospect, {this.ikusei = false, this.lottery = false, this.comp = false});
+  final bool traded;  // トレードで譲渡された指名権
+  DraftPick(this.round, this.teamId, this.prospect, {this.ikusei = false, this.lottery = false, this.comp = false, this.traded = false});
 
-  /// 「1位」「1.5位」「育成3位」など
-  String get label => '${ikusei ? '育成' : ''}${comp ? '$round.5' : '$round'}位';
+  /// 「1位」「1.5位」「2位（譲渡）」「育成3位」など
+  String get label => '${ikusei ? '育成' : ''}${comp ? '$round.5' : '$round'}位${traded ? '（譲渡）' : ''}';
   /// 契約金・年俸の目安にする巡（1.5位は2位、2.5位は3位の扱い）
   int get payRound => comp ? round + 1 : round;
 }
@@ -441,9 +442,9 @@ class DraftSession {
     return entries;
   }
 
-  void _take(String teamId, Prospect p, {required int round, bool lottery = false, bool ikusei = false, bool comp = false}) {
+  void _take(String teamId, Prospect p, {required int round, bool lottery = false, bool ikusei = false, bool comp = false, bool traded = false}) {
     pool.remove(p);
-    picks.add(DraftPick(round, teamId, p, ikusei: ikusei, lottery: lottery, comp: comp));
+    picks.add(DraftPick(round, teamId, p, ikusei: ikusei, lottery: lottery, comp: comp, traded: traded));
     if (!ikusei) {
       slots[teamId] = (slots[teamId] ?? 0) - 1;
       if (slots[teamId]! <= 0) doneMain.add(teamId);
@@ -602,7 +603,9 @@ class DraftSession {
       final limit = min(ikuseiCaps[tid] ?? 999, tid == myId ? 999 : _ikTarget(tid) + 1);
       if (have >= limit) doneIkusei.add(tid);
     } else {
-      _take(tid, p, round: round);
+      final ord = orderFor(round);
+      final orig = cursor < ord.length ? ord[cursor] : tid;
+      _take(tid, p, round: round, traded: orig != tid);
     }
     cursor++;
     _normalize();
