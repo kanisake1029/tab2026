@@ -35,6 +35,7 @@ import 'package:npb_pennant_app/screens/order_tabs/pitcher_tab.dart';
 import 'package:npb_pennant_app/screens/reinforce_screens.dart';
 import 'package:npb_pennant_app/screens/title_race.dart';
 import 'package:npb_pennant_app/utils/app_theme.dart';
+import 'package:npb_pennant_app/widgets/contract_offer_sheet.dart';
 import 'package:npb_pennant_app/widgets/player_detail_dialog.dart';
 import 'package:npb_pennant_app/widgets/scout_report.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2475,5 +2476,56 @@ void main() {
     expect(prBatch.headline, contains('3選手'));
     expect(prBatch.headline, contains('支配下登録'));
     await db.close();
+  });
+
+  testWidgets('統一契約UIとFA1軍登録日数持ち越し（145日上限）が正しく動作する', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late AppState app;
+    late Player p;
+    await tester.runAsync(() async {
+      app = AppState(AppDatabase(NativeDatabase.memory()));
+      while (!app.loaded) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      final my = app.teams.first;
+      app.myTeamId = my.id;
+      p = my.players.firstWhere((x) => !x.ikusei);
+      p.faService = 2;
+      p.faCarryDays = 0;
+      p.regDays = 160; // 1年で規定145日超 → faEffectiveDaysは145上限
+    });
+
+    expect(p.faEffectiveDays, 145);
+
+    // 規定未満の持ち越し計算：carry=100 + regDays=60 -> 次年持ち越し分
+    p.faCarryDays = 100;
+    p.regDays = 60;
+    expect(p.faEffectiveDays, 160);
+
+    // 統一契約UIシートに直近2年の主要成績・希望額・契約年数・1年あたり年俸が表示される
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (ctx) => Scaffold(
+          body: ElevatedButton(
+            onPressed: () => showContractOfferSheet(
+              context: ctx,
+              app: app,
+              player: p,
+              title: '契約更改',
+              initialYears: 2,
+              preferredYears: 2,
+              askForYears: (y) => 3000,
+            ),
+            child: const Text('開く'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('開く'));
+    await tester.pumpAndSettle();
+    expect(find.text('直近2年の主要成績'), findsOneWidget);
+    expect(find.textContaining('希望額（2年'), findsOneWidget);
+    expect(find.text('契約年数'), findsOneWidget);
+    expect(find.text('1年あたり '), findsOneWidget);
   });
 }

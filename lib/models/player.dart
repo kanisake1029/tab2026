@@ -332,6 +332,7 @@ class Player {
   bool ikusei;          // 育成契約（背番号3桁。1軍に上がるには支配下登録が要る）
   int ikuseiYears;      // 育成契約の年数（3年で満了）
   int regDays;          // 今季の1軍登録日数（145日で FA の1年に数える）
+  int faCarryDays;      // FA の持ち越し1軍登録日数（0〜144日。規定未満のシーズン分を翌年へ持ち越し）
   int prevGames;        // 前季の1軍試合数（現役ドラフト判定用）
   int prevApps;         // 前季の1軍登板数（現役ドラフト判定用）
   int prevInnings;      // 前季の1軍投球回（アウト数＝回×3、現役ドラフト判定用）
@@ -478,6 +479,7 @@ class Player {
     this.ikusei = false,
     this.ikuseiYears = 0,
     this.regDays = 0,
+    this.faCarryDays = 0,
     this.prevGames = 0,
     this.prevApps = 0,
     this.prevInnings = 0,
@@ -673,6 +675,8 @@ class Player {
   /// 外国人枠に入る選手（海外出身で、FA 権（6年）を取る前）。FA 権を取ると日本人選手の扱い（外国人枠外・FA 宣言・人的補償の対象）
   /// 国内FA の資格年数（仕様書 2.1）
   static const faYears = 8;
+  /// FA の1年分に相当する1軍登録規定日数
+  static const faDaysPerYear = 145;
   /// 海外FA の資格年数（仮。仕様書 8章で未決：現実は9年）
   static const overseasFaYears = 9;
   bool get isPartner => partnerMlb.isNotEmpty;
@@ -680,6 +684,8 @@ class Player {
   /// この選手の国内FA の年数（志望届で短くなることがある。FA で移籍したあとの再取得は短縮なし）
   int get faNeed => faCount > 0 ? faYears : faYears - faShort;
   bool get hasFA => faService >= faNeed && !ikusei;
+  /// FA表示用の有効1軍登録日数（持ち越し分＋今季分・今季は145日上限）
+  int get faEffectiveDays => faCarryDays + (regDays > faDaysPerYear ? faDaysPerYear : regDays);
 
   /// オリジナルの名前を使っているか（お知らせで本名を（）に添える）
   bool get hasOriginalName => nameType == 'E' && customName.isNotEmpty;
@@ -763,6 +769,7 @@ class Player {
       'ikusei': ikusei,
       'ikuseiYears': ikuseiYears,
       'regDays': regDays,
+      if (faCarryDays > 0) 'faCarryDays': faCarryDays,
       if (prevGames > 0) 'prevGames': prevGames,
       if (prevApps > 0) 'prevApps': prevApps,
       if (prevInnings > 0) 'prevInnings': prevInnings,
@@ -929,6 +936,7 @@ class Player {
       ikusei: json['ikusei'] ?? false,
       ikuseiYears: json['ikuseiYears'] ?? 0,
       regDays: json['regDays'] ?? 0,
+      faCarryDays: json['faCarryDays'] ?? 0,
       prevGames: json['prevGames'] ?? 0,
       prevApps: json['prevApps'] ?? 0,
       prevInnings: json['prevInnings'] ?? 0,

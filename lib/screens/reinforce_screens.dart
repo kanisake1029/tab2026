@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/chip_grid.dart';
+import '../widgets/contract_offer_sheet.dart';
 import '../widgets/wheel_picker.dart';
 import 'amateur_screen.dart';
 import 'contract_screen.dart';
@@ -269,37 +270,32 @@ class _FaScreenState extends State<FaScreen> {
   }
 
   Future<void> _offer(FaCase f, Player p) async {
-    var salary = (app.faCases.contains(f) && f.offers[app.myTeamId] != null ? f.offers[app.myTeamId]![0] : f.ask).toDouble();
-    var years = f.offers[app.myTeamId]?[1] ?? 3;
-    final ok = await showDialog<bool>(
+    final initSal = app.faCases.contains(f) && f.offers[app.myTeamId] != null ? f.offers[app.myTeamId]![0] : f.ask;
+    final initYears = f.offers[app.myTeamId]?[1] ?? 3;
+    final res = await showContractOfferSheet(
       context: context,
-      builder: (d) => StatefulBuilder(
-        builder: (d, set) => AlertDialog(
-          title: Text('${p.registeredName}に条件を出す'),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('希望年俸 ${formatSalary(f.ask)}　いまの年俸 ${formatSalary(p.salary)}', style: const TextStyle(color: _sub)),
-            const SizedBox(height: 10),
-            Text('年俸 ${formatSalary((salary / 100).round() * 100)}', style: const TextStyle(fontWeight: FontWeight.w800)),
-            Slider(value: salary, min: f.ask * 0.6, max: f.ask * 1.8, onChanged: (v) => set(() => salary = v)),
-            Text('年数 $years年', style: const TextStyle(fontWeight: FontWeight.w800)),
-            Slider(value: years.toDouble(), min: 1, max: 5, divisions: 4, onChanged: (v) => set(() => years = v.round())),
-            const Text('選手は「年俸×年数」と、元の球団（少し有利）・チームの強さで比べて決めます。', style: TextStyle(fontSize: 12, color: _sub)),
-            if (f.fromTeamId != app.myTeamId)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                    f.rank == 'C'
-                        ? 'Cランクの選手です。獲得すると、元の球団へ前年の年俸の30%を補償として払います。'
-                        : '${f.rank}ランクの選手です。獲得すると、元の球団へ前年の年俸の${f.rank == 'A' ? '50%（指名権を選んだとき）か100%' : '40%（指名権を選んだとき）か80%'}を補償として払います。元の球団は次のドラフトの${f.rank == 'A' ? '1.5位' : '2.5位'}指名権も選べます（リーグが与えるので、こちらの指名権は減りません）。人的補償はありません。',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFFB45309))),
-              ),
-          ]),
-          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('やめる')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('条件を出す'))],
-        ),
-      ),
+      app: app,
+      player: p,
+      title: 'FA 交渉（${f.rank}ランク）',
+      subtitle: '選手は「年俸×年数」・元球団有利・チームの強さで判断します',
+      initialYears: initYears,
+      maxYears: 5,
+      askForYears: (_) => f.ask,
+      initialSalary: initSal,
+      stepUnit: 100,
+      showCurrentSalaryDiff: true,
+      submitLabel: '条件を出す',
+      notice: f.fromTeamId != app.myTeamId
+          ? Text(
+              f.rank == 'C'
+                  ? 'Cランクの選手です。獲得すると、元の球団へ前年の年俸の30%を補償として払います。'
+                  : '${f.rank}ランクの選手です。獲得すると、元の球団へ前年の年俸の${f.rank == 'A' ? '50%（指名権を選んだとき）か100%' : '40%（指名権を選んだとき）か80%'}を補償として払います。元の球団は次のドラフトの${f.rank == 'A' ? '1.5位' : '2.5位'}指名権も選べます（こちらの指名権は減りません）。人的補償はありません。',
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFFB45309)),
+            )
+          : null,
     );
-    if (ok != true || !mounted) return;
-    final err = app.offerFa(f, (salary / 100).round() * 100, years);
+    if (res == null || !mounted) return;
+    final err = app.offerFa(f, (res.salary / 100).round() * 100, res.years);
     _toast(context, err, '条件を出しました（12月31日までに、毎週月曜に決まる選手もいます）');
     setState(() {});
   }
@@ -1096,46 +1092,22 @@ class _ForeignScreenState extends State<ForeignScreen> {
       setState(() {});
       return;
     }
-    final prefY = TrustEngine.preferredYears(p, isInitialForeign: true);
-    var years = prefY;
-    var salary = TrustEngine.askForYears(p, p.salary, years, isInitialForeign: true);
-    final res = await showDialog<(int, int)?>(
+    final prefY = TrustEngine.preferredYears(p, isInitialForeign: true).clamp(1, 3);
+    final res = await showContractOfferSheet(
       context: context,
-      builder: (d) => StatefulBuilder(builder: (d, set) {
-        final need = TrustEngine.askForYears(p, p.salary, years, isInitialForeign: true);
-        Widget step(String label, int delta) => OutlinedButton(
-              onPressed: () => set(() => salary = (salary + delta).clamp(450, 999950)),
-              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: Text(label, style: const TextStyle(fontSize: 11.5)),
-            );
-        return AlertDialog(
-          title: Text('${p.registeredName}と契約交渉'),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('希望：${formatSalary(need)}（推奨 $prefY年・全盛期近接は短期志向）', style: const TextStyle(fontSize: 12, color: _sub)),
-            const SizedBox(height: 8),
-            Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 6),
-            Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
-            const SizedBox(height: 8),
-            Row(children: [
-              const Text('契約年数：'),
-              DropdownButton<int>(
-                value: years,
-                items: [for (var y = 1; y <= 3; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
-                onChanged: (v) => set(() => years = v ?? 1),
-              ),
-            ]),
-            const Text('入団すると環境適応力に応じて、打撃・投球の能力に倍率がかかります。', style: TextStyle(fontSize: 11, color: _sub)),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),
-            FilledButton(onPressed: () => Navigator.pop(d, (salary, years)), child: const Text('提示する')),
-          ],
-        );
-      }),
+      app: app,
+      player: p,
+      title: '新外国人 獲得交渉',
+      subtitle: '全盛期近接は短期志向',
+      initialYears: prefY,
+      maxYears: 3,
+      preferredYears: prefY,
+      askForYears: (y) => TrustEngine.askForYears(p, p.salary, y, isInitialForeign: true),
+      submitLabel: '提示する',
+      notice: const Text('入団すると環境適応力に応じて、打撃・投球の能力に倍率がかかります。', style: TextStyle(fontSize: 11.5, color: _sub)),
     );
     if (res == null || !mounted) return;
-    _toast(context, app.signForeign(p, salary: res.$1, years: res.$2), '${p.registeredName}と契約しました（${formatSalary(res.$1)}・${res.$2}年）');
+    _toast(context, app.signForeign(p, salary: res.salary, years: res.years), '${p.registeredName}と契約しました（${formatSalary(res.salary)}・${res.years}年）');
     setState(() {});
   }
 
@@ -1280,57 +1252,25 @@ class _FreeAgentScreenState extends State<FreeAgentScreen> {
     final p = fa.player;
     final baseAsk = app.freeAgentBaseAsk(fa);
     final prefY = TrustEngine.preferredYears(p).clamp(1, 3);
-    var years = prefY;
-    var salary = TrustEngine.askForYears(p, baseAsk, years);
-    var ikusei = false;
-    final res = await showDialog<(bool, int, int)?>(
+    final res = await showContractOfferSheet(
       context: context,
-      builder: (d) => StatefulBuilder(builder: (d, set) {
-        final need = TrustEngine.askForYears(p, baseAsk, years);
-        Widget step(String label, int delta) => OutlinedButton(
-              onPressed: () => set(() => salary = (salary + delta).clamp(450, 999950)),
-              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: Text(label, style: const TextStyle(fontSize: 11.5)),
-            );
-        return AlertDialog(
-          title: Text('${p.registeredName}と契約交渉'),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('育成契約にする', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-              subtitle: const Text('年俸上限600万円・1年契約', style: TextStyle(fontSize: 11)),
-              value: ikusei,
-              onChanged: (v) => set(() => ikusei = v),
-            ),
-            if (!ikusei) ...[
-              Text('${fa.reason}　目安：${formatSalary(need)}（推奨 $prefY年）', style: const TextStyle(fontSize: 12, color: _sub)),
-              const SizedBox(height: 8),
-              Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 6),
-              Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
-              const SizedBox(height: 8),
-              Row(children: [
-                const Text('契約年数：'),
-                DropdownButton<int>(
-                  value: years,
-                  items: [for (var y = 1; y <= 12; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
-                  onChanged: (v) => set(() => years = v ?? 1),
-                ),
-              ]),
-            ] else
-              Text('育成契約：年俸 ${formatSalary(p.salary < 600 ? p.salary : 600)}・1年契約', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),
-            FilledButton(onPressed: () => Navigator.pop(d, (ikusei, salary, years)), child: const Text('提示する')),
-          ],
-        );
-      }),
+      app: app,
+      player: p,
+      title: '自由契約・戦力外 獲得交渉',
+      subtitle: '区分：${fa.reason}',
+      initialYears: prefY,
+      maxYears: 12,
+      preferredYears: prefY,
+      askForYears: (y) => TrustEngine.askForYears(p, baseAsk, y),
+      allowIkusei: true,
+      submitLabel: '提示する',
     );
     if (res == null || !mounted) return;
-    _toast(context, app.signFreeAgent(fa, ikusei: res.$1, salary: res.$2, years: res.$3),
-        res.$1 ? '${p.registeredName}と育成契約しました' : '${p.registeredName}と契約しました（${formatSalary(res.$2)}・${res.$3}年）');
+    _toast(
+      context,
+      app.signFreeAgent(fa, ikusei: res.ikusei, salary: res.salary, years: res.years),
+      res.ikusei ? '${p.registeredName}と育成契約しました' : '${p.registeredName}と契約しました（${formatSalary(res.salary)}・${res.years}年）',
+    );
     setState(() {});
   }
 

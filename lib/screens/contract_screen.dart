@@ -6,6 +6,7 @@ import '../models/amateur.dart';
 import '../models/player.dart';
 import '../providers/app_state.dart';
 import '../utils/salary_utils.dart';
+import '../widgets/contract_offer_sheet.dart';
 import '../widgets/player_detail_dialog.dart';
 
 const _sub = Color(0xFF78716C);
@@ -230,183 +231,102 @@ class _ContractScreenState extends State<ContractScreen> {
 
   Future<void> _openPriorityForeign(FreeAgent fa) async {
     final p = fa.player;
-    var years = app.renewPreferredYears(p).clamp(1, 12);
-    var salary = app.renewAskFor(p, years);
-    await showModalBottomSheet(
+    final prefY = app.renewPreferredYears(p).clamp(1, 12);
+    final res = await showContractOfferSheet(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (c) => StatefulBuilder(builder: (c, set) {
-        Widget step(String label, int d) => OutlinedButton(
-              onPressed: () => set(() => salary = (salary + d).clamp(450, 999950)),
-              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: Text(label, style: const TextStyle(fontSize: 12)),
-            );
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 20 + MediaQuery.of(c).viewInsets.bottom),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Text('${p.registeredName}（優先交渉）', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
-              TextButton.icon(
-                onPressed: () => showPlayerDetail(c, app, p, allowActions: false),
-                icon: const Icon(Icons.person_search_outlined, size: 18),
-                label: const Text('選手詳細'),
-              ),
-            ]),
-            Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳　前年 ${formatSalary(p.salary)}　優先期限：12月14日まで（3回保留で自由契約）', style: const TextStyle(color: _sub, fontSize: 12)),
-            Text('信頼 ${p.trust}・愛着 ${p.teamLove}', style: const TextStyle(color: _sub, fontSize: 12)),
-            const SizedBox(height: 12),
-            Text('希望（$years年なら）：${formatSalary(app.renewAskFor(p, years))}', style: const TextStyle(fontSize: 12.5, color: _sub)),
-            const SizedBox(height: 6),
-            Text(formatSalary(salary), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: _ink)),
-            Wrap(spacing: 6, runSpacing: 4, children: [step('−1億', -10000), step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000), step('+1億', 10000)]),
-            const SizedBox(height: 8),
-            Row(children: [
-              const Text('年数'),
-              const SizedBox(width: 10),
-              DropdownButton<int>(
-                value: years,
-                items: [for (var y = 1; y <= 12; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
-                onChanged: (v) => set(() => years = v ?? 1),
-              ),
-              const Spacer(),
-              OutlinedButton(
-                onPressed: () {
-                  final msg = app.offerForeignReSign(fa, 600, 1, ikusei: true);
-                  Navigator.pop(c);
-                  _toast(msg);
-                  setState(() {});
-                },
-                child: const Text('育成で再契約'),
-              ),
-              const SizedBox(width: 6),
-              FilledButton(
-                onPressed: () {
-                  final msg = app.offerForeignReSign(fa, salary, years);
-                  Navigator.pop(c);
-                  _toast(msg);
-                  setState(() {});
-                },
-                child: const Text('再契約を提示'),
-              ),
-            ]),
-          ]),
-        );
-      }),
+      app: app,
+      player: p,
+      title: '契約満了外国人（優先再契約交渉）',
+      subtitle: '優先期限：12月14日まで（3回保留で自由契約）　信頼 ${p.trust}・愛着 ${p.teamLove}',
+      initialYears: prefY,
+      maxYears: 12,
+      preferredYears: prefY,
+      askForYears: (y) => app.renewAskFor(p, y),
+      allowIkusei: true,
+      showCurrentSalaryDiff: true,
+      submitLabel: '再契約を提示',
     );
+    if (res == null || !mounted) return;
+    final msg = app.offerForeignReSign(fa, res.salary, res.years, ikusei: res.ikusei);
+    _toast(msg);
+    setState(() {});
   }
 
   Future<void> _open(Player p) async {
-    var years = app.renewPreferredYears(p);
-    var salary = app.renewalDone(p) ? p.salary : app.renewAskFor(p, years);
+    final prefY = app.renewPreferredYears(p).clamp(1, 12);
     final canRenew = app.canRenewPlayer(p);
-    await showModalBottomSheet(
+    final res = await showContractOfferSheet(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (c) => StatefulBuilder(builder: (c, set) {
-        Widget step(String label, int d) => OutlinedButton(
-              onPressed: canRenew ? () => set(() => salary = (salary + d).clamp(p.ikusei ? 250 : 450, 999950)) : null,
-              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: Text(label, style: const TextStyle(fontSize: 12)),
-            );
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 20 + MediaQuery.of(c).viewInsets.bottom),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Text(p.registeredName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
-              TextButton.icon(
-                onPressed: () => showPlayerDetail(c, app, p, allowActions: false),
-                icon: const Icon(Icons.person_search_outlined, size: 18),
-                label: const Text('選手詳細'),
-              ),
-            ]),
-            Text('${p.isPitcher ? '投手' : p.mainPosition}・${p.age}歳・プロ${p.proYears}年　今の年俸 ${formatSalary(p.salary)}　信頼 ${p.trust}・愛着 ${p.teamLove}　提示 ${app.renewTries[p.id] ?? 0}回', style: const TextStyle(color: _sub, fontSize: 12.5)),
-            const SizedBox(height: 12),
-            if (canRenew) ...[
-              Text('希望（$years年なら）：${formatSalary(app.renewAskFor(p, years))}', style: const TextStyle(fontSize: 12.5, color: _sub)),
-              const SizedBox(height: 6),
-              Row(children: [
-                Expanded(child: Text(formatSalary(salary), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: _ink))),
-                Text('${((salary / p.salary - 1) * 100).round() >= 0 ? '+' : ''}${((salary / p.salary - 1) * 100).round()}%', style: TextStyle(color: salary >= p.salary ? const Color(0xFF16A34A) : const Color(0xFFDC2626), fontWeight: FontWeight.w800)),
-              ]),
-              Wrap(spacing: 6, runSpacing: 4, children: [step('−1億', -10000), step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000), step('+1億', 10000)]),
-              const SizedBox(height: 8),
-              Row(children: [
-                const Text('年数'),
-                const SizedBox(width: 10),
-                DropdownButton<int>(
-                  value: years,
-                  items: [for (var y = 1; y <= 12; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
-                  onChanged: (v) => set(() => years = v ?? 1),
-                ),
-                const Spacer(),
-                FilledButton(
-                  onPressed: () {
-                    final msg = app.offerRenewal(p, salary, years);
-                    Navigator.pop(c);
-                    _toast(msg);
-                    setState(() {});
-                  },
-                  child: const Text('提示する'),
-                ),
-              ]),
-              const Divider(height: 24),
-            ],
-            const Text('ほかの打診', style: TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 6),
-            Wrap(spacing: 8, runSpacing: 6, children: [
-              if (!p.ikusei && app.canReSignIkusei)
-                OutlinedButton(
-                  onPressed: () async {
-                    if (!await _confirm('${p.registeredName}と育成選手として再契約しますか？（年俸上限600万円・背番号3桁）')) return;
-                    final err = app.reSignIkusei(p);
-                    if (c.mounted) Navigator.pop(c);
-                    _toast(err ?? '${p.registeredName}と育成再契約しました');
-                    setState(() {});
-                  },
-                  child: const Text('育成で再契約'),
-                ),
-              if (!p.isPartner) ...[
-                OutlinedButton(onPressed: () => _role(c, p, coach: true), child: const Text('コーチに転任')),
-                OutlinedButton(onPressed: () => _role(c, p, coach: false), child: const Text('スカウトに転任')),
-                OutlinedButton(
-                  onPressed: () async {
-                    if (!await _confirm('${p.registeredName}に引退を勧めますか？（断られると信頼が下がり、信頼が低いと退団します）')) return;
-                    final msg = app.adviseRetire(p);
-                    if (c.mounted) Navigator.pop(c);
-                    _toast(msg);
-                    setState(() {});
-                  },
-                  child: const Text('引退勧告'),
-                ),
-                OutlinedButton(
-                  onPressed: () async {
-                    if (!await _confirm('${p.registeredName}を自由契約にしますか？')) return;
-                    final err = app.releasePlayer(p);
-                    if (c.mounted) Navigator.pop(c);
-                    _toast(err ?? '${p.registeredName}を自由契約にしました');
-                    setState(() {});
-                  },
-                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
-                  child: const Text('自由契約'),
-                ),
-              ],
-            ]),
-            if (p.isPartner)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  '提携選手（${p.partnerMlb}・${p.partnerUntil}年オフまで）は期間中の自由契約・引退・転任・トレードはできません（年俸交渉・育成再契約は可）。',
-                  style: const TextStyle(fontSize: 11, color: _sub),
-                ),
-              ),
-            const SizedBox(height: 6),
-            const Text('転任・引退は、ベテランほど受け入れやすく、信頼が高いほど受け入れやすい。主力は断りやすい。育成への切り替えは、これまでどおり自動です。', style: TextStyle(fontSize: 11, color: _sub)),
-          ]),
-        );
-      }),
+      app: app,
+      player: p,
+      title: '契約更改',
+      subtitle: '信頼 ${p.trust}・愛着 ${p.teamLove}　提示 ${app.renewTries[p.id] ?? 0}回',
+      initialYears: prefY,
+      maxYears: 12,
+      preferredYears: prefY,
+      askForYears: (y) => app.renewAskFor(p, y),
+      initialSalary: app.renewalDone(p) ? p.salary : app.renewAskFor(p, prefY),
+      minSalary: p.ikusei ? 250 : 450,
+      showCurrentSalaryDiff: true,
+      showOfferForm: canRenew,
+      submitLabel: '提示する',
+      extraSection: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('ほかの打診', style: TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          if (!p.ikusei && app.canReSignIkusei)
+            OutlinedButton(
+              onPressed: () async {
+                if (!await _confirm('${p.registeredName}と育成選手として再契約しますか？（年俸上限600万円・背番号3桁）')) return;
+                final err = app.reSignIkusei(p);
+                if (mounted) Navigator.pop(context);
+                _toast(err ?? '${p.registeredName}と育成再契約しました');
+                setState(() {});
+              },
+              child: const Text('育成で再契約'),
+            ),
+          if (!p.isPartner) ...[
+            OutlinedButton(onPressed: () => _role(context, p, coach: true), child: const Text('コーチに転任')),
+            OutlinedButton(onPressed: () => _role(context, p, coach: false), child: const Text('スカウトに転任')),
+            OutlinedButton(
+              onPressed: () async {
+                if (!await _confirm('${p.registeredName}に引退を勧めますか？（断られると信頼が下がり、信頼が低いと退団します）')) return;
+                final msg = app.adviseRetire(p);
+                if (mounted) Navigator.pop(context);
+                _toast(msg);
+                setState(() {});
+              },
+              child: const Text('引退勧告'),
+            ),
+            OutlinedButton(
+              onPressed: () async {
+                if (!await _confirm('${p.registeredName}を自由契約にしますか？')) return;
+                final err = app.releasePlayer(p);
+                if (mounted) Navigator.pop(context);
+                _toast(err ?? '${p.registeredName}を自由契約にしました');
+                setState(() {});
+              },
+              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+              child: const Text('自由契約'),
+            ),
+          ],
+        ]),
+        if (p.isPartner)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '提携選手（${p.partnerMlb}・${p.partnerUntil}年オフまで）は期間中の自由契約・引退・転任・トレードはできません（年俸交渉・育成再契約は可）。',
+              style: const TextStyle(fontSize: 11, color: _sub),
+            ),
+          ),
+        const SizedBox(height: 6),
+        const Text('転任・引退は、ベテランほど受け入れやすく、信頼が高いほど受け入れやすい。主力は断りやすい。育成への切り替えは、これまでどおり自動です。', style: TextStyle(fontSize: 11, color: _sub)),
+      ]),
     );
+    if (res == null || !mounted || !canRenew) return;
+    final msg = app.offerRenewal(p, res.salary, res.years);
+    _toast(msg);
+    setState(() {});
   }
 
   Future<bool> _confirm(String q) async =>

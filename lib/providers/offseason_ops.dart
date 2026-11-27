@@ -1095,12 +1095,20 @@ extension OffseasonOps on AppState {
     coaches.removeWhere((c) => drop.contains(c.id));
   }
 
-  /// FA 資格：1軍登録145日で1年。育成の年数も進める
+  /// FA 資格：1軍登録145日で1年（1年で145日超過分はカウントせず、145日未満は翌年へ持ち越し）。育成の年数も進める
   void _processService() {
     for (final t in leagueTeams) {
       for (final p in t.players) {
         final wasSlot = p.foreignSlot;
-        if (p.regDays >= 145) p.faService++;
+        if (p.regDays >= Player.faDaysPerYear) {
+          p.faService++;
+        } else if (p.regDays > 0) {
+          p.faCarryDays += p.regDays;
+          if (p.faCarryDays >= Player.faDaysPerYear) {
+            p.faService++;
+            p.faCarryDays -= Player.faDaysPerYear;
+          }
+        }
         if (wasSlot && !p.foreignSlot) {
           transactions.insert(0, '${_today()} ${teamShort(t)} ${p.registeredName} FA 権取得（外国人枠外・日本人選手の扱いに）');
           if (t.id == myTeamId) _addNews(['${p.registeredName}が FA 権を取得し、日本人選手の扱い（外国人枠外）になりました']);

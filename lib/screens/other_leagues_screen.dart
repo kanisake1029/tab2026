@@ -8,6 +8,7 @@ import '../engine/trust_engine.dart';
 import '../models/other_league.dart';
 import '../models/player.dart';
 import '../providers/app_state.dart';
+import '../widgets/contract_offer_sheet.dart';
 import '../widgets/frozen_table.dart';
 import '../widgets/player_detail_dialog.dart';
 import '../widgets/prospect_widgets.dart';
@@ -129,56 +130,33 @@ Future<void> openOtherPlayer(BuildContext context, AppState app, Player p, VoidC
     return;
   }
   final baseSal = app.otherSalary(p);
-  final prefY = TrustEngine.preferredYears(p, isInitialForeign: p.nationality == '海外');
-  var years = prefY;
-  var salary = TrustEngine.askForYears(p, baseSal, years, isInitialForeign: p.nationality == '海外');
-  final res = await showDialog<(int, int)?>(
+  final prefY = TrustEngine.preferredYears(p, isInitialForeign: p.nationality == '海外').clamp(1, 3);
+  final res = await showContractOfferSheet(
     context: context,
-    builder: (d) => StatefulBuilder(builder: (d, set) {
-      final need = TrustEngine.askForYears(p, baseSal, years, isInitialForeign: p.nationality == '海外');
-      Widget step(String label, int delta) => OutlinedButton(
-            onPressed: () => set(() => salary = (salary + delta).clamp(450, 999950)),
-            style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
-            child: Text(label, style: const TextStyle(fontSize: 11.5)),
-          );
-      return AlertDialog(
-        title: Text('${p.registeredName}と契約交渉'),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('希望：${formatSalary(need)}（推奨 $prefY年・基本受諾率 ${(app.otherAcceptChance(p) * 100).round()}%）', style: const TextStyle(fontSize: 12, color: _sub)),
-          const SizedBox(height: 8),
-          Text(formatSalary(salary), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 6),
-          Wrap(spacing: 4, runSpacing: 4, children: [step('−1000万', -1000), step('−50万', -50), step('+50万', 50), step('+1000万', 1000)]),
-          const SizedBox(height: 8),
-          Row(children: [
-            const Text('契約年数：'),
-            DropdownButton<int>(
-              value: years,
-              items: [for (var y = 1; y <= 3; y++) DropdownMenuItem(value: y, child: Text('$y年'))],
-              onChanged: (v) => set(() => years = v ?? 1),
-            ),
-          ]),
-          if (isForeignReport) ...[
-            const SizedBox(height: 6),
-            const Text('入団すると環境適応力に応じて、打撃・投球の能力に倍率がかかります。', style: TextStyle(fontSize: 11, color: _sub)),
+    app: app,
+    player: p,
+    title: '他リーグ調査・獲得交渉',
+    subtitle: '基本受諾率 ${(app.otherAcceptChance(p) * 100).round()}%',
+    initialYears: prefY,
+    maxYears: 3,
+    preferredYears: prefY,
+    askForYears: (y) => TrustEngine.askForYears(p, baseSal, y, isInitialForeign: p.nationality == '海外'),
+    submitLabel: '提示する',
+    notice: isForeignReport
+        ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('入団すると環境適応力に応じて、打撃・投球の能力に倍率がかかります。', style: TextStyle(fontSize: 11.5, color: _sub)),
             const SizedBox(height: 4),
             OutlinedButton.icon(
-              onPressed: () => _showOtherForeignReport(d, app, p),
+              onPressed: () => _showOtherForeignReport(context, app, p),
               icon: const Icon(Icons.description_outlined, size: 16),
               label: const Text('調査書を見る'),
             ),
-          ],
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('やめる')),
-          FilledButton(onPressed: () => Navigator.pop(d, (salary, years)), child: const Text('提示する')),
-        ],
-      );
-    }),
+          ])
+        : null,
   );
   if (res == null || !context.mounted) return;
-  final err = app.offerOtherPlayer(p, salary: res.$1, years: res.$2);
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err ?? '${p.registeredName}と契約しました（${formatSalary(res.$1)}・${res.$2}年）')));
+  final err = app.offerOtherPlayer(p, salary: res.salary, years: res.years);
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err ?? '${p.registeredName}と契約しました（${formatSalary(res.salary)}・${res.years}年）')));
   changed();
 }
 
