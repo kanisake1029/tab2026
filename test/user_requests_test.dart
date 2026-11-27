@@ -1873,7 +1873,7 @@ void main() {
     expect(find.textContaining('7/14 ○A選抜 4-2 B選抜●'), findsOneWidget);
   });
 
-  testWidgets('ActiveDraftScreen はステップ1で最低20名選出してステップ2へ進める', (tester) async {
+  testWidgets('ActiveDraftScreen はステップ1→事前入札→1巡目・連鎖指名へ進める', (tester) async {
     SharedPreferences.setMockInitialValues({});
     late AppState app;
     await tester.runAsync(() async {
@@ -1886,10 +1886,13 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: ActiveDraftScreen(app: app)));
     await tester.pumpAndSettle();
     expect(find.textContaining('① 自球団の放出候補を選出'), findsOneWidget);
-    expect(find.textContaining('提出リストを確定して指名へ'), findsOneWidget);
-    await tester.tap(find.textContaining('提出リストを確定して指名へ'));
+    expect(find.textContaining('提出リストを確定して事前入札へ'), findsOneWidget);
+    await tester.tap(find.textContaining('提出リストを確定して事前入札へ'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('② 他球団の提出リストから1名指名'), findsOneWidget);
+    expect(find.textContaining('② 事前入札（人気投票）'), findsOneWidget);
+    await tester.tap(find.textContaining('1巡目を開始'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('③ 1巡目・連鎖指名'), findsOneWidget);
   });
 
   test('外国人選手はオフでもシーズン中でも来日1年目になり、元NPB選手は復帰時に以前のNPB年数+1になる', () async {
@@ -2339,5 +2342,67 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('VS'), findsNothing);
     expect(find.text('現役ドラフトを行う'), findsOneWidget);
+  });
+
+  test('現役ドラフトは1巡目のみ・事前入札の票総和1位から連鎖指名・ループ時は逆ウェーバー・同一球団は1名上限', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase(NativeDatabase.memory());
+    final app = AppState(db);
+    while (!app.loaded) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+
+    // 1) 4球団での連鎖・ループ検証（逆ウェーバー: t0, t1, t2, t3）
+    //    t0=東新, t1=広島, t2=ラクテル, t3=西京 とする
+    final t0 = app.teams[0], t1 = app.teams[1], t2 = app.teams[2], t3 = app.teams[3];
+    final sub = [t0, t1, t2, t3];
+    final pools = {for (final t in sub) t.id: TransferEngine.autoSelectActiveDraftPool(t, 2027)};
+    // 事前入札: t0に1票、t1に2票（別々の選手に1票ずつ→総和2票）、t2に1票、t3に0票 → t1(2票)が1位人気で最初に指名
+    final preBids = <String, Player?>{
+      t0.id: pools[t1.id]![0],
+      t1.id: pools[t0.id]![0],
+      t2.id: pools[t1.id]![1],
+      t3.id: pools[t2.id]![0],
+    };
+    final votes = TransferEngine.tallyActiveDraftVotes(sub, preBids);
+    expect(votes[t1.id], 2);
+    expect(votes[t0.id], 1);
+    expect(votes[t2.id], 1);
+    expect(votes[t3.id], 0);
+    expect(TransferEngine.activeDraftFirstTeam(sub, votes)?.id, t1.id);
+
+    // 連鎖を意図的にループさせる：
+    //   t1 → t2から指名 → 次はt2
+    //   t2 → t1から指名（t1は既に指名済み＝ループ！）→ 逆ウェーバー順で未指名トップのt0へ
+    //   t0 → t3から指名 → 次はt3
+    //   t3 → まだ指名されていないt0から指名（1巡終了）
+    final pickOrder = <String>[];
+    final moves4 = TransferEngine.runActiveDraft(
+      sub,
+      2027,
+      (me, cands) {
+        pickOrder.add(me.id);
+        if (me.id == t1.id) return cands.firstWhere((p) => t2.players.contains(p));
+        if (me.id == t2.id) return cands.firstWhere((p) => t1.players.contains(p));
+        if (me.id == t0.id) return cands.firstWhere((p) => t3.players.contains(p));
+        return cands.first;
+      },
+      pools: pools,
+      preBids: preBids,
+    );
+    expect(pickOrder, [t1.id, t2.id, t0.id, t3.id]);
+    expect(moves4.length, 4);
+    expect(moves4.map((m) => m.$1.id).toSet().length, 4); // 各球団から最大1名のみ
+    expect(moves4.map((m) => m.$2.id).toSet().length, 4); // 各球団1巡目のみ
+
+    // 2) 全12球団でも1巡目のみ・全員1名ずつ獲得＆1名ずつ放出（デッドロックなし）
+    final order12 = app.teams;
+    final pools12 = {for (final t in order12) t.id: TransferEngine.autoSelectActiveDraftPool(t, 2027)};
+    final preBids12 = app.buildActiveDraftPreBids(order12, pools12);
+    final moves12 = TransferEngine.runActiveDraft(order12, 2027, app.pickActiveDraftCpu, pools: pools12, preBids: preBids12);
+    expect(moves12.length, 12);
+    expect(moves12.map((m) => m.$1.id).toSet().length, 12);
+    expect(moves12.map((m) => m.$2.id).toSet().length, 12);
+    await db.close();
   });
 }

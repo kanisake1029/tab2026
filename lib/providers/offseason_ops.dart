@@ -383,10 +383,11 @@ extension OffseasonOps on AppState {
   /// 自球団の提出リスト（おまかせ既定値）
   List<Player> activeDraftMine() => activeDraftDefaultMyPool();
 
-  /// 現役ドラフトを行う。myPick：自球団が指名したい選手、myPoolIds：自球団が提出した放出候補ID集合（最低20名）
-  List<String> runActiveDraft(Player? myPick, {Set<String>? myPoolIds}) {
-    if (activeDraftYear >= currentDate.year) return const [];
-    final order = [for (final id in draftWaiver()) ?teamById(id)];
+  /// 現役ドラフトの逆ウェーバー順
+  List<Team> activeDraftOrder() => [for (final id in draftWaiver()) ?teamById(id)];
+
+  /// 現役ドラフトの全球団提出リストを構築する
+  Map<String, List<Player>> buildActiveDraftPools({Set<String>? myPoolIds}) {
     final pools = activeDraftCpuPools();
     final my = myTeam;
     if (my != null) {
@@ -396,11 +397,38 @@ extension OffseasonOps on AppState {
           : [for (final p in my.players) if (myPoolIds.contains(p.id) && TransferEngine.activeDraftEligible(p, offseasonYear)) p];
       pools[my.id] = chosen.length >= req ? chosen : TransferEngine.autoSelectActiveDraftPool(my, offseasonYear);
     }
-    final moves = TransferEngine.runActiveDraft(order, offseasonYear, (t, cands) {
-      if (t.id == myTeamId && myPick != null && cands.any((p) => p.id == myPick.id)) return cands.firstWhere((p) => p.id == myPick.id);
-      final best = (List.of(cands)..sort((a, b) => cpuValue(t, b).compareTo(cpuValue(t, a)))).first;
-      return best;
-    }, pools: pools);
+    return pools;
+  }
+
+  /// 事前入札（全12球団が他球団の提出リストから1名に入札）
+  Map<String, Player?> buildActiveDraftPreBids(List<Team> order, Map<String, List<Player>> pools, {Player? myPreBid}) {
+    final bids = <String, Player?>{};
+    for (final t in order) {
+      final others = [
+        for (final o in order)
+          if (o.id != t.id) ...?pools[o.id],
+      ];
+      if (others.isEmpty) {
+        bids[t.id] = null;
+      } else if (t.id == myTeamId && myPreBid != null && others.any((p) => p.id == myPreBid.id)) {
+        bids[t.id] = others.firstWhere((p) => p.id == myPreBid.id);
+      } else {
+        others.sort((a, b) => cpuValue(t, b).compareTo(cpuValue(t, a)));
+        bids[t.id] = others.first;
+      }
+    }
+    return bids;
+  }
+
+  /// CPU球団の1巡目指名（残り候補から自球団評価が最も高い選手）
+  Player? pickActiveDraftCpu(Team t, List<Player> cands) {
+    if (cands.isEmpty) return null;
+    final sorted = List.of(cands)..sort((a, b) => cpuValue(t, b).compareTo(cpuValue(t, a)));
+    return sorted.first;
+  }
+
+  /// 現役ドラフトの移籍結果を確定・保存する
+  List<String> commitActiveDraftMoves(List<(Team, Team, Player)> moves) {
     final lines = <String>[];
     for (final (from, to, p) in moves) {
       RosterEngine.removePlayer(from, p);
@@ -415,6 +443,19 @@ extension OffseasonOps on AppState {
     _addNews(['現役ドラフト：${lines.isEmpty ? '移籍なし' : lines.join('、')}']);
     updateAndSave();
     return lines;
+  }
+
+  /// 現役ドラフトを行う（自動実行・テスト用）。1巡目のみ・事前入札1位から連鎖指名・ループ時は逆ウェーバー順
+  List<String> runActiveDraft(Player? myPick, {Set<String>? myPoolIds, Player? myPreBid}) {
+    if (activeDraftYear >= currentDate.year) return const [];
+    final order = activeDraftOrder();
+    final pools = buildActiveDraftPools(myPoolIds: myPoolIds);
+    final preBids = buildActiveDraftPreBids(order, pools, myPreBid: myPreBid ?? myPick);
+    final moves = TransferEngine.runActiveDraft(order, offseasonYear, (t, cands) {
+      if (t.id == myTeamId && myPick != null && cands.any((p) => p.id == myPick.id)) return cands.firstWhere((p) => p.id == myPick.id);
+      return pickActiveDraftCpu(t, cands);
+    }, pools: pools, preBids: preBids);
+    return commitActiveDraftMoves(moves);
   }
 
   /// FA 宣言の日（11月の第2月曜日）

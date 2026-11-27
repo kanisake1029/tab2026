@@ -481,15 +481,71 @@ class TransferEngine {
     return list.take(req).toList();
   }
 
-  /// 現役ドラフトを行う：order（指名の順。最初の球団から）で、各球団が1人ずつ指名する。
-  ///  pools が指定されていれば各球団の提出リストを使用（未指定時は autoSelectActiveDraftPool で各球団20名選出）。
-  ///  選手を指名された球団が次に指名する（すでに指名した球団なら、まだの球団を順に）。各球団から指名されるのは1人まで。
-  ///  pick(球団, 候補) で選ぶ（null なら指名なし）。戻り値は [元の球団, 行き先, 選手]
+  /// 事前入札の集計：各球団の提出選手に入った票の総和を返す
+  static Map<String, int> tallyActiveDraftVotes(List<Team> order, Map<String, Player?> preBids) {
+    final votes = <String, int>{for (final t in order) t.id: 0};
+    for (final entry in preBids.entries) {
+      final p = entry.value;
+      if (p == null) continue;
+      final owner = order.where((t) => t.id != entry.key && t.players.any((x) => x.id == p.id)).firstOrNull;
+      if (owner != null) votes[owner.id] = (votes[owner.id] ?? 0) + 1;
+    }
+    return votes;
+  }
+
+  /// 事前入札1位人気の球団を返す（同票は逆ウェーバー順 `order` の上位が優先）
+  static Team? activeDraftFirstTeam(List<Team> order, Map<String, int> votes) {
+    if (order.isEmpty) return null;
+    var best = order.first;
+    var bestVotes = votes[best.id] ?? 0;
+    for (final t in order.skip(1)) {
+      final v = votes[t.id] ?? 0;
+      if (v > bestVotes) {
+        best = t;
+        bestVotes = v;
+      }
+    }
+    return best;
+  }
+
+  /// ある球団の指名ターンに選べる他球団の候補一覧。
+  /// 1巡で同一球団からは1名のみ（すでに指名された球団は除外）。
+  /// 残り2球団（自分＋未指名1球団）の場面でデッドロックを防ぐため、未指名球団がまだ誰にも指名されていなければその球団のみを候補にする。
+  static List<Player> activeDraftTurnCandidates({
+    required Team picker,
+    required List<Team> order,
+    required Map<String, List<Player>> teamPools,
+    required Set<String> picked,
+    required Set<String> lost,
+    required Set<String> takenPlayerIds,
+  }) {
+    final unpickedAfterMe = order.where((t) => t.id != picker.id && !picked.contains(t.id)).toList();
+    final unlost = order.where((t) => !lost.contains(t.id)).toList();
+    final mustPickLastUnpicked = unpickedAfterMe.length == 1 &&
+        !lost.contains(unpickedAfterMe.first.id) &&
+        unlost.length == 2 &&
+        unlost.any((t) => t.id == unpickedAfterMe.first.id);
+    final donors = mustPickLastUnpicked
+        ? [unpickedAfterMe.first]
+        : order.where((t) => t.id != picker.id && !lost.contains(t.id)).toList();
+    return [
+      for (final t in donors)
+        for (final p in teamPools[t.id] ?? const <Player>[])
+          if (!takenPlayerIds.contains(p.id)) p,
+    ];
+  }
+
+  /// 現役ドラフト（1巡目のみ）：
+  ///  - 事前入札（preBids）があれば「自球団の選手に入った票の総和」1位（同票は逆ウェーバー順 `order`）から開始
+  ///  - 指名された選手の所属球団が次に指名する（すでに指名済みならループ扱いとし、逆ウェーバー順で上から未指名の球団へ）
+  ///  - 1巡で同一球団からは1名しか選べない（先にその球団の選手が選ばれているなら選べない）
   static List<(Team, Team, Player)> runActiveDraft(
     List<Team> order,
     int offYear,
     Player? Function(Team t, List<Player> cands) pick, {
     Map<String, List<Player>>? pools,
+    Map<String, Player?>? preBids,
+    Team? firstPicker,
   }) {
     final teamPools = <String, List<Player>>{
       for (final t in order)
@@ -497,24 +553,28 @@ class TransferEngine {
             ? [for (final p in pools[t.id]!) if (activeDraftEligible(p, offYear) && t.players.contains(p)) p]
             : autoSelectActiveDraftPool(t, offYear),
     };
-    final picked = <String>{}, lost = <String>{};
+    final picked = <String>{}, lost = <String>{}, takenIds = <String>{};
     final moves = <(Team, Team, Player)>[];
-    var cur = order.isEmpty ? null : order.first;
-    var guard = 0;
-    while (cur != null && guard++ < order.length * 2) {
+    Team? cur = preBids != null
+        ? activeDraftFirstTeam(order, tallyActiveDraftVotes(order, preBids))
+        : (firstPicker ?? (order.isEmpty ? null : order.first));
+    while (cur != null && picked.length < order.length) {
       final me = cur;
       picked.add(me.id);
-      final cands = [
-        for (final t in order)
-          if (t.id != me.id && !lost.contains(t.id))
-            for (final p in teamPools[t.id] ?? const <Player>[])
-              if (!moves.any((m) => m.$3.id == p.id)) p,
-      ];
+      final cands = activeDraftTurnCandidates(
+        picker: me,
+        order: order,
+        teamPools: teamPools,
+        picked: picked,
+        lost: lost,
+        takenPlayerIds: takenIds,
+      );
       final p = cands.isEmpty ? null : pick(me, cands);
       Team? next;
       if (p != null) {
         final from = order.firstWhere((t) => t.players.contains(p));
         lost.add(from.id);
+        takenIds.add(p.id);
         moves.add((from, me, p));
         if (!picked.contains(from.id)) next = from;
       }
